@@ -239,7 +239,8 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   lines.push(`; Generado por AC Display Generator — display "${display.name}" (${display.id})`);
   lines.push(`; Perfil ${profile.id} v${profile.profile_version} — no editar a mano`);
   lines.push('');
-  lines.push(`[SCRIPTABLE_DISPLAY_ACDG_${display.id.toUpperCase()}]`);
+  // forma canónica de CSP (misma que usan los coches de referencia); el display se identifica por la ruta de SCRIPT
+  lines.push('[SCRIPTABLE_DISPLAY_...]');
   lines.push(`MESHES = ${display.meshes.join(', ')}`);
   lines.push(`SCRIPT = ${opts.folder}/display.lua`);
   lines.push(`KEEP_BACKGROUND = ${display.keep_background ? 1 : 0}`);
@@ -248,7 +249,7 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
 
   const em = display.emissive;
   if (em.mode === 'shader_replacement') {
-    lines.push(`[SHADER_REPLACEMENT_ACDG_${display.id.toUpperCase()}]`);
+    lines.push('[SHADER_REPLACEMENT_...]');
     lines.push(`MESHES = ${display.meshes.join(', ')}`);
     lines.push(`SHADER = ${em.shader}`);
     lines.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
@@ -291,11 +292,18 @@ export function generateDisplayLua(configLua: string, runtimeLua: string, displa
     'end)()',
     '',
     "local dir = __dirname or '.'",
-    'ACDG_RUNTIME.init(ACDG_CONFIG, dir)',
-    `ac.log('[ACDG] display "${displayId}" cargado desde ' .. tostring(dir) .. ' (runtime ' .. tostring(ACDG_RUNTIME.version) .. ')')`,
+    '-- cualquier error se escribe en el log de CSP en vez de matar el script en silencio',
+    'local okInit, errInit = pcall(ACDG_RUNTIME.init, ACDG_CONFIG, dir)',
+    `if okInit then ac.warn('[ACDG] display "${displayId}" cargado desde ' .. tostring(dir) .. ' (runtime ' .. tostring(ACDG_RUNTIME.version) .. ')')`,
+    `else ac.error('[ACDG] display "${displayId}": error al iniciar: ' .. tostring(errInit)) end`,
+    'local errorLogged = false',
     '',
     'function script.update(dt)',
-    '  ACDG_RUNTIME.update(dt)',
+    '  local ok, err = pcall(ACDG_RUNTIME.update, dt)',
+    '  if not ok and not errorLogged then',
+    '    errorLogged = true',
+    `    ac.error('[ACDG] display "${displayId}": error en update: ' .. tostring(err))`,
+    '  end',
     'end',
     '',
   ].join('\n');
@@ -354,6 +362,8 @@ export function findConflictingDisplays(extConfig: string, meshes: string[], own
     const header = sec.split(']')[0]?.trim() ?? '';
     if (!/^SCRIPTABLE_DISPLAY/i.test(header)) continue;
     if (ownDisplayId && header.toUpperCase() === `SCRIPTABLE_DISPLAY_ACDG_${ownDisplayId.toUpperCase()}`) continue;
+    const scriptM = /SCRIPT\s*=\s*([^\r\n;]+)/i.exec(sec);
+    if (ownDisplayId && scriptM && scriptM[1].trim().replace(/\\/g, '/').toLowerCase() === `acdg/${ownDisplayId.toLowerCase()}/display.lua`) continue;
     const m = /MESHES\s*=\s*([^\r\n;]+)/i.exec(sec);
     if (!m) continue;
     const secMeshes = m[1].split(',').map((s) => s.trim().toLowerCase());
@@ -380,7 +390,7 @@ export function generateReadme(project: Project, dp: DisplayProject, display: Di
     `  1. Copia la carpeta "${folder}" dentro de content/cars/<coche>/extension/ (o skins/<skin>/).`,
     '  2. Añade al final de ext_config.ini:',
     '',
-    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_ACDG_${display.id.toUpperCase()}]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${folder}/display.lua\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
+    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${folder}/display.lua\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
     '',
     '  3. Reinicia la sesión (o el juego): CSP lee la configuración del coche al cargar la pista.',
     '',

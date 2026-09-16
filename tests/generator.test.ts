@@ -93,12 +93,13 @@ describe('generador', () => {
     const full = generateDisplayLua(gen.lua, runtime, 'driver_display');
     expect(() => luaparse.parse(full, { luaVersion: '5.1' })).not.toThrow();
     expect(full).not.toMatch(/\brequire\(/);
-    expect(full).toContain("ac.log('[ACDG] display");
+    expect(full).toContain("ac.warn('[ACDG] display");
+    expect(full).toContain('pcall(ACDG_RUNTIME.update, dt)');
   });
 
   it('genera display.ini con la sección y la condición ACTIVE', () => {
     const ini = generateDisplayIni(profile, display, { folder: 'acdg/driver_display' });
-    expect(ini).toContain('[SCRIPTABLE_DISPLAY_ACDG_DRIVER_DISPLAY]');
+    expect(ini).toContain('[SCRIPTABLE_DISPLAY_...]');
     expect(ini).toContain('MESHES = Plano_014_001');
     expect(ini).toContain('SCRIPT = acdg/driver_display/display.lua');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
@@ -109,7 +110,7 @@ describe('generador', () => {
 describe('ext_config.ini', () => {
   const original = '[LIGHTING]\nEMISSIVE_MULT=1\n';
   it('añade, actualiza y elimina el bloque INCLUDE sin tocar el resto', () => {
-    const body = '[SCRIPTABLE_DISPLAY_ACDG_DRIVER_DISPLAY]\nMESHES = m\nSCRIPT = acdg/driver_display/display.lua';
+    const body = '[SCRIPTABLE_DISPLAY_...]\nMESHES = m\nSCRIPT = acdg/driver_display/display.lua';
     const a = upsertIncludeBlock(original, 'driver_display', body);
     expect(a).toContain(original);
     expect(a).toContain('SCRIPT = acdg/driver_display/display.lua');
@@ -120,7 +121,7 @@ describe('ext_config.ini', () => {
     expect(c).toContain('EMISSIVE_MULT=1');
   });
   it('detecta displays ajenos sobre la misma malla', () => {
-    const cfg = '[SCRIPTABLE_DISPLAY_...]\nMESHES = int_display, Plano_014_001\nSCRIPT = display.lua\n\n[SCRIPTABLE_DISPLAY_ACDG_DRIVER_DISPLAY]\nMESHES = Plano_014_001\n';
+    const cfg = '[SCRIPTABLE_DISPLAY_...]\nMESHES = int_display, Plano_014_001\nSCRIPT = display.lua\n\n[SCRIPTABLE_DISPLAY_...]\nMESHES = Plano_014_001\nSCRIPT = acdg/driver_display/display.lua\n';
     expect(findConflictingDisplays(cfg, ['plano_014_001'], 'driver_display')).toEqual(['[SCRIPTABLE_DISPLAY_...]']);
   });
 });

@@ -134,12 +134,15 @@ export function scanExtension(carPath: string): ExtensionScan {
         scriptValid = !err;
         scriptError = err ?? undefined;
       }
-      const acdgMatch = /^SCRIPTABLE_DISPLAY_ACDG_(.+)$/i.exec(s.name);
+      // display generado por esta app: sección ACDG antigua o SCRIPT dentro de acdg/<id>/
+      const byName = /^SCRIPTABLE_DISPLAY_ACDG_(.+)$/i.exec(s.name)?.[1]?.toLowerCase();
+      const byPath = /(?:^|[\\/])acdg[\\/]([^\\/]+)[\\/]display\.lua$/i.exec((scriptRel ?? '').replace(/\\/g, '/'))?.[1]?.toLowerCase();
       let acdg: DetectedDisplay['acdg'] = null;
-      if (acdgMatch && script) {
+      const acdgId = byName ?? byPath;
+      if (acdgId && script) {
         const folder = dirname(script);
         const projectFile = join(folder, 'project.acdisplay');
-        acdg = { displayId: acdgMatch[1].toLowerCase(), projectFile: existsSync(projectFile) ? projectFile : null, folder };
+        acdg = { displayId: acdgId, projectFile: existsSync(projectFile) ? projectFile : null, folder };
       }
       const res = s.values.RESOLUTION?.split(',').map((x) => Number(x.trim()));
       displays.push({

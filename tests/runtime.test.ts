@@ -62,6 +62,8 @@ ac = setmetatable({
   skipFrame = rec('skipFrame'),
   storage = function(defaults) return STORAGE end,
   log = function(...) LOGGED = table.concat({ ... }, ' ') end,
+  warn = function(...) LOGGED = table.concat({ ... }, ' ') end,
+  error = function(...) ERRORED = table.concat({ ... }, ' ') end,
 }, { __index = function(_, k) return rec(k) end })
 CARV = { rpm = 4500, rpmLimiter = 8000, gear = 3, speedKmh = 128, gas = 0.7, fuel = 30, maxFuel = 60, waterTemperature = 90,
   lapTimeMs = 83452, focused = true, distanceToCamera = 2, physicsAvailable = true, prefersImperialUnits = false, isInPitlane = false, extraA = false, headlightsActive = false, absInAction = false, isEngineLimiterOn = false }
@@ -80,6 +82,7 @@ describe('runtime Lua generado', () => {
       await engine.doString(STUBS);
       await engine.doString(lua);
       expect(String(await engine.doString('return LOGGED'))).toContain('[ACDG] display "driver_display" cargado');
+      expect(await engine.doString('return ERRORED')).toBeFalsy();
       // varios frames en distintos estados
       await engine.doString('script.update(0.016)');
       await engine.doString('CARV.rpm = 7900; CARV.isEngineLimiterOn = true; CARV.headlightsActive = true; script.update(0.016)');
