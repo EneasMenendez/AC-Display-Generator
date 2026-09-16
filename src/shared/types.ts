@@ -79,6 +79,16 @@ export interface ExtensionScan {
   orphanLua: { file: string; relative: string; valid: boolean; hints: DetectedDisplay['hints'] }[];
 }
 
+/** Resultado de importar un script Lua hecho a mano como elementos del editor. */
+export interface LuaImportResult {
+  elements: import('./model').DisplayElement[];
+  /** imagen que el script dibuja a pantalla completa (fondo), ruta absoluta */
+  background: string | null;
+  warnings: string[];
+  /** llamadas de dibujo registradas en la ejecución base */
+  calls: number;
+}
+
 export interface Kn5Mesh {
   name: string;
   material: string;
@@ -194,6 +204,7 @@ export interface AcdgApi {
   pickCar(): Promise<string | null>;
   scanCar(carPath: string): Promise<CarInfo>;
   scanDisplays(carPath: string): Promise<ExtensionScan>;
+  importLua(scriptFile: string, width: number, height: number): Promise<LuaImportResult>;
   readKn5(carPath: string, file: string): Promise<Kn5Info>;
   meshConflicts(carPath: string, meshes: string[], displayId: string): Promise<string[]>;
 

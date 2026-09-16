@@ -12,6 +12,7 @@ export const api = {
   pickCar: () => invoke('car:pick'),
   scanCar: (carPath: string) => invoke('car:scan', carPath),
   scanDisplays: (carPath: string) => invoke('car:scanDisplays', carPath),
+  importLua: (scriptFile: string, width: number, height: number) => invoke('car:importLua', scriptFile, width, height),
   readKn5: (carPath: string, file: string) => invoke('car:kn5', carPath, file),
   meshConflicts: (carPath: string, meshes: string[], displayId: string) => invoke('car:meshConflicts', carPath, meshes, displayId),
 

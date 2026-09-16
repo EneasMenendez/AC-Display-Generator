@@ -9,6 +9,7 @@ import { detectAcRoots, detectCspVersion, findContentManager, isAcRoot } from '.
 import { listCars, scanCar, findMeshConflicts } from './services/vehicleScanner';
 import { readKn5 } from './services/kn5Reader';
 import { scanExtension } from './services/displayScanner';
+import { importLuaDisplay } from './services/luaImporter';
 import { findProfiles, loadProfileManual, saveToCar, saveToLibrary } from './services/profileManager';
 import { readImageInfo } from './services/imageManager';
 import * as pm from './services/projectManager';
@@ -60,6 +61,7 @@ export function registerIpc(): void {
   });
   ipcMain.handle('car:scan', (_e, carPath: string) => scanCar(carPath));
   ipcMain.handle('car:scanDisplays', (_e, carPath: string) => scanExtension(carPath));
+  ipcMain.handle('car:importLua', (_e, scriptFile: string, width: number, height: number) => importLuaDisplay(scriptFile, width, height));
   ipcMain.handle('car:kn5', (_e, carPath: string, file: string) => readKn5(join(carPath, file)));
   ipcMain.handle('car:meshConflicts', (_e, carPath: string, meshes: string[], displayId: string) => findMeshConflicts(carPath, meshes, displayId));
 

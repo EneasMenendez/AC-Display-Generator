@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import { ProfileSchema } from '@shared/profile';
-import type { DetectedDisplay, ExtensionScan, ImageInfo, Kn5Info, ProfileHit } from '@shared/types';
+import type { DetectedDisplay, ExtensionScan, ImageInfo, Kn5Info, LuaImportResult, ProfileHit } from '@shared/types';
 import { createEmptyProject } from '@shared/model';
 import { api } from '../api';
 import { useStore, toast } from '../store';
@@ -88,6 +88,7 @@ export function Wizard() {
   const [hit, setHit] = useState<ProfileHit | null>(null);
   const [displayId, setDisplayId] = useState<string>('');
   const [imported, setImported] = useState<DetectedDisplay | null>(null);
+  const [layout, setLayout] = useState<LuaImportResult | null>(null);
   const [importNote, setImportNote] = useState('');
   const [creator, setCreator] = useState(false);
   const [image, setImage] = useState<ImageInfo | null>(null);
@@ -124,8 +125,13 @@ export function Wizard() {
           setDisplayId(carProfile.profile.displays[0].id);
           setAutoMsg(`Perfil "${carProfile.profile.name}" encontrado en el vehículo.`);
         } else if (manual.length === 1) {
-          // 3) un único display hecho a mano → se importa automáticamente (malla, resolución, imagen)
-          await importDetected(manual[0], sc);
+          // 3) un único display hecho a mano → se importa automáticamente (malla, resolución, imagen y elementos del script)
+          const imp = await importDetected(manual[0], sc);
+          if (imp && imp.layout && imp.layout.elements.length > 0 && imp.image) {
+            // todo cargado: se abre el editor directamente
+            await createFrom(imp.hit, imp.hit.profile.displays[0], imp.image, imp.layout, `${car.name} Display`);
+            return;
+          }
         } else if (pr.hits[0]) {
           // 4) perfil de la biblioteca o incluido con la aplicación
           setHit(pr.hits[0]);
@@ -146,20 +152,37 @@ export function Wizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [car]);
 
-  async function importDetected(d: DetectedDisplay, sc: ExtensionScan | null = scan) {
-    if (!car) return;
+  async function importDetected(d: DetectedDisplay, sc: ExtensionScan | null = scan): Promise<{ hit: ProfileHit; image: ImageInfo | null; layout: LuaImportResult | null } | null> {
+    if (!car) return null;
     const r = await profileFromDetected(car.id, car.name, d, car.path, car.mainKn5);
     const h: ProfileHit = { profile: r.profile, file: `${sc?.extDir ?? ''}\\${d.iniRelative}`, source: 'manual' };
+    let image = r.image;
+    let lay: LuaImportResult | null = null;
+    const notes: string[] = r.note ? [r.note] : [];
+    // el script se ejecuta en un simulador para extraer todos sus textos, barras, imágenes e iconos
+    if (d.script && d.scriptExists && d.scriptValid) {
+      const size = r.profile.displays[0].texture_size;
+      try {
+        lay = await api.importLua(d.script, size.width, size.height);
+        notes.push(...lay.warnings);
+        if (!image && lay.background) image = await api.imageInfo(lay.background);
+        notes.unshift(`${lay.elements.length} elementos importados del script (${lay.calls} llamadas de dibujo).`);
+      } catch (e) {
+        notes.push(`No se pudo importar el script: ${(e as Error).message}`);
+      }
+    }
     setHit(h);
     setDisplayId(r.profile.displays[0].id);
     setImported(d);
-    setImportNote(r.note);
+    setLayout(lay);
+    setImportNote(notes.join(' '));
     setCreator(false);
-    if (r.image) {
-      setImage(r.image);
+    if (image) {
+      setImage(image);
       setNoImage(false);
     }
-    setAutoMsg(`Display "${d.section}" importado desde ${d.iniRelative}${r.image ? ` con la imagen ${r.image.file.split(/[\\/]/).pop()}` : ''}.`);
+    setAutoMsg(`Display "${d.section}" importado desde ${d.iniRelative}${image ? ` con la imagen ${image.file.split(/[\\/]/).pop()}` : ''}.`);
+    return { hit: h, image, layout: lay };
   }
 
   if (!car) return null;
@@ -173,28 +196,53 @@ export function Wizard() {
     setNoImage(false);
   }
 
-  async function create() {
-    if (!hit || !display || !car) return;
+  async function createFrom(h: ProfileHit, d: DisplayDef, img: ImageInfo | null, lay: LuaImportResult | null, projectName: string) {
+    if (!car) return;
     await api.newProject();
     const project = createEmptyProject({
-      name: name.trim() || `${car.name} Display`,
-      profileId: hit.profile.id,
-      profileVersion: hit.profile.profile_version,
+      name: projectName.trim() || `${car.name} Display`,
+      profileId: h.profile.id,
+      profileVersion: h.profile.profile_version,
       carId: car.id,
-      displayId: display.id,
-      width: display.texture_size.width,
-      height: display.texture_size.height,
+      displayId: d.id,
+      width: d.texture_size.width,
+      height: d.texture_size.height,
       appVersion: info?.version ?? '0.0.0',
     });
-    let assets: Record<string, string> = {};
-    if (image && !noImage) {
-      const added = await api.addAssetFile(image.file, 'assets');
+    const assets: Record<string, string> = {};
+    if (img) {
+      const added = await api.addAssetFile(img.file, 'assets');
       project.background.file = added.path;
-      assets = { [added.path]: image.dataUrl ?? added.dataUrl };
+      assets[added.path] = img.dataUrl ?? added.dataUrl;
     }
-    setProfile(hit.profile, hit.file);
+    if (lay) {
+      // las imágenes/iconos del script se copian como recursos del proyecto
+      for (const el of lay.elements) {
+        try {
+          if (el.type === 'image' && el.config.file && /[\\/]/.test(el.config.file)) {
+            const a = await api.addAssetFile(el.config.file, 'assets');
+            el.config.file = a.path;
+            assets[a.path] = a.dataUrl;
+          } else if (el.type === 'icon' && el.config.icon && !el.config.icon.startsWith('builtin:') && /[\\/]/.test(el.config.icon)) {
+            const a = await api.addAssetFile(el.config.icon, 'assets/icons');
+            el.config.icon = a.path;
+            assets[a.path] = a.dataUrl;
+          }
+        } catch {
+          /* recurso no copiable: el elemento queda sin imagen */
+        }
+      }
+      project.pages[0].elements.push(...lay.elements);
+    }
+    setProfile(h.profile, h.file);
     setAssets(assets);
     loadProject(project, null);
+    if (lay?.warnings.length) toast(lay.warnings[0], 'err');
+  }
+
+  async function create() {
+    if (!hit || !display) return;
+    await createFrom(hit, display, image && !noImage ? image : null, layout, name);
   }
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
@@ -235,6 +283,7 @@ export function Wizard() {
             setHit(h);
             setDisplayId(d);
             setImported(null);
+            setLayout(null);
             setCreator(false);
           }}
           onCreated={(h) => {
@@ -242,6 +291,7 @@ export function Wizard() {
             setHit(h);
             setDisplayId(h.profile.displays[0].id);
             setImported(null);
+            setLayout(null);
             setCreator(false);
           }}
         />
@@ -324,6 +374,15 @@ export function Wizard() {
                 <td>Fondo</td>
                 <td>{noImage || !image ? 'color plano' : image.file}</td>
               </tr>
+              {layout && (
+                <tr>
+                  <td>Elementos del script</td>
+                  <td>
+                    {layout.elements.length} importados ({layout.elements.map((e) => e.type).filter((t, i, a) => a.indexOf(t) === i).join(', ')})
+                    {layout.warnings.length > 0 && <div className="warn small">{layout.warnings.join(' ')}</div>}
+                  </td>
+                </tr>
+              )}
               {imported && (
                 <tr>
                   <td>Al generar</td>
