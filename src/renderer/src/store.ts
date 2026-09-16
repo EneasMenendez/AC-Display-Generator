@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { DisplayElement, ElementType, Project } from '@shared/model';
-import { createElement, newId } from '@shared/model';
+import type { DisplayElement, DisplayProject, ElementType, Page, Project } from '@shared/model';
+import { createElement, createPage, newId } from '@shared/model';
 import type { DisplayProfile } from '@shared/profile';
 import type { AppInfo, BuiltinIcon, CarInfo } from '@shared/types';
 import { VARIABLES } from '@shared/variables';
@@ -29,12 +29,17 @@ interface State {
   selection: string[];
   past: Project[];
   future: Project[];
+  /** display y página que se están editando */
+  activeDisplay: number;
+  activePage: number;
   sim: SimValues;
   simAuto: boolean;
   ambient: number;
   showPreview: boolean;
   previewMode: boolean;
   physicalView: boolean;
+  /** en previsualización, seguir las condiciones automáticas de página (como en el juego) */
+  followPageRules: boolean;
   toast: Toast | null;
   zoom: number;
   pan: { x: number; y: number };
@@ -48,10 +53,14 @@ interface State {
   addAssetUrl(path: string, url: string): void;
   setIcons(i: BuiltinIcon[]): void;
   setFonts(f: string[]): void;
-  loadProject(p: Project, file: string | null): void;
+  loadProject(p: Project, file: string | null, activeDisplay?: number): void;
   closeProject(): void;
   /** aplica un cambio al proyecto; commit=true guarda en el historial */
   patchProject(fn: (p: Project) => void, commit?: boolean): void;
+  /** aplica un cambio al display activo */
+  patchDisplay(fn: (d: DisplayProject, p: Project) => void, commit?: boolean): void;
+  /** aplica un cambio a la página activa */
+  patchPage(fn: (page: Page, d: DisplayProject) => void, commit?: boolean): void;
   /** guarda el estado actual en el historial (antes de una transformación transitoria) */
   snapshot(): void;
   undo(): void;
@@ -63,6 +72,13 @@ interface State {
   duplicateSelected(): void;
   reorder(id: string, dir: 'up' | 'down' | 'top' | 'bottom'): void;
   moveSelected(dx: number, dy: number): void;
+  setActiveDisplay(i: number): void;
+  setActivePage(i: number): void;
+  addPage(name?: string): void;
+  removePage(i: number): void;
+  movePage(from: number, to: number): void;
+  addDisplay(d: DisplayProject): void;
+  removeDisplay(i: number): void;
   setSim(id: string, v: number | boolean): void;
   resetSim(): void;
   setSimAuto(v: boolean): void;
@@ -70,6 +86,7 @@ interface State {
   togglePreview(): void;
   setPreviewMode(v: boolean): void;
   setPhysicalView(v: boolean): void;
+  setFollowPageRules(v: boolean): void;
   setToast(t: Toast | null): void;
   setZoom(z: number): void;
   setPan(p: { x: number; y: number }): void;
@@ -84,6 +101,19 @@ export function defaultSim(): SimValues {
   const s: SimValues = {};
   for (const v of VARIABLES) if (typeof v.preview !== 'string') s[v.id] = v.preview;
   return s;
+}
+
+/** Display activo del proyecto (o null). */
+export function activeDisplayOf(s: { project: Project | null; activeDisplay: number }): DisplayProject | null {
+  if (!s.project) return null;
+  return s.project.displays[Math.min(s.activeDisplay, s.project.displays.length - 1)] ?? null;
+}
+
+/** Página activa del display activo (o null). */
+export function activePageOf(s: { project: Project | null; activeDisplay: number; activePage: number }): Page | null {
+  const d = activeDisplayOf(s);
+  if (!d) return null;
+  return d.pages[Math.min(s.activePage, d.pages.length - 1)] ?? null;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -101,12 +131,15 @@ export const useStore = create<State>((set, get) => ({
   selection: [],
   past: [],
   future: [],
+  activeDisplay: 0,
+  activePage: 0,
   sim: defaultSim(),
   simAuto: false,
   ambient: 1,
   showPreview: true,
   previewMode: false,
   physicalView: false,
+  followPageRules: false,
   toast: null,
   zoom: 0.5,
   pan: { x: 0, y: 0 },
@@ -120,8 +153,9 @@ export const useStore = create<State>((set, get) => ({
   addAssetUrl: (path, url) => set((s) => ({ assets: { ...s.assets, [path]: url } })),
   setIcons: (icons) => set({ icons }),
   setFonts: (fonts) => set({ fonts }),
-  loadProject: (project, projectFile) => set({ project, projectFile, dirty: false, past: [], future: [], selection: [], screen: 'editor' }),
-  closeProject: () => set({ project: null, projectFile: null, dirty: false, past: [], future: [], selection: [], assets: {}, screen: 'start' }),
+  loadProject: (project, projectFile, activeDisplay = 0) =>
+    set({ project, projectFile, dirty: false, past: [], future: [], selection: [], screen: 'editor', activeDisplay, activePage: 0 }),
+  closeProject: () => set({ project: null, projectFile: null, dirty: false, past: [], future: [], selection: [], assets: {}, screen: 'start', activeDisplay: 0, activePage: 0 }),
 
   patchProject: (fn, commit = true) =>
     set((s) => {
@@ -131,21 +165,47 @@ export const useStore = create<State>((set, get) => ({
       const past = commit ? [...s.past.slice(-MAX_HISTORY + 1), s.project] : s.past;
       return { project: next, past, future: commit ? [] : s.future, dirty: true };
     }),
+  patchDisplay: (fn, commit = true) =>
+    get().patchProject((p) => {
+      const d = p.displays[Math.min(get().activeDisplay, p.displays.length - 1)];
+      if (d) fn(d, p);
+    }, commit),
+  patchPage: (fn, commit = true) =>
+    get().patchDisplay((d) => {
+      const page = d.pages[Math.min(get().activePage, d.pages.length - 1)];
+      if (page) fn(page, d);
+    }, commit),
   snapshot: () =>
     set((s) => (s.project ? { past: [...s.past.slice(-MAX_HISTORY + 1), clone(s.project)], future: [] } : {})),
   undo: () =>
     set((s) => {
       if (!s.project || s.past.length === 0) return {};
       const prev = s.past[s.past.length - 1];
-      const ids = new Set(prev.pages.flatMap((p) => p.elements.map((e) => e.id)));
-      return { project: prev, past: s.past.slice(0, -1), future: [s.project, ...s.future], dirty: true, selection: s.selection.filter((id) => ids.has(id)) };
+      const ids = new Set(prev.displays.flatMap((d) => d.pages.flatMap((p) => p.elements.map((e) => e.id))));
+      return {
+        project: prev,
+        past: s.past.slice(0, -1),
+        future: [s.project, ...s.future],
+        dirty: true,
+        selection: s.selection.filter((id) => ids.has(id)),
+        activeDisplay: Math.min(s.activeDisplay, prev.displays.length - 1),
+        activePage: Math.min(s.activePage, (prev.displays[Math.min(s.activeDisplay, prev.displays.length - 1)]?.pages.length ?? 1) - 1),
+      };
     }),
   redo: () =>
     set((s) => {
       if (!s.project || s.future.length === 0) return {};
       const next = s.future[0];
-      const ids = new Set(next.pages.flatMap((p) => p.elements.map((e) => e.id)));
-      return { project: next, past: [...s.past, s.project], future: s.future.slice(1), dirty: true, selection: s.selection.filter((id) => ids.has(id)) };
+      const ids = new Set(next.displays.flatMap((d) => d.pages.flatMap((p) => p.elements.map((e) => e.id))));
+      return {
+        project: next,
+        past: [...s.past, s.project],
+        future: s.future.slice(1),
+        dirty: true,
+        selection: s.selection.filter((id) => ids.has(id)),
+        activeDisplay: Math.min(s.activeDisplay, next.displays.length - 1),
+        activePage: Math.min(s.activePage, (next.displays[Math.min(s.activeDisplay, next.displays.length - 1)]?.pages.length ?? 1) - 1),
+      };
     }),
 
   select: (ids, additive = false) =>
@@ -157,20 +217,20 @@ export const useStore = create<State>((set, get) => ({
     }),
 
   updateElement: (id, patch, commit = true) =>
-    get().patchProject((p) => {
-      for (const page of p.pages) {
-        const el = page.elements.find((e) => e.id === id);
-        if (!el) continue;
-        if (typeof patch === 'function') patch(el);
-        else Object.assign(el, patch);
-      }
+    get().patchPage((page) => {
+      const el = page.elements.find((e) => e.id === id);
+      if (!el) return;
+      if (typeof patch === 'function') patch(el);
+      else Object.assign(el, patch);
     }, commit),
 
   addElement: (type) => {
     const s = get();
-    if (!s.project) return;
-    const cw = s.project.canvas.width;
-    const ch = s.project.canvas.height;
+    const d = activeDisplayOf(s);
+    const page = activePageOf(s);
+    if (!d || !page) return;
+    const cw = d.canvas.width;
+    const ch = d.canvas.height;
     const el = createElement(type, 0, 0);
     el.x = Math.round(cw / 2 - el.width / 2);
     el.y = Math.round(ch / 2 - el.height / 2);
@@ -180,11 +240,11 @@ export const useStore = create<State>((set, get) => ({
       el.y = Math.round(ch * 0.05);
     }
     // nombre único
-    const names = new Set(s.project.pages[0].elements.map((e) => e.name));
+    const names = new Set(page.elements.map((e) => e.name));
     let n = 2;
     const base = el.name;
     while (names.has(el.name)) el.name = `${base} ${n++}`;
-    s.patchProject((p) => p.pages[0].elements.push(el));
+    s.patchPage((pg) => pg.elements.push(el));
     set({ selection: [el.id] });
   },
 
@@ -192,8 +252,8 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     if (!s.project || s.selection.length === 0) return;
     const sel = new Set(s.selection);
-    s.patchProject((p) => {
-      for (const page of p.pages) page.elements = page.elements.filter((e) => !sel.has(e.id) || e.locked);
+    s.patchPage((page) => {
+      page.elements = page.elements.filter((e) => !sel.has(e.id) || e.locked);
     });
     set({ selection: [] });
   },
@@ -203,8 +263,7 @@ export const useStore = create<State>((set, get) => ({
     if (!s.project || s.selection.length === 0) return;
     const sel = new Set(s.selection);
     const newIds: string[] = [];
-    s.patchProject((p) => {
-      const page = p.pages[0];
+    s.patchPage((page) => {
       const copies: DisplayElement[] = [];
       for (const el of page.elements) {
         if (!sel.has(el.id)) continue;
@@ -223,8 +282,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   reorder: (id, dir) =>
-    get().patchProject((p) => {
-      const els = p.pages[0].elements;
+    get().patchPage((page) => {
+      const els = page.elements;
       const i = els.findIndex((e) => e.id === id);
       if (i < 0) return;
       const [el] = els.splice(i, 1);
@@ -236,14 +295,53 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     if (!s.project || s.selection.length === 0) return;
     const sel = new Set(s.selection);
-    s.patchProject((p) => {
-      for (const el of p.pages[0].elements) {
+    s.patchPage((page) => {
+      for (const el of page.elements) {
         if (sel.has(el.id) && !el.locked) {
           el.x = Math.round(el.x + dx);
           el.y = Math.round(el.y + dy);
         }
       }
     });
+  },
+
+  setActiveDisplay: (i) => set({ activeDisplay: i, activePage: 0, selection: [] }),
+  setActivePage: (i) => set({ activePage: i, selection: [] }),
+  addPage: (name) => {
+    const s = get();
+    const d = activeDisplayOf(s);
+    if (!d) return;
+    const page = createPage(name ?? `Página ${d.pages.length + 1}`);
+    s.patchDisplay((disp) => disp.pages.push(page));
+    set({ activePage: d.pages.length, selection: [] });
+  },
+  removePage: (i) => {
+    const s = get();
+    const d = activeDisplayOf(s);
+    if (!d || d.pages.length <= 1) return;
+    s.patchDisplay((disp) => disp.pages.splice(i, 1));
+    set({ activePage: Math.max(0, Math.min(s.activePage, d.pages.length - 2)), selection: [] });
+  },
+  movePage: (from, to) => {
+    const s = get();
+    s.patchDisplay((disp) => {
+      if (from < 0 || from >= disp.pages.length || to < 0 || to >= disp.pages.length) return;
+      const [pg] = disp.pages.splice(from, 1);
+      disp.pages.splice(to, 0, pg);
+    });
+    set({ activePage: to });
+  },
+  addDisplay: (d) => {
+    const s = get();
+    if (!s.project) return;
+    s.patchProject((p) => p.displays.push(d));
+    set({ activeDisplay: s.project.displays.length, activePage: 0, selection: [] });
+  },
+  removeDisplay: (i) => {
+    const s = get();
+    if (!s.project || s.project.displays.length <= 1) return;
+    s.patchProject((p) => p.displays.splice(i, 1));
+    set({ activeDisplay: Math.max(0, Math.min(s.activeDisplay, s.project.displays.length - 2)), activePage: 0, selection: [] });
   },
 
   setSim: (id, v) => set((s) => ({ sim: { ...s.sim, [id]: v } })),
@@ -253,6 +351,7 @@ export const useStore = create<State>((set, get) => ({
   togglePreview: () => set((s) => ({ showPreview: !s.showPreview })),
   setPreviewMode: (previewMode) => set({ previewMode, selection: previewMode ? [] : get().selection }),
   setPhysicalView: (physicalView) => set({ physicalView }),
+  setFollowPageRules: (followPageRules) => set({ followPageRules }),
   setToast: (toast) => set({ toast }),
   setZoom: (zoom) => set({ zoom }),
   setPan: (pan) => set({ pan }),
@@ -272,7 +371,8 @@ export function toast(text: string, kind: 'info' | 'err' = 'info'): void {
 
 export function selectedElements(): DisplayElement[] {
   const s = useStore.getState();
-  if (!s.project) return [];
+  const page = activePageOf(s);
+  if (!page) return [];
   const sel = new Set(s.selection);
-  return s.project.pages[0].elements.filter((e) => sel.has(e.id));
+  return page.elements.filter((e) => sel.has(e.id));
 }

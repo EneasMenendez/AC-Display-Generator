@@ -75,151 +75,173 @@ export function install(opts: InstallOptions): InstallResult {
   };
 
   const { project, profile } = opts;
-  const display = displayFor(profile, project.display_id);
-  const folderRel = `acdg/${display.id}`;
   const base = opts.install ? baseDir(opts.carPath, opts.target) : opts.exportDir!;
-  const folder = join(base, 'acdg', display.id);
-  const result: InstallResult = { ok: false, steps, folder, warnings, errors };
+  const extConfig = join(base, 'ext_config.ini');
+  const selected = project.displays.filter((d) => !opts.displayIds || opts.displayIds.includes(d.display_id));
+  const result: InstallResult = { ok: false, steps, folder: join(base, 'acdg'), folders: [], warnings, errors };
 
-  // --- validación previa ---
+  // --- validación previa (todos los displays) ---
   if (!step('Validar proyecto y perfil', () => {
-    if (project.canvas.width !== display.texture_size.width || project.canvas.height !== display.texture_size.height) {
-      throw new Error(`El lienzo (${project.canvas.width}×${project.canvas.height}) no coincide con la textura del perfil (${display.texture_size.width}×${display.texture_size.height}).`);
+    if (selected.length === 0) throw new Error('No hay ningún display seleccionado para generar.');
+    for (const dp of selected) {
+      const def = displayFor(profile, dp.display_id);
+      if (dp.canvas.width !== def.texture_size.width || dp.canvas.height !== def.texture_size.height) {
+        throw new Error(`${dp.name}: el lienzo (${dp.canvas.width}×${dp.canvas.height}) no coincide con la textura del perfil (${def.texture_size.width}×${def.texture_size.height}).`);
+      }
+      if (dp.background.file && !session.assets.has(dp.background.file)) throw new Error(`${dp.name}: falta la imagen de fondo en el proyecto.`);
     }
-    if (project.background.file && !session.assets.has(project.background.file)) throw new Error('Falta la imagen de fondo en el proyecto.');
     if (opts.install && !existsSync(opts.carPath)) throw new Error('La carpeta del vehículo no existe.');
     if (opts.install && opts.target.kind === 'skin' && !existsSync(join(opts.carPath, 'skins', opts.target.skin))) throw new Error('La skin no existe.');
+    return selected.length === 1 ? selected[0].name : `${selected.length} displays`;
   })) return result;
 
-  // --- generación en memoria ---
-  const files: Record<string, Uint8Array | string> = {};
-  let luaOk = true;
-  if (!step('Generar Lua y configuración', () => {
-    const gen = generateConfigLua(project, display);
-    const runtime = runtimeSource();
-    const displayLua = generateDisplayLua();
-    for (const [name, code] of [
-      ['display_config.lua', gen.lua],
-      ['acdg_runtime.lua', runtime],
-      ['display.lua', displayLua],
-    ] as const) {
-      const err = validateLua(code, name);
-      if (err) {
-        luaOk = false;
-        throw new Error(`Lua inválido — ${err}`);
-      }
-      files[name] = code;
-    }
-    files['display.ini'] = generateDisplayIni(profile, display, { folder: folderRel });
-    files['LEEME.txt'] = generateReadme(project, display, folderRel);
-    for (const a of gen.assets) {
-      if (a.source.startsWith('builtin:')) {
-        const bytes = opts.extraFiles[a.target];
-        if (!bytes) throw new Error(`Falta el icono integrado ${a.source} (no se pudo rasterizar).`);
-        files[a.target] = bytes;
-      } else {
-        const bytes = session.assets.get(a.source);
-        if (!bytes) throw new Error(`Falta el recurso ${a.source} en el proyecto.`);
-        files[a.target] = bytes;
-      }
-    }
-    for (const [k, v] of Object.entries(opts.extraFiles)) if (!files[k]) files[k] = v;
-    files['project.acdisplay'] = packProject(project);
-    return `${gen.variables.length} variables, ${gen.assets.length} recursos`;
-  })) return result;
-
-  if (opts.convertToDds && project.background.file) {
-    step('Convertir fondo a DDS (DXT5 + mipmaps)', () => {
-      const target = Object.keys(files).find((k) => k.startsWith('assets/') && files[k] === session.assets.get(project.background.file!));
-      if (!target) return 'sin fondo';
-      const { rgba, width, height } = toRgba(files[target] as Uint8Array);
-      const dds = encodeDdsBc3(rgba, width, height, true);
-      const ddsName = target.replace(/\.[^.]+$/, '.dds');
-      delete files[target];
-      files[ddsName] = new Uint8Array(dds);
-      files['display_config.lua'] = (files['display_config.lua'] as string).replace(target, ddsName);
-      return `${width}×${height}, ${Math.round(dds.length / 1024)} KB`;
-    });
-  }
-
-  // --- backup ---
-  const extConfig = join(base, 'ext_config.ini');
+  // --- backup único ---
   if (opts.install) {
     step('Copia de seguridad', () => {
       const bdir = join(base, 'acdg', '_backup', timestamp());
       mkdirSync(bdir, { recursive: true });
       if (existsSync(extConfig)) cpSync(extConfig, join(bdir, 'ext_config.ini'));
-      if (existsSync(folder)) cpSync(folder, join(bdir, display.id), { recursive: true });
-      writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de instalar "${display.id}".\nRestaura desde la aplicación (Restaurar original).\n`, 'utf8');
+      for (const dp of selected) {
+        const folder = join(base, 'acdg', dp.display_id);
+        if (existsSync(folder)) cpSync(folder, join(bdir, dp.display_id), { recursive: true });
+      }
+      writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de instalar ${selected.map((d) => `"${d.display_id}"`).join(', ')}.\nRestaura desde la aplicación (Restaurar original).\n`, 'utf8');
       pruneBackups(join(base, 'acdg', '_backup'), 10);
       return bdir;
     });
-    if (existsSync(extConfig)) {
-      const conflicts = findConflictingDisplays(readFileSync(extConfig, 'utf8'), display.meshes, display.id);
-      if (conflicts.length) warnings.push(`ext_config.ini ya define un display sobre la misma malla: ${conflicts.join(', ')}. Puede haber conflicto visual.`);
-    }
   }
 
-  // --- escritura ---
-  if (!step('Escribir archivos', () => {
-    if (existsSync(folder)) rmSync(folder, { recursive: true, force: true });
-    mkdirSync(folder, { recursive: true });
-    for (const [rel, data] of Object.entries(files)) {
-      const abs = join(folder, rel);
-      mkdirSync(dirname(abs), { recursive: true });
-      if (typeof data === 'string') writeFileSync(abs, data, 'utf8');
-      else writeFileSync(abs, data);
-    }
-    return `${Object.keys(files).length} archivos en ${folder}`;
-  })) return result;
+  let luaOk = true;
+  const runtime = runtimeSource();
+  const displayLua = generateDisplayLua();
+  const many = selected.length > 1;
 
-  if (opts.install) {
-    step('Añadir INCLUDE a ext_config.ini', () => {
-      const current = existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '';
-      const updated = upsertIncludeBlock(current, display.id, folderRel);
-      mkdirSync(dirname(extConfig), { recursive: true });
-      writeFileSync(extConfig, updated, 'utf8');
-      return current === '' ? 'ext_config.ini creado' : hasIncludeBlock(current, display.id) ? 'actualizado' : 'añadido';
-    });
-    if (opts.disableSections?.length) {
-      step('Desactivar displays existentes sobre la misma malla', () => {
-        const done: string[] = [];
-        for (const d of opts.disableSections!) {
-          if (!existsSync(d.iniFile)) continue;
-          const txt = readFileSync(d.iniFile, 'utf8');
-          const next = disableSection(txt, d.section);
-          if (next !== txt) {
-            writeFileSync(d.iniFile, next, 'utf8');
-            done.push(`[${d.section}] en ${basename(d.iniFile)}`);
-          }
+  for (const dp of selected) {
+    const display = displayFor(profile, dp.display_id);
+    const folderRel = `acdg/${display.id}`;
+    const folder = join(base, 'acdg', display.id);
+    const tag = many ? `[${dp.name}] ` : '';
+    result.folders.push(folder);
+
+    // --- generación en memoria ---
+    const files: Record<string, Uint8Array | string> = {};
+    let ok = step(`${tag}Generar Lua y configuración`, () => {
+      const gen = generateConfigLua(project, dp, display);
+      for (const [name, code] of [
+        ['display_config.lua', gen.lua],
+        ['acdg_runtime.lua', runtime],
+        ['display.lua', displayLua],
+      ] as const) {
+        const err = validateLua(code, name);
+        if (err) {
+          luaOk = false;
+          throw new Error(`Lua inválido — ${err}`);
         }
-        return done.join(', ') || 'nada que desactivar';
+        files[name] = code;
+      }
+      files['display.ini'] = generateDisplayIni(profile, display, { folder: folderRel });
+      files['LEEME.txt'] = generateReadme(project, dp, display, folderRel);
+      for (const a of gen.assets) {
+        if (a.source.startsWith('builtin:')) {
+          const bytes = opts.extraFiles[a.target];
+          if (!bytes) throw new Error(`Falta el icono integrado ${a.source} (no se pudo rasterizar).`);
+          files[a.target] = bytes;
+        } else {
+          const bytes = session.assets.get(a.source);
+          if (!bytes) throw new Error(`Falta el recurso ${a.source} en el proyecto.`);
+          files[a.target] = bytes;
+        }
+      }
+      files['project.acdisplay'] = packProject(project);
+      return `${gen.variables.length} variables, ${gen.assets.length} recursos, ${dp.pages.length} página${dp.pages.length === 1 ? '' : 's'}`;
+    });
+    if (!ok) continue;
+
+    if (opts.convertToDds && dp.background.file) {
+      step(`${tag}Convertir fondo a DDS (DXT5 + mipmaps)`, () => {
+        const target = Object.keys(files).find((k) => k.startsWith('assets/') && files[k] === session.assets.get(dp.background.file!));
+        if (!target) return 'sin fondo';
+        const { rgba, width, height } = toRgba(files[target] as Uint8Array);
+        const dds = encodeDdsBc3(rgba, width, height, true);
+        const ddsName = target.replace(/\.[^.]+$/, '.dds');
+        delete files[target];
+        files[ddsName] = new Uint8Array(dds);
+        files['display_config.lua'] = (files['display_config.lua'] as string).replace(target, ddsName);
+        return `${width}×${height}, ${Math.round(dds.length / 1024)} KB`;
       });
     }
-    if (opts.writeProfile) {
-      step('Guardar perfil en el vehículo', () => {
-        const f = join(opts.carPath, 'extension', 'display_profile.json');
-        if (existsSync(f)) return 'ya existía';
-        writeFileSync(f, JSON.stringify(profile, null, 2), 'utf8');
-        return 'display_profile.json creado';
+
+    if (opts.install && existsSync(extConfig)) {
+      const conflicts = findConflictingDisplays(readFileSync(extConfig, 'utf8'), display.meshes, display.id);
+      const disabled = new Set((opts.disableSections ?? []).map((d) => `[${d.section}]`));
+      const remaining = conflicts.filter((c) => !disabled.has(c));
+      if (remaining.length) warnings.push(`${tag}ext_config.ini ya define un display sobre la misma malla: ${remaining.join(', ')}. Puede haber conflicto visual.`);
+    }
+
+    // --- escritura ---
+    ok = step(`${tag}Escribir archivos`, () => {
+      if (existsSync(folder)) rmSync(folder, { recursive: true, force: true });
+      mkdirSync(folder, { recursive: true });
+      for (const [rel, data] of Object.entries(files)) {
+        const abs = join(folder, rel);
+        mkdirSync(dirname(abs), { recursive: true });
+        if (typeof data === 'string') writeFileSync(abs, data, 'utf8');
+        else writeFileSync(abs, data);
+      }
+      return `${Object.keys(files).length} archivos en ${folder}`;
+    });
+    if (!ok) continue;
+
+    if (opts.install) {
+      step(`${tag}Añadir INCLUDE a ext_config.ini`, () => {
+        const current = existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '';
+        const updated = upsertIncludeBlock(current, display.id, folderRel);
+        mkdirSync(dirname(extConfig), { recursive: true });
+        writeFileSync(extConfig, updated, 'utf8');
+        return current === '' ? 'ext_config.ini creado' : hasIncludeBlock(current, display.id) ? 'actualizado' : 'añadido';
+      });
+    } else {
+      step(`${tag}Escribir instrucciones de instalación`, () => {
+        writeFileSync(join(base, many ? `INSTALAR_${display.id}.txt` : 'INSTALAR.txt'), files['LEEME.txt'] as string, 'utf8');
       });
     }
-  } else {
-    step('Escribir instrucciones de instalación', () => {
-      writeFileSync(join(base, 'INSTALAR.txt'), files['LEEME.txt'] as string, 'utf8');
+
+    // --- validación posterior ---
+    step(`${tag}Comprobar instalación`, () => {
+      const required = ['display.ini', 'display.lua', 'acdg_runtime.lua', 'display_config.lua'];
+      for (const f of required) if (!existsSync(join(folder, f))) throw new Error(`Falta ${f}`);
+      if (opts.install && !hasIncludeBlock(readFileSync(extConfig, 'utf8'), display.id)) throw new Error('El bloque INCLUDE no se escribió.');
+      const cfg = readFileSync(join(folder, 'display_config.lua'), 'utf8');
+      if (/\{\{[A-Z_]+\}\}/.test(cfg)) throw new Error('Quedan marcadores de plantilla sin resolver.');
     });
   }
 
-  // --- validación posterior ---
-  step('Comprobar instalación', () => {
-    const required = ['display.ini', 'display.lua', 'acdg_runtime.lua', 'display_config.lua'];
-    for (const f of required) if (!existsSync(join(folder, f))) throw new Error(`Falta ${f}`);
-    if (opts.install && !hasIncludeBlock(readFileSync(extConfig, 'utf8'), display.id)) throw new Error('El bloque INCLUDE no se escribió.');
-    const cfg = readFileSync(join(folder, 'display_config.lua'), 'utf8');
-    if (/\{\{[A-Z_]+\}\}/.test(cfg)) throw new Error('Quedan marcadores de plantilla sin resolver.');
-  });
+  if (opts.install && opts.disableSections?.length) {
+    step('Desactivar displays existentes sobre la misma malla', () => {
+      const done: string[] = [];
+      for (const d of opts.disableSections!) {
+        if (!existsSync(d.iniFile)) continue;
+        const txt = readFileSync(d.iniFile, 'utf8');
+        const next = disableSection(txt, d.section);
+        if (next !== txt) {
+          writeFileSync(d.iniFile, next, 'utf8');
+          done.push(`[${d.section}] en ${basename(d.iniFile)}`);
+        }
+      }
+      return done.join(', ') || 'nada que desactivar';
+    });
+  }
+  if (opts.install && opts.writeProfile) {
+    step('Guardar perfil en el vehículo', () => {
+      const f = join(opts.carPath, 'extension', 'display_profile.json');
+      if (existsSync(f)) return 'ya existía';
+      writeFileSync(f, JSON.stringify(profile, null, 2), 'utf8');
+      return 'display_profile.json creado';
+    });
+  }
 
   result.ok = errors.length === 0 && luaOk;
+  if (result.folders.length === 1) result.folder = result.folders[0];
   return result;
 }
 

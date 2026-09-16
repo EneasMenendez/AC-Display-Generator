@@ -1,4 +1,4 @@
-import type { Color, DisplayElement, Project, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
+import type { Color, DisplayElement, DisplayProject, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
 import { resolveRpm } from '@shared/model';
 import { formatBinding } from '@shared/format';
 import { VARIABLE_MAP } from '@shared/variables';
@@ -72,6 +72,13 @@ export interface RuleResult {
   opacity: number;
   color?: Color;
   image?: string;
+}
+
+/** Evalúa la condición de una página (misma semántica que el runtime). */
+export function pageMatches(page: Page, ctx: SimContext): boolean {
+  if (!page.when) return false;
+  const v = ctx.values[page.when.variable];
+  return compare(v, page.when.op, page.when.value, ctx);
 }
 
 export function applyRules(el: DisplayElement, ctx: SimContext): RuleResult {
@@ -474,7 +481,7 @@ function drawTinted(g: CanvasRenderingContext2D, img: HTMLImageElement, x: numbe
 
 /* ---------- escena completa ---------- */
 
-export function drawScene(g: CanvasRenderingContext2D, project: Project, ctx: SimContext, env: DrawEnv, bgImage: HTMLImageElement | null): void {
+export function drawScene(g: CanvasRenderingContext2D, project: DisplayProject, page: Page, ctx: SimContext, env: DrawEnv, bgImage: HTMLImageElement | null): void {
   const { width, height } = project.canvas;
   g.save();
   g.beginPath();
@@ -489,6 +496,6 @@ export function drawScene(g: CanvasRenderingContext2D, project: Project, ctx: Si
       g.fillRect(0, 0, width, height);
     } else g.drawImage(bgImage, 0, 0, width, height);
   }
-  for (const el of project.pages[0].elements) drawElement(g, el, ctx, env);
+  for (const el of page.elements) drawElement(g, el, ctx, env);
   g.restore();
 }

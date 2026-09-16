@@ -11,8 +11,8 @@ import { Icon } from './icons';
 type Step = 'car' | 'display' | 'image' | 'create';
 const STEPS: { id: Step; label: string }[] = [
   { id: 'car', label: '1. Vehículo' },
-  { id: 'display', label: '2. Display' },
-  { id: 'image', label: '3. Imagen de fondo' },
+  { id: 'display', label: '2. Displays' },
+  { id: 'image', label: '3. Imágenes de fondo' },
   { id: 'create', label: '4. Proyecto' },
 ];
 
@@ -20,11 +20,22 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'display';
 }
 
+/** Un display que formará parte del proyecto: definición del perfil + imagen + elementos importados. */
+export interface DisplayEntry {
+  def: DisplayDef;
+  include: boolean;
+  image: ImageInfo | null;
+  layout: LuaImportResult | null;
+  source: 'profile' | 'imported' | 'creator';
+  detected?: DetectedDisplay;
+  notes: string[];
+}
+
 /**
- * Convierte un display detectado en extension/ (sección + script hecho a mano) en un perfil.
+ * Convierte un display detectado en extension/ (sección + script hecho a mano) en una definición de display.
  * Resolución: RESOLUTION del ini → constantes del script → imagen referenciada → textura del material (kn5).
  */
-async function profileFromDetected(carId: string, carName: string, d: DetectedDisplay, carPath: string, kn5File: string | null): Promise<{ profile: DisplayProfile; image: ImageInfo | null; note: string }> {
+async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<{ def: DisplayDef; image: ImageInfo | null; note: string }> {
   let size = d.resolution ?? (d.hints.width && d.hints.height ? { width: d.hints.width, height: d.hints.height } : null);
   let image: ImageInfo | null = null;
   let note = '';
@@ -60,17 +71,39 @@ async function profileFromDetected(carId: string, carName: string, d: DetectedDi
     size = { width: 1024, height: 512 };
     note = 'no se pudo determinar la resolución: revisa el valor antes de generar';
   }
-  const base = (d.scriptRelative ?? d.iniRelative).split('/').pop()!.replace(/\.[^.]+$/, '');
-  const id = slug(base);
-  const profile = ProfileSchema.parse({
+  // nombre: sufijo de la sección si es descriptivo ([SCRIPTABLE_DISPLAY_WHEEL] → "WHEEL"), si no el nombre del script
+  const sec = /^SCRIPTABLE_DISPLAY_?(.*)$/i.exec(d.section)?.[1] ?? '';
+  const scriptBase = (d.scriptRelative ?? d.iniRelative).split('/').pop()!.replace(/\.[^.]+$/, '');
+  const base = sec && !/^\.+$/.test(sec) && !/^\d+$/.test(sec) ? sec : scriptBase;
+  let id = slug(base);
+  let n = 2;
+  while (usedIds.has(id)) id = `${slug(base)}_${n++}`;
+  usedIds.add(id);
+  const def = ProfileSchema.shape.displays.element.parse({
+    id,
+    name: `Display (${base})`,
+    meshes: d.meshes,
+    texture_size: size,
+    keep_background: d.keepBackground,
+    skip_frames: d.skipFrames,
+  });
+  return { def, image, note };
+}
+
+/** Perfil combinado a partir de los displays incluidos (cuando no hay perfil en el coche). */
+function buildProfile(carId: string, carName: string, defs: DisplayDef[], base?: DisplayProfile): DisplayProfile {
+  if (base) {
+    const known = new Set(base.displays.map((d) => d.id));
+    return { ...base, displays: [...base.displays, ...defs.filter((d) => !known.has(d.id))] };
+  }
+  return ProfileSchema.parse({
     profile_version: 2,
-    id: `${carId}.${id}`,
-    name: `${carName} – ${base}`,
+    id: `${carId}.displays`,
+    name: `${carName} – displays`,
     author: 'importado de extension/',
     car_ids: [carId],
-    displays: [{ id, name: `Display (${base})`, meshes: d.meshes, texture_size: size, keep_background: d.keepBackground, skip_frames: d.skipFrames }],
+    displays: defs,
   });
-  return { profile, image, note };
 }
 
 export function Wizard() {
@@ -86,13 +119,8 @@ export function Wizard() {
   const [hits, setHits] = useState<ProfileHit[]>([]);
   const [profileErrors, setProfileErrors] = useState<{ file: string; errors: string[] }[]>([]);
   const [hit, setHit] = useState<ProfileHit | null>(null);
-  const [displayId, setDisplayId] = useState<string>('');
-  const [imported, setImported] = useState<DetectedDisplay | null>(null);
-  const [layout, setLayout] = useState<LuaImportResult | null>(null);
-  const [importNote, setImportNote] = useState('');
+  const [entries, setEntries] = useState<DisplayEntry[]>([]);
   const [creator, setCreator] = useState(false);
-  const [image, setImage] = useState<ImageInfo | null>(null);
-  const [noImage, setNoImage] = useState(false);
   const [name, setName] = useState('');
   const [autoMsg, setAutoMsg] = useState('');
 
@@ -110,36 +138,41 @@ export function Wizard() {
         setHits(pr.hits);
         setProfileErrors(pr.errors);
 
-        // 1) display generado por esta aplicación con proyecto → se carga directamente
+        // 1) display(s) generados por esta aplicación con proyecto → se carga el proyecto directamente
         const own = sc.displays.filter((d) => d.acdg?.projectFile);
-        if (own.length === 1 && sc.displays.length === 1) {
+        const manual = sc.displays.filter((d) => !d.acdg && d.meshes.length > 0);
+        if (own.length >= 1 && manual.length === 0) {
           setAutoMsg('Display generado por AC Display Generator encontrado: abriendo el proyecto…');
           await openProjectFlow(own[0].acdg!.projectFile!, car.path);
           return;
         }
-        // 2) perfil distribuido dentro del vehículo (extension/display_profile.json)
+        // 2) perfil distribuido dentro del vehículo
         const carProfile = pr.hits.find((h) => h.source === 'car');
-        const manual = sc.displays.filter((d) => !d.acdg && d.meshes.length > 0);
         if (carProfile) {
           setHit(carProfile);
-          setDisplayId(carProfile.profile.displays[0].id);
-          setAutoMsg(`Perfil "${carProfile.profile.name}" encontrado en el vehículo.`);
-        } else if (manual.length === 1) {
-          // 3) un único display hecho a mano → se importa automáticamente (malla, resolución, imagen y elementos del script)
-          const imp = await importDetected(manual[0], sc);
-          if (imp && imp.layout && imp.layout.elements.length > 0 && imp.image) {
-            // todo cargado: se abre el editor directamente
-            await createFrom(imp.hit, imp.hit.profile.displays[0], imp.image, imp.layout, `${car.name} Display`);
+          setEntries(carProfile.profile.displays.map((def) => ({ def, include: true, image: null, layout: null, source: 'profile', notes: [] })));
+          setAutoMsg(`Perfil "${carProfile.profile.name}" encontrado en el vehículo (${carProfile.profile.displays.length} display${carProfile.profile.displays.length === 1 ? '' : 's'}).`);
+          return;
+        }
+        // 3) displays hechos a mano → se importan todos (malla, resolución, imagen y elementos del script)
+        if (manual.length > 0) {
+          const list = await importAll(manual, sc);
+          if (cancelled) return;
+          const complete = list.length > 0 && list.every((e) => e.image && e.layout && e.layout.elements.length > 0);
+          if (complete) {
+            await createFrom(list, `${car.name} Display`);
             return;
           }
-        } else if (pr.hits[0]) {
-          // 4) perfil de la biblioteca o incluido con la aplicación
-          setHit(pr.hits[0]);
-          setDisplayId(pr.hits[0].profile.displays[0].id);
-        } else if (manual.length === 0 && own.length === 0) {
-          // 5) nada: modo creador (elegir malla del kn5)
-          setCreator(true);
+          return;
         }
+        // 4) perfil de la biblioteca o incluido con la aplicación
+        if (pr.hits[0]) {
+          setHit(pr.hits[0]);
+          setEntries(pr.hits[0].profile.displays.map((def) => ({ def, include: true, image: null, layout: null, source: 'profile', notes: [] })));
+          return;
+        }
+        // 5) nada: modo creador (elegir malla del kn5)
+        setCreator(true);
       } catch (e) {
         if (!cancelled) toast(`No se pudo analizar la carpeta extension: ${(e as Error).message}`, 'err');
       } finally {
@@ -152,102 +185,100 @@ export function Wizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [car]);
 
-  async function importDetected(d: DetectedDisplay, sc: ExtensionScan | null = scan): Promise<{ hit: ProfileHit; image: ImageInfo | null; layout: LuaImportResult | null } | null> {
-    if (!car) return null;
-    const r = await profileFromDetected(car.id, car.name, d, car.path, car.mainKn5);
-    const h: ProfileHit = { profile: r.profile, file: `${sc?.extDir ?? ''}\\${d.iniRelative}`, source: 'manual' };
-    let image = r.image;
-    let lay: LuaImportResult | null = null;
-    const notes: string[] = r.note ? [r.note] : [];
-    // el script se ejecuta en un simulador para extraer todos sus textos, barras, imágenes e iconos
-    if (d.script && d.scriptExists && d.scriptValid) {
-      const size = r.profile.displays[0].texture_size;
-      try {
-        lay = await api.importLua(d.script, size.width, size.height);
-        notes.push(...lay.warnings);
-        if (!image && lay.background) image = await api.imageInfo(lay.background);
-        notes.unshift(`${lay.elements.length} elementos importados del script (${lay.calls} llamadas de dibujo).`);
-      } catch (e) {
-        notes.push(`No se pudo importar el script: ${(e as Error).message}`);
+  /** Importa una lista de displays detectados y los deja como entradas del proyecto. */
+  async function importAll(list: DetectedDisplay[], sc: ExtensionScan | null = scan): Promise<DisplayEntry[]> {
+    if (!car) return [];
+    const usedIds = new Set(entries.filter((e) => e.source !== 'imported').map((e) => e.def.id));
+    const out: DisplayEntry[] = [];
+    for (const d of list) {
+      const r = await defFromDetected(d, car.path, car.mainKn5, usedIds);
+      let image = r.image;
+      let lay: LuaImportResult | null = null;
+      const notes: string[] = r.note ? [r.note] : [];
+      // el script se ejecuta en un simulador para extraer todos sus textos, barras, imágenes e iconos
+      if (d.script && d.scriptExists && d.scriptValid) {
+        try {
+          lay = await api.importLua(d.script, r.def.texture_size.width, r.def.texture_size.height);
+          notes.push(...lay.warnings);
+          if (!image && lay.background) image = await api.imageInfo(lay.background);
+          notes.unshift(`${lay.elements.length} elementos importados del script (${lay.calls} llamadas de dibujo).`);
+        } catch (e) {
+          notes.push(`No se pudo importar el script: ${(e as Error).message}`);
+        }
       }
+      out.push({ def: r.def, include: true, image, layout: lay, source: 'imported', detected: d, notes });
     }
-    setHit(h);
-    setDisplayId(r.profile.displays[0].id);
-    setImported(d);
-    setLayout(lay);
-    setImportNote(notes.join(' '));
+    const next = [...entries.filter((e) => e.source !== 'imported' || !list.some((d) => d.section === e.detected?.section && d.iniFile === e.detected?.iniFile)), ...out];
+    setEntries(next);
     setCreator(false);
-    if (image) {
-      setImage(image);
-      setNoImage(false);
-    }
-    setAutoMsg(`Display "${d.section}" importado desde ${d.iniRelative}${image ? ` con la imagen ${image.file.split(/[\\/]/).pop()}` : ''}.`);
-    return { hit: h, image, layout: lay };
+    const prof = buildProfile(car.id, car.name, next.map((e) => e.def), hit?.source === 'car' ? hit.profile : undefined);
+    setHit({ profile: prof, file: sc?.extDir ?? '', source: 'manual' });
+    setAutoMsg(`${out.length} display${out.length === 1 ? '' : 's'} importado${out.length === 1 ? '' : 's'} desde extension/: ${out.map((e) => e.def.name).join(', ')}.`);
+    return next;
   }
 
   if (!car) return null;
-  const display: DisplayDef | undefined = hit?.profile.displays.find((d) => d.id === displayId);
+  const included = entries.filter((e) => e.include);
 
-  async function pickImage() {
+  async function pickImageFor(i: number) {
     const img = await api.pickImage();
     if (!img) return;
     if (img.error) toast(img.error, 'err');
-    setImage(img);
-    setNoImage(false);
+    setEntries((prev) => prev.map((e, j) => (j === i ? { ...e, image: img } : e)));
   }
 
-  async function createFrom(h: ProfileHit, d: DisplayDef, img: ImageInfo | null, lay: LuaImportResult | null, projectName: string) {
+  async function createFrom(list: DisplayEntry[], projectName: string) {
     if (!car) return;
+    const inc = list.filter((e) => e.include);
+    if (inc.length === 0) return;
+    const prof = buildProfile(car.id, car.name, inc.map((e) => e.def), hit?.source === 'car' ? hit.profile : undefined);
     await api.newProject();
     const project = createEmptyProject({
       name: projectName.trim() || `${car.name} Display`,
-      profileId: h.profile.id,
-      profileVersion: h.profile.profile_version,
+      profileId: prof.id,
+      profileVersion: prof.profile_version,
       carId: car.id,
-      displayId: d.id,
-      width: d.texture_size.width,
-      height: d.texture_size.height,
       appVersion: info?.version ?? '0.0.0',
+      displays: inc.map((e) => ({ displayId: e.def.id, name: e.def.name, width: e.def.texture_size.width, height: e.def.texture_size.height })),
     });
     const assets: Record<string, string> = {};
-    if (img) {
-      const added = await api.addAssetFile(img.file, 'assets');
-      project.background.file = added.path;
-      assets[added.path] = img.dataUrl ?? added.dataUrl;
-    }
-    if (lay) {
-      // las imágenes/iconos del script se copian como recursos del proyecto
-      for (const el of lay.elements) {
-        try {
-          if (el.type === 'image' && el.config.file && /[\\/]/.test(el.config.file)) {
-            const a = await api.addAssetFile(el.config.file, 'assets');
-            el.config.file = a.path;
-            assets[a.path] = a.dataUrl;
-          } else if (el.type === 'icon' && el.config.icon && !el.config.icon.startsWith('builtin:') && /[\\/]/.test(el.config.icon)) {
-            const a = await api.addAssetFile(el.config.icon, 'assets/icons');
-            el.config.icon = a.path;
-            assets[a.path] = a.dataUrl;
-          }
-        } catch {
-          /* recurso no copiable: el elemento queda sin imagen */
-        }
+    for (let i = 0; i < inc.length; i++) {
+      const e = inc[i];
+      const dp = project.displays[i];
+      if (e.image) {
+        const added = await api.addAssetFile(e.image.file, 'assets');
+        dp.background.file = added.path;
+        assets[added.path] = e.image.dataUrl ?? added.dataUrl;
       }
-      project.pages[0].elements.push(...lay.elements);
+      if (e.layout) {
+        // las imágenes/iconos del script se copian como recursos del proyecto
+        for (const el of e.layout.elements) {
+          try {
+            if (el.type === 'image' && el.config.file && /[\\/]/.test(el.config.file)) {
+              const a = await api.addAssetFile(el.config.file, 'assets');
+              el.config.file = a.path;
+              assets[a.path] = a.dataUrl;
+            } else if (el.type === 'icon' && el.config.icon && !el.config.icon.startsWith('builtin:') && /[\\/]/.test(el.config.icon)) {
+              const a = await api.addAssetFile(el.config.icon, 'assets/icons');
+              el.config.icon = a.path;
+              assets[a.path] = a.dataUrl;
+            }
+          } catch {
+            /* recurso no copiable: el elemento queda sin imagen */
+          }
+        }
+        dp.pages[0].elements.push(...e.layout.elements);
+      }
     }
-    setProfile(h.profile, h.file);
+    setProfile(prof, hit?.file ?? null);
     setAssets(assets);
     loadProject(project, null);
-    if (lay?.warnings.length) toast(lay.warnings[0], 'err');
-  }
-
-  async function create() {
-    if (!hit || !display) return;
-    await createFrom(hit, display, image && !noImage ? image : null, layout, name);
+    const warn = inc.flatMap((e) => e.layout?.warnings ?? []);
+    if (warn.length) toast(warn[0], 'err');
   }
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
-  const canNext = step === 'car' ? car.valid && !scanning : step === 'display' ? !!display : step === 'image' ? !!image || noImage : true;
-  const sizeOk = !image || !display || (image.width === display.texture_size.width && image.height === display.texture_size.height);
+  const canNext = step === 'car' ? car.valid && !scanning : step === 'display' ? included.length > 0 : true;
 
   return (
     <div className="wizard">
@@ -270,88 +301,83 @@ export function Wizard() {
       {step === 'display' && (
         <DisplayStep
           scan={scan}
-          imported={imported}
-          importNote={importNote}
-          onImport={(d) => importDetected(d)}
+          entries={entries}
+          onToggle={(i, v) => setEntries((prev) => prev.map((e, j) => (j === i ? { ...e, include: v } : e)))}
+          onImport={(d) => importAll([d])}
           hits={hits}
           errors={profileErrors}
           hit={hit}
-          displayId={displayId}
+          displayId={entries[0]?.def.id ?? ''}
           creator={creator}
           setCreator={setCreator}
-          onPick={(h, d) => {
+          onPick={(h) => {
             setHit(h);
-            setDisplayId(d);
-            setImported(null);
-            setLayout(null);
+            setEntries(h.profile.displays.map((def) => ({ def, include: true, image: null, layout: null, source: 'profile', notes: [] })));
             setCreator(false);
           }}
           onCreated={(h) => {
-            setHits((prev) => [h, ...prev.filter((x) => x.profile.id !== h.profile.id)]);
-            setHit(h);
-            setDisplayId(h.profile.displays[0].id);
-            setImported(null);
-            setLayout(null);
+            // el modo creador añade su display a la lista (sin descartar los importados)
+            const def = h.profile.displays[0];
+            setEntries((prev) => [...prev.filter((e) => e.def.id !== def.id), { def, include: true, image: null, layout: null, source: 'creator', notes: [] }]);
+            setHit((prev) => ({ profile: buildProfile(car.id, car.name, [...entries.map((e) => e.def).filter((d) => d.id !== def.id), def], prev?.source === 'car' ? prev.profile : undefined), file: h.file, source: h.source }));
             setCreator(false);
           }}
         />
       )}
-      {step === 'image' && display && (
-        <div className="card">
-          <p>
-            El display usa una textura de <b>{display.texture_size.width} × {display.texture_size.height} px</b> en la malla <code>{display.meshes.join(', ')}</code>.
-            {image && !noImage ? ' Imagen de fondo detectada automáticamente; puedes cambiarla.' : ' Selecciona la imagen de fondo con esa resolución (PNG recomendado).'}
-          </p>
-          <div className="row">
-            <button className={image ? 'outline' : 'primary'} onClick={pickImage}>
-              {image ? 'Cambiar imagen…' : 'Seleccionar imagen…'}
-            </button>
-            <label className="row">
-              <input type="checkbox" checked={noImage} onChange={(e) => setNoImage(e.target.checked)} /> Sin imagen (fondo de color plano)
-            </label>
-          </div>
-          {image && !noImage && (
-            <div className="mt8 row" style={{ alignItems: 'flex-start' }}>
-              {image.dataUrl ? <img className="imgprev" src={image.dataUrl} alt="" /> : <div className="imgprev" style={{ width: 200, height: 120 }} />}
-              <table className="info">
-                <tbody>
-                  <tr>
-                    <td>Archivo</td>
-                    <td className="mono small">{image.file}</td>
-                  </tr>
-                  <tr>
-                    <td>Formato</td>
-                    <td>
-                      {image.format.toUpperCase()} {image.ddsFormat ? `(${image.ddsFormat})` : ''}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Resolución</td>
-                    <td>
-                      {image.width} × {image.height} px{' '}
-                      {sizeOk ? <span className="badge ok">coincide</span> : <span className="badge warn">no coincide con el display: se escalará al generar</span>}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Canal alfa</td>
-                    <td>
-                      {image.hasAlpha ? 'sí' : 'no'}
-                      {image.hasAlpha && display.keep_background && <span className="muted small"> — el runtime repinta el fondo cada frame para evitar rastros</span>}
-                    </td>
-                  </tr>
-                  {image.error && (
-                    <tr>
-                      <td>Aviso</td>
-                      <td className="warn">{image.error}</td>
-                    </tr>
+      {step === 'image' && (
+        <div className="col">
+          {included.map((e) => {
+            const i = entries.indexOf(e);
+            const sizeOk = !e.image || (e.image.width === e.def.texture_size.width && e.image.height === e.def.texture_size.height);
+            return (
+              <div key={e.def.id} className="card">
+                <div className="row mb8">
+                  <b>{e.def.name}</b>
+                  <span className="muted small">
+                    malla <code>{e.def.meshes.join(', ')}</code> · {e.def.texture_size.width} × {e.def.texture_size.height} px
+                  </span>
+                  <span className="grow" />
+                  <button className={e.image ? 'outline small' : 'primary small'} onClick={() => pickImageFor(i)}>
+                    {e.image ? 'Cambiar imagen…' : 'Seleccionar imagen…'}
+                  </button>
+                  {e.image && (
+                    <button className="icon" title="Sin imagen (color plano)" onClick={() => setEntries((prev) => prev.map((x, j) => (j === i ? { ...x, image: null } : x)))}>
+                      <Icon name="close" size={12} />
+                    </button>
                   )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </div>
+                {e.image ? (
+                  <div className="row" style={{ alignItems: 'flex-start' }}>
+                    {e.image.dataUrl ? <img className="imgprev" src={e.image.dataUrl} alt="" style={{ maxHeight: 160 }} /> : <div className="imgprev" style={{ width: 200, height: 100 }} />}
+                    <table className="info">
+                      <tbody>
+                        <tr>
+                          <td>Archivo</td>
+                          <td className="mono small">{e.image.file}</td>
+                        </tr>
+                        <tr>
+                          <td>Formato</td>
+                          <td>
+                            {e.image.format.toUpperCase()} {e.image.ddsFormat ? `(${e.image.ddsFormat})` : ''} · {e.image.width} × {e.image.height} px{' '}
+                            {sizeOk ? <span className="badge ok">coincide</span> : <span className="badge warn">no coincide: se escalará</span>}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Canal alfa</td>
+                          <td>{e.image.hasAlpha ? 'sí' : 'no'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="muted small">Sin imagen: fondo de color plano (puedes añadirla después desde las propiedades del display).</div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
-      {step === 'create' && display && (
+      {step === 'create' && (
         <div className="card">
           <div className="prop">
             <label>Nombre del proyecto</label>
@@ -363,35 +389,25 @@ export function Wizard() {
                 <td>Vehículo</td>
                 <td>{car.name}</td>
               </tr>
-              <tr>
-                <td>Display</td>
-                <td>
-                  {display.name} — malla <code>{display.meshes.join(', ')}</code> — {display.texture_size.width} × {display.texture_size.height} px
-                  {imported && <span className="muted small"> (importado de {imported.iniRelative})</span>}
-                </td>
-              </tr>
-              <tr>
-                <td>Fondo</td>
-                <td>{noImage || !image ? 'color plano' : image.file}</td>
-              </tr>
-              {layout && (
-                <tr>
-                  <td>Elementos del script</td>
+              {included.map((e) => (
+                <tr key={e.def.id}>
+                  <td>{e.def.name}</td>
                   <td>
-                    {layout.elements.length} importados ({layout.elements.map((e) => e.type).filter((t, i, a) => a.indexOf(t) === i).join(', ')})
-                    {layout.warnings.length > 0 && <div className="warn small">{layout.warnings.join(' ')}</div>}
+                    malla <code>{e.def.meshes.join(', ')}</code> — {e.def.texture_size.width} × {e.def.texture_size.height} px — fondo: {e.image ? e.image.file.split(/[\\/]/).pop() : 'color plano'}
+                    {e.layout && (
+                      <div className="small muted">
+                        {e.layout.elements.length} elementos importados ({e.layout.elements.map((x) => x.type).filter((t, i, a) => a.indexOf(t) === i).join(', ')})
+                      </div>
+                    )}
+                    {e.notes.length > 0 && <div className="warn small">{e.notes.join(' ')}</div>}
+                    {e.detected && (
+                      <div className="small muted">
+                        Al generar se creará <code>acdg/{e.def.id}/</code> y se ofrecerá desactivar la sección original <code>[{e.detected.section}]</code>. El script original no se borra.
+                      </div>
+                    )}
                   </td>
                 </tr>
-              )}
-              {imported && (
-                <tr>
-                  <td>Al generar</td>
-                  <td className="small muted">
-                    Se creará <code>acdg/{display.id}/</code>, se añadirá el INCLUDE a <code>ext_config.ini</code> y se ofrecerá desactivar la sección original <code>[{imported.section}]</code> para que
-                    no se dibujen dos displays sobre la misma malla. El script original no se borra.
-                  </td>
-                </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
@@ -406,7 +422,7 @@ export function Wizard() {
             Siguiente
           </button>
         ) : (
-          <button className="primary" onClick={create}>
+          <button className="primary" disabled={included.length === 0} onClick={() => createFrom(entries, name)}>
             Abrir editor
           </button>
         )}
@@ -492,8 +508,8 @@ function CarStep({ scan, scanning, autoMsg }: { scan: ExtensionScan | null; scan
 
 function DisplayStep(props: {
   scan: ExtensionScan | null;
-  imported: DetectedDisplay | null;
-  importNote: string;
+  entries: DisplayEntry[];
+  onToggle: (i: number, v: boolean) => void;
   onImport: (d: DetectedDisplay) => void;
   hits: ProfileHit[];
   errors: { file: string; errors: string[] }[];
@@ -504,11 +520,32 @@ function DisplayStep(props: {
   onPick: (h: ProfileHit, displayId: string) => void;
   onCreated: (h: ProfileHit) => void;
 }) {
-  const { scan, imported, importNote, onImport } = props;
+  const { scan, entries, onToggle, onImport } = props;
   const car = useStore((s) => s.car)!;
   const detected = scan?.displays ?? [];
+  const isEntry = (d: DetectedDisplay) => entries.find((e) => e.detected && e.detected.section === d.section && e.detected.iniFile === d.iniFile);
   return (
     <div className="col">
+      <div className="card">
+        <h3>Displays del proyecto ({entries.filter((e) => e.include).length})</h3>
+        {entries.length === 0 && <div className="muted small">Todavía no hay displays. Importa uno detectado, elige un perfil o crea uno con el modo creador.</div>}
+        {entries.map((e, i) => (
+          <label key={e.def.id} className="row mb8" style={{ alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={e.include} onChange={(ev) => onToggle(i, ev.target.checked)} style={{ marginTop: 3 }} />
+            <div className="grow">
+              <div>
+                <b>{e.def.name}</b> <span className="badge">{e.source === 'imported' ? 'importado' : e.source === 'creator' ? 'creado' : 'perfil'}</span>
+              </div>
+              <div className="small muted">
+                malla <code>{e.def.meshes.join(', ')}</code> · {e.def.texture_size.width}×{e.def.texture_size.height}
+                {e.image && ` · imagen ${e.image.file.split(/[\\/]/).pop()}`}
+                {e.layout && ` · ${e.layout.elements.length} elementos`}
+              </div>
+              {e.notes.length > 0 && <div className="warn small">{e.notes.join(' ')}</div>}
+            </div>
+          </label>
+        ))}
+      </div>
       {detected.length > 0 && (
         <div className="card">
           <h3>Displays encontrados en extension/</h3>
@@ -516,8 +553,7 @@ function DisplayStep(props: {
             <div key={d.iniFile + d.section} className="row mb8" style={{ alignItems: 'flex-start' }}>
               <div className="grow">
                 <div>
-                  <b>[{d.section}]</b> <span className="muted small">{d.iniRelative}</span>{' '}
-                  {imported?.section === d.section && imported.iniFile === d.iniFile && <span className="badge ok">importado</span>}
+                  <b>[{d.section}]</b> <span className="muted small">{d.iniRelative}</span> {isEntry(d) && <span className="badge ok">en el proyecto</span>}
                 </div>
                 <div className="small muted">
                   malla <code>{d.meshes.join(', ') || '—'}</code>
@@ -541,16 +577,15 @@ function DisplayStep(props: {
                   Abrir proyecto
                 </button>
               ) : (
-                <button className="small outline" disabled={d.meshes.length === 0} onClick={() => onImport(d)}>
-                  Importar
+                <button className="small outline" disabled={d.meshes.length === 0 || !!isEntry(d)} onClick={() => onImport(d)}>
+                  {isEntry(d) ? 'Importado' : 'Importar'}
                 </button>
               )}
             </div>
           ))}
-          {imported && importNote && <div className="warn small">{importNote}</div>}
         </div>
       )}
-      {detected.length === 0 && scan && (
+      {detected.length === 0 && scan && entries.length === 0 && (
         <div className="card muted">
           No hay ningún display definido en <code>extension/</code> de {car.name}. Crea uno nuevo eligiendo la malla del modelo 3D.
         </div>

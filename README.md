@@ -16,11 +16,12 @@ Funciona de punta a punta:
 - Editor: zoom/pan, arrastrar, tiradores, selección múltiple, marco, rejilla, ajuste a bordes/centros/elementos con guías, deshacer/rehacer, copiar/pegar/duplicar, capas (orden, ocultar, bloquear, renombrar), alinear/distribuir, atajos.
 - Catálogo de datos: ~70 variables seleccionadas con etiquetas en español + **todos los campos numéricos/booleanos del SDK de CSP** (`car`, `car.wheels[i]`, `sim`, sesión; ~500 más) generados con `tools/gen_variables.py` y seleccionables desde un buscador.
 - Elementos: texto dinámico, marcha, barra RPM (segmentos/continua, zonas, limitador), shift light (histéresis, parpadeo), barra genérica (umbrales, bipolar, suavizado), indicador circular, icono (23 integrados + importados), imagen, rectángulo, círculo, línea; reglas de estado (color, visibilidad, opacidad, parpadeo) con RPM relativas al limitador.
+- **Varios displays por coche** (dash, volante, navegador…) en un mismo proyecto, con selector en la barra superior; cada display con **varias páginas** (pestañas), condición automática por página (p. ej. "Boxes" cuando `in_pitlane`) y cambio con un botón extra de CSP (`extraA…H`, con vuelta al inicio y memoria entre sesiones). Al generar se instalan todos los displays seleccionados, cada uno en su carpeta `acdg/<display>/`.
 - Simulación con sliders, escenarios, RPM automáticas, ambiente día/noche, modo replay (variables sin físicas).
 - Proyecto `.acdisplay` (ZIP con `project.json` + assets), recientes, autoguardado de recuperación.
 - Generación: runtime Lua estable + `display_config.lua` de datos, `display.ini`, `[INCLUDE]` entre marcadores en `ext_config.ini`, backup, restaurar, desinstalar, exportar paquete sin instalar, DDS opcional, validación sintáctica del Lua.
 
-Pendiente (ver fases en los requerimientos): páginas, fuentes DWrite empaquetadas probadas en juego, atlas de iconos, biblioteca de perfiles con versionado, lanzamiento de sesión desde Content Manager, instalador firmado, inglés.
+Pendiente (ver fases en los requerimientos): fuentes DWrite empaquetadas probadas en juego, atlas de iconos, biblioteca de perfiles con versionado, lanzamiento de sesión desde Content Manager, instalador firmado, inglés.
 
 ## Desarrollo
 

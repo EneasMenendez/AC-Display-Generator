@@ -619,6 +619,53 @@ local function drawElement(el)
 end
 
 -- ------------------------------------------------------------
+-- Páginas: condición automática (page.when) > botón (settings.pageSwitch.input) > primera
+-- ------------------------------------------------------------
+
+local manualPage = 1
+local lastButton = false
+local pageStorage = nil
+
+local function initPages()
+  manualPage = 1
+  local ps = cfg.settings.pageSwitch
+  if ps and ps.remember and ps.input ~= 'none' and ac.storage then
+    local ok, st = pcall(ac.storage, { page = 1 })
+    if ok and st then
+      pageStorage = st
+      manualPage = math.max(1, math.min(#cfg.pages, tonumber(st.page) or 1))
+    end
+  end
+end
+
+local function currentPage()
+  local pages = cfg.pages
+  local n = #pages
+  if n == 0 then return nil end
+  -- condiciones automáticas por orden
+  for i = 1, n do
+    local w = pages[i].when
+    if w and compare(getVar(w.variable), w.op, w.value) then return pages[i] end
+  end
+  local ps = cfg.settings.pageSwitch
+  if ps and ps.input and ps.input ~= 'none' then
+    local pressed = car[ps.input] == true
+    if pressed and not lastButton then
+      manualPage = manualPage + 1
+      if manualPage > n then manualPage = ps.wrap == false and n or 1 end
+      if pageStorage then pageStorage.page = manualPage end
+    end
+    lastButton = pressed
+  end
+  if manualPage > n then manualPage = 1 end
+  return pages[manualPage]
+end
+
+function ACDG.setPage(i)
+  manualPage = math.max(1, math.min(#cfg.pages, i))
+end
+
+-- ------------------------------------------------------------
 -- Ciclo de vida
 -- ------------------------------------------------------------
 
@@ -632,8 +679,10 @@ function ACDG.init(config, dir)
   cfg.varMeta = cfg.varMeta or {}
   cfg.fonts = cfg.fonts or {}
   cfg.defaults = cfg.defaults or {}
+  cfg.pages = cfg.pages or {}
   state = {}
   fonts = {}
+  initPages()
 end
 
 function ACDG.setBrightness(b)
@@ -681,7 +730,7 @@ function ACDG.update(dt)
     ui.drawImage(scriptDir .. '/' .. cfg.background.file, p1, p2, col(WHITE, 1))
   end
 
-  local page = cfg.pages[ACDG.currentPage or 1] or cfg.pages[1]
+  local page = currentPage()
   if not page then return end
   local els = page.elements
   for i = 1, #els do

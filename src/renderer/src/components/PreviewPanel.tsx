@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { VARIABLES, VARIABLE_MAP } from '@shared/variables';
 import { collectVariables } from '@shared/generator';
-import { useStore } from '../store';
+import { useStore, activeDisplayOf } from '../store';
 
 const MAIN = ['rpm', 'speed', 'gear', 'throttle', 'brake', 'fuel', 'water_temp', 'oil_temp', 'oil_pressure', 'delta', 'lap_time', 'last_lap', 'best_lap', 'battery_voltage', 'turbo_boost', 'race_position'];
 const MAIN_BOOL = ['limiter_on', 'abs_active', 'tc_active', 'headlights', 'high_beams', 'turn_left', 'turn_right', 'pit_limiter', 'in_pitlane', 'is_replay', 'drs_active'];
@@ -15,7 +15,11 @@ const SCENARIOS: { label: string; values: Record<string, number | boolean> }[] =
 ];
 
 export function PreviewPanel() {
-  const project = useStore((s) => s.project);
+  const dp = useStore(activeDisplayOf);
+  const activePage = useStore((s) => s.activePage);
+  const setActivePage = useStore((s) => s.setActivePage);
+  const followPageRules = useStore((s) => s.followPageRules);
+  const setFollowPageRules = useStore((s) => s.setFollowPageRules);
   const sim = useStore((s) => s.sim);
   const setSim = useStore((s) => s.setSim);
   const resetSim = useStore((s) => s.resetSim);
@@ -26,16 +30,16 @@ export function PreviewPanel() {
   const profile = useStore((s) => s.profile);
 
   const ids = useMemo(() => {
-    const used = project ? collectVariables(project) : [];
+    const used = dp ? collectVariables(dp) : [];
     const all = [...new Set([...used, ...MAIN])].filter((id) => VARIABLE_MAP[id] && VARIABLE_MAP[id].type !== 'boolean');
     return all;
-  }, [project]);
+  }, [dp]);
   const bools = useMemo(() => {
-    const used = project ? collectVariables(project) : [];
+    const used = dp ? collectVariables(dp) : [];
     return [...new Set([...used, ...MAIN_BOOL])].filter((id) => VARIABLE_MAP[id]?.type === 'boolean');
-  }, [project]);
+  }, [dp]);
 
-  const limiter = profile?.displays.find((d) => d.id === project?.display_id)?.defaults.rpm_limiter ?? 8000;
+  const limiter = profile?.displays.find((d) => d.id === dp?.display_id)?.defaults.rpm_limiter ?? 8000;
 
   return (
     <div>
@@ -58,6 +62,21 @@ export function PreviewPanel() {
         <button className="scenario" onClick={resetSim}>
           Reiniciar
         </button>
+        {dp && dp.pages.length > 1 && (
+          <span className="row" style={{ gap: 2, marginLeft: 8 }}>
+            <span className="muted small">Página:</span>
+            {dp.pages.map((pg, i) => (
+              <button key={pg.id} className={`scenario ${i === activePage && !followPageRules ? 'active' : ''}`} onClick={() => (setFollowPageRules(false), setActivePage(i))}>
+                {pg.name}
+              </button>
+            ))}
+            {dp.pages.some((pg) => pg.when) && (
+              <button className={`scenario ${followPageRules ? 'active' : ''}`} onClick={() => setFollowPageRules(!followPageRules)} title="En modo previsualización, cambiar de página según las condiciones (como en el juego)">
+                Automático
+              </button>
+            )}
+          </span>
+        )}
         <span className="grow" />
         <label className="row small muted">
           Ambiente día/noche

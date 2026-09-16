@@ -165,6 +165,8 @@ export interface InstallOptions {
   disableSections?: { iniFile: string; section: string }[];
   /** guardar el perfil en <coche>/extension/display_profile.json si no existe */
   writeProfile?: boolean;
+  /** displays del proyecto a generar (por defecto todos) */
+  displayIds?: string[];
 }
 
 export interface InstallStep {
@@ -176,7 +178,10 @@ export interface InstallStep {
 export interface InstallResult {
   ok: boolean;
   steps: InstallStep[];
+  /** carpeta generada (si hay un solo display) o carpeta acdg/ */
   folder: string;
+  /** carpetas generadas, una por display */
+  folders: string[];
   warnings: string[];
   errors: string[];
 }

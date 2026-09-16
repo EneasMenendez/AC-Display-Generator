@@ -1,4 +1,4 @@
-import type { DisplayElement, Project } from './model';
+import type { DisplayElement, DisplayProject, Project } from './model';
 import type { DisplayDef, DisplayProfile } from './profile';
 import { VARIABLE_MAP, type VariableDef } from './variables';
 
@@ -59,10 +59,11 @@ export function toLua(value: unknown, indent = 0): string {
 
 /* ---------- Recolección de variables usadas ---------- */
 
-export function collectVariables(project: Project): string[] {
+export function collectVariables(display: DisplayProject): string[] {
   const ids = new Set<string>();
   const add = (id?: string) => id && ids.add(id);
-  for (const page of project.pages) {
+  for (const page of display.pages) {
+    if (page.when) add(page.when.variable);
     for (const el of page.elements) {
       for (const r of el.rules) add(r.when.variable);
       switch (el.type) {
@@ -124,7 +125,7 @@ export interface GeneratedConfig {
   variables: string[];
 }
 
-export function generateConfigLua(project: Project, display: DisplayDef): GeneratedConfig {
+export function generateConfigLua(project: Project, dp: DisplayProject, display: DisplayDef): GeneratedConfig {
   const assets: AssetRef[] = [];
   const addAsset = (source: string): string => {
     const target = assetTarget(source);
@@ -132,7 +133,7 @@ export function generateConfigLua(project: Project, display: DisplayDef): Genera
     return target;
   };
 
-  const variables = collectVariables(project);
+  const variables = collectVariables(dp);
   const vars: Record<string, LuaRaw> = {};
   const varMeta: Record<string, unknown> = {};
   for (const id of variables) {
@@ -141,17 +142,17 @@ export function generateConfigLua(project: Project, display: DisplayDef): Genera
     varMeta[id] = { unit: def.unit, type: def.type, fallback: def.fallback };
   }
 
-  const pages = project.pages.map((p) => ({
+  const pages = dp.pages.map((p) => ({
     id: p.id,
+    name: p.name,
+    when: p.when,
     elements: p.elements.filter((e) => e.visible || e.rules.some((r) => r.set.visible)).map((el) => serializeElement(el, addAsset)),
   }));
 
-  const background = project.background.file
-    ? { file: addAsset(project.background.file), color: project.background.color }
-    : { color: project.background.color };
+  const background = dp.background.file ? { file: addAsset(dp.background.file), color: dp.background.color } : { color: dp.background.color };
 
   const fonts: Record<string, { name: string; dir?: string }> = {};
-  for (const [name, file] of Object.entries(project.fonts)) {
+  for (const [name, file] of Object.entries(dp.fonts)) {
     assets.push({ source: file, target: `fonts/${safeName(file.split(/[\\/]/).pop() ?? file)}` });
     fonts[name] = { name, dir: 'fonts' };
   }
@@ -161,17 +162,18 @@ export function generateConfigLua(project: Project, display: DisplayDef): Genera
     runtimeVersion: RUNTIME_VERSION,
     display: {
       id: display.id,
-      width: project.canvas.width,
-      height: project.canvas.height,
+      width: dp.canvas.width,
+      height: dp.canvas.height,
       keepBackground: display.keep_background,
       maxDistance: display.max_distance_m,
     },
     background,
     settings: {
-      units: project.settings.units,
-      brightness: project.settings.brightness * display.emissive.brightness_default,
-      nightBrightness: project.settings.nightBrightness,
-      nightMode: project.settings.nightMode,
+      units: dp.settings.units,
+      brightness: dp.settings.brightness * display.emissive.brightness_default,
+      nightBrightness: dp.settings.nightBrightness,
+      nightMode: dp.settings.nightMode,
+      pageSwitch: dp.settings.pageSwitch,
     },
     defaults: {
       rpmLimiter: display.defaults.rpm_limiter,
@@ -344,7 +346,7 @@ export function findConflictingDisplays(extConfig: string, meshes: string[], own
 
 /* ---------- LEEME ---------- */
 
-export function generateReadme(project: Project, display: DisplayDef, folder: string): string {
+export function generateReadme(project: Project, dp: DisplayProject, display: DisplayDef, folder: string): string {
   return [
     'AC Display Generator — display generado',
     '========================================',
@@ -352,7 +354,8 @@ export function generateReadme(project: Project, display: DisplayDef, folder: st
     `Proyecto : ${project.name}`,
     `Display  : ${display.name} (${display.id})`,
     `Mallas   : ${display.meshes.join(', ')}`,
-    `Textura  : ${project.canvas.width} x ${project.canvas.height} px`,
+    `Textura  : ${dp.canvas.width} x ${dp.canvas.height} px`,
+    `Páginas  : ${dp.pages.map((p) => p.name).join(', ')}${dp.settings.pageSwitch.input !== 'none' ? ` (cambio con ${dp.settings.pageSwitch.input})` : ''}`,
     `Runtime  : acdg_runtime.lua v${RUNTIME_VERSION}`,
     '',
     'Instalación manual (si has exportado el paquete sin instalar):',

@@ -72,13 +72,15 @@ export async function saveProjectFlow(forceDialog = false, thumbnail: Uint8Array
 
 export function usedAssets(project: Project): string[] {
   const used = new Set<string>();
-  if (project.background.file) used.add(project.background.file);
-  for (const f of Object.values(project.fonts)) used.add(f);
-  for (const page of project.pages) {
-    for (const el of page.elements) {
-      if (el.type === 'icon' && !el.config.icon.startsWith('builtin:')) used.add(el.config.icon);
-      if (el.type === 'image' && el.config.file) used.add(el.config.file);
-      for (const r of el.rules) if (r.set.image && !r.set.image.startsWith('builtin:')) used.add(r.set.image);
+  for (const d of project.displays) {
+    if (d.background.file) used.add(d.background.file);
+    for (const f of Object.values(d.fonts)) used.add(f);
+    for (const page of d.pages) {
+      for (const el of page.elements) {
+        if (el.type === 'icon' && !el.config.icon.startsWith('builtin:')) used.add(el.config.icon);
+        if (el.type === 'image' && el.config.file) used.add(el.config.file);
+        for (const r of el.rules) if (r.set.image && !r.set.image.startsWith('builtin:')) used.add(r.set.image);
+      }
     }
   }
   return [...used];

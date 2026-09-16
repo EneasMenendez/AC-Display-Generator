@@ -998,3 +998,33 @@ table.info td:first-child {
 .varpicker-item .badge {
   flex: none;
 }
+
+/* displays y páginas */
+.display-switch {
+  width: auto;
+  max-width: 200px;
+  height: 24px;
+  margin-right: 8px;
+  font-size: 12px;
+}
+.pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+.page-tab {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  border-radius: 12px;
+}
+.page-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.page-tab .dot {
+  margin-left: 4px;
+  color: var(--warn);
+}

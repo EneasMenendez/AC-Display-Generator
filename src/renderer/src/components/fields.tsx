@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Color, RpmValue } from '@shared/model';
 import { VarPicker } from './VarPicker';
-import { useStore } from '../store';
+import { useStore, activeDisplayOf } from '../store';
 
 /** Campos reutilizables del panel de propiedades. */
 
@@ -140,8 +140,8 @@ export function VarSelect(props: { value: string | undefined; onChange: (v: stri
 
 export function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const fonts = useStore((s) => s.fonts);
-  const project = useStore((s) => s.project);
-  const custom = Object.keys(project?.fonts ?? {});
+  const dp = useStore(activeDisplayOf);
+  const custom = Object.keys(dp?.fonts ?? {});
   const all = [...new Set([...custom, ...fonts, value])].sort((a, b) => a.localeCompare(b));
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={{ fontFamily: value }}>

@@ -2,18 +2,19 @@ import type { DisplayElement, Rule, TextStyle, Threshold, TimeFormat } from '@sh
 import { newId } from '@shared/model';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
-import { useStore, toast } from '../store';
+import { useStore, toast, activeDisplayOf, activePageOf } from '../store';
 import { Chk, ColorField, FontSelect, Num, Prop, RpmField, Sel, Txt, VarSelect } from './fields';
 import { Icon } from './icons';
 
 export function PropertiesPanel() {
-  const project = useStore((s) => s.project);
+  const dp = useStore(activeDisplayOf);
+  const page = useStore(activePageOf);
   const selection = useStore((s) => s.selection);
   const profile = useStore((s) => s.profile);
-  const patchProject = useStore((s) => s.patchProject);
-  if (!project) return null;
-  const els = project.pages[0].elements.filter((e) => selection.includes(e.id));
-  const display = profile?.displays.find((d) => d.id === project.display_id);
+  const patchDisplay = useStore((s) => s.patchDisplay);
+  if (!dp || !page) return null;
+  const els = page.elements.filter((e) => selection.includes(e.id));
+  const display = profile?.displays.find((d) => d.id === dp.display_id);
   const limiter = display?.defaults.rpm_limiter ?? 8000;
 
   if (els.length === 0) return <ProjectProps />;
@@ -57,10 +58,10 @@ export function PropertiesPanel() {
           </div>
         </Prop>
         <div className="quick-actions">
-          <button className="small ghost" onClick={() => patchProject((p) => centerEl(p.canvas.width, undefined, el.id, p))}>
+          <button className="small ghost" onClick={() => patchDisplay((d) => centerEl(d.canvas.width, undefined, el.id, d))}>
             Centrar horizontal
           </button>
-          <button className="small ghost" onClick={() => patchProject((p) => centerEl(undefined, p.canvas.height, el.id, p))}>
+          <button className="small ghost" onClick={() => patchDisplay((d) => centerEl(undefined, d.canvas.height, el.id, d))}>
             Centrar vertical
           </button>
         </div>
@@ -339,8 +340,8 @@ function applyRange(e: DisplayElement, variable: string): void {
   }
 }
 
-function centerEl(w: number | undefined, h: number | undefined, id: string, p: { pages: { elements: DisplayElement[] }[] }): void {
-  const el = p.pages[0].elements.find((e) => e.id === id);
+function centerEl(w: number | undefined, h: number | undefined, id: string, d: { pages: { elements: DisplayElement[] }[] }): void {
+  const el = d.pages.flatMap((pg) => pg.elements).find((e) => e.id === id);
   if (!el) return;
   if (w !== undefined) el.x = Math.round(w / 2 - el.width / 2);
   if (h !== undefined) el.y = Math.round(h / 2 - el.height / 2);
@@ -375,7 +376,7 @@ function StyleProps({ style, onChange }: { style: TextStyle; onChange: (s: TextS
             onClick={async () => {
               const a = await api.pickAsset('font');
               if (!a?.name) return;
-              useStore.getState().patchProject((p) => (p.fonts[a.name!] = a.path));
+              useStore.getState().patchDisplay((d) => (d.fonts[a.name!] = a.path));
               const face = new FontFace(a.name, `url(${a.dataUrl})`);
               face.load().then((f) => document.fonts.add(f)).catch(() => undefined);
               set({ font: a.name });
@@ -652,11 +653,11 @@ function RulesEditor({ el, update, limiter }: { el: DisplayElement; update: (fn:
 }
 
 function MultiProps({ els }: { els: DisplayElement[] }) {
-  const patchProject = useStore((s) => s.patchProject);
+  const patchPage = useStore((s) => s.patchPage);
   const ids = els.map((e) => e.id);
   const align = (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') =>
-    patchProject((p) => {
-      const sel = p.pages[0].elements.filter((e) => ids.includes(e.id) && !e.locked);
+    patchPage((pg) => {
+      const sel = pg.elements.filter((e) => ids.includes(e.id) && !e.locked);
       const x0 = Math.min(...sel.map((e) => e.x));
       const x1 = Math.max(...sel.map((e) => e.x + e.width));
       const y0 = Math.min(...sel.map((e) => e.y));
@@ -671,8 +672,8 @@ function MultiProps({ els }: { els: DisplayElement[] }) {
       }
     });
   const distribute = (axis: 'x' | 'y') =>
-    patchProject((p) => {
-      const sel = p.pages[0].elements.filter((e) => ids.includes(e.id) && !e.locked).sort((a, b) => (axis === 'x' ? a.x - b.x : a.y - b.y));
+    patchPage((pg) => {
+      const sel = pg.elements.filter((e) => ids.includes(e.id) && !e.locked).sort((a, b) => (axis === 'x' ? a.x - b.x : a.y - b.y));
       if (sel.length < 3) return;
       const first = sel[0];
       const last = sel[sel.length - 1];
@@ -731,12 +732,20 @@ function MultiProps({ els }: { els: DisplayElement[] }) {
 
 function ProjectProps() {
   const project = useStore((s) => s.project)!;
+  const dp = useStore(activeDisplayOf)!;
+  const activePage = useStore((s) => s.activePage);
   const profile = useStore((s) => s.profile);
   const car = useStore((s) => s.car);
   const patchProject = useStore((s) => s.patchProject);
-  const s = project.settings;
-  const set = (patch: Partial<typeof s>) => patchProject((p) => Object.assign(p.settings, patch));
-  const display = profile?.displays.find((d) => d.id === project.display_id);
+  const patchDisplay = useStore((s) => s.patchDisplay);
+  const addPage = useStore((s) => s.addPage);
+  const removePage = useStore((s) => s.removePage);
+  const movePage = useStore((s) => s.movePage);
+  const setActivePage = useStore((s) => s.setActivePage);
+  const s = dp.settings;
+  const set = (patch: Partial<typeof s>) => patchDisplay((d) => Object.assign(d.settings, patch));
+  const display = profile?.displays.find((d) => d.id === dp.display_id);
+  const limiter = display?.defaults.rpm_limiter ?? 8000;
   return (
     <div>
       <div className="prop-group">
@@ -754,25 +763,114 @@ function ProjectProps() {
               <td>Perfil</td>
               <td>{profile?.name ?? project.profile.id}</td>
             </tr>
-            <tr>
-              <td>Display</td>
-              <td>
-                {display?.name ?? project.display_id} · {project.canvas.width}×{project.canvas.height}
-              </td>
-            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="prop-group">
+        <h3>
+          <span>Display</span>
+          <span className="muted" style={{ textTransform: 'none', letterSpacing: 0 }}>
+            {project.displays.length > 1 ? `${project.displays.indexOf(dp) + 1} de ${project.displays.length}` : ''}
+          </span>
+        </h3>
+        <Prop label="Nombre">
+          <Txt value={dp.name} onChange={(v) => patchDisplay((d) => (d.name = v))} />
+        </Prop>
+        <table className="info small">
+          <tbody>
             <tr>
               <td>Malla</td>
-              <td className="mono">{display?.meshes.join(', ')}</td>
+              <td className="mono">{display?.meshes.join(', ') ?? '—'}</td>
+            </tr>
+            <tr>
+              <td>Textura</td>
+              <td>
+                {dp.canvas.width}×{dp.canvas.height} px
+              </td>
             </tr>
           </tbody>
         </table>
+      </div>
+      <div className="prop-group">
+        <h3>
+          <span>Páginas ({dp.pages.length})</span>
+          <button className="small ghost" onClick={() => addPage()}>
+            <Icon name="plus" size={12} /> Añadir
+          </button>
+        </h3>
+        {dp.pages.map((pg, i) => (
+          <div key={pg.id} className={`rule ${i === activePage ? 'selected' : ''}`} style={i === activePage ? { outline: '1px solid var(--accent)' } : undefined}>
+            <div className="row gap4">
+              <button className="icon" title="Editar esta página" onClick={() => setActivePage(i)}>
+                <Icon name={i === activePage ? 'check' : 'play'} size={12} />
+              </button>
+              <Txt value={pg.name} onChange={(v) => patchDisplay((d) => (d.pages[i].name = v))} />
+              <button className="icon" title="Subir" disabled={i === 0} onClick={() => movePage(i, i - 1)}>
+                <Icon name="up" size={12} />
+              </button>
+              <button className="icon" title="Bajar" disabled={i === dp.pages.length - 1} onClick={() => movePage(i, i + 1)}>
+                <Icon name="down" size={12} />
+              </button>
+              <button className="icon" title="Eliminar página" disabled={dp.pages.length <= 1} onClick={() => removePage(i)}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+            <div className="row gap4 wrap">
+              <Chk
+                value={!!pg.when}
+                label="Mostrar automáticamente si"
+                onChange={(v) => patchDisplay((d) => (d.pages[i].when = v ? { variable: 'in_pitlane', op: '==', value: true } : undefined))}
+              />
+            </div>
+            {pg.when && (
+              <div className="row gap4">
+                <VarSelect value={pg.when.variable} onChange={(v) => v && patchDisplay((d) => ((d.pages[i].when!.variable = v), (d.pages[i].when!.value = VARIABLE_MAP[v]?.type === 'boolean' ? true : 0)))} />
+                {VARIABLE_MAP[pg.when.variable]?.type === 'boolean' ? (
+                  <Sel value={pg.when.value === true ? 'true' : 'false'} onChange={(v) => patchDisplay((d) => ((d.pages[i].when!.op = '=='), (d.pages[i].when!.value = v === 'true')))} options={[{ value: 'true', label: 'activo' }, { value: 'false', label: 'inactivo' }]} />
+                ) : (
+                  <>
+                    <select value={pg.when.op} onChange={(e) => patchDisplay((d) => (d.pages[i].when!.op = e.target.value as Rule['when']['op']))} style={{ width: 56 }}>
+                      {['>', '>=', '<', '<=', '==', '!='].map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
+                    </select>
+                    {pg.when.variable === 'rpm' ? (
+                      <RpmField value={typeof pg.when.value === 'boolean' ? 0 : pg.when.value} limiter={limiter} onChange={(v) => patchDisplay((d) => (d.pages[i].when!.value = v))} />
+                    ) : (
+                      <Num value={Number(pg.when.value)} onChange={(v) => patchDisplay((d) => (d.pages[i].when!.value = v))} />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        <Prop label="Cambiar con" title="Entrada extra de CSP (botón del volante/tecla) que pasa a la página siguiente">
+          <Sel
+            value={s.pageSwitch.input}
+            onChange={(v) => set({ pageSwitch: { ...s.pageSwitch, input: v } })}
+            options={[
+              { value: 'none', label: 'Sin botón (solo automático)' },
+              ...(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const).map((l) => ({ value: `extra${l}` as const, label: `Extra ${l}` })),
+            ]}
+          />
+        </Prop>
+        {s.pageSwitch.input !== 'none' && (
+          <Prop label="Opciones">
+            <div className="col gap4">
+              <Chk value={s.pageSwitch.wrap} label="Volver a la primera tras la última" onChange={(v) => set({ pageSwitch: { ...s.pageSwitch, wrap: v } })} />
+              <Chk value={s.pageSwitch.remember} label="Recordar la página entre sesiones" onChange={(v) => set({ pageSwitch: { ...s.pageSwitch, remember: v } })} />
+            </div>
+          </Prop>
+        )}
+        <div className="muted small">Las páginas con condición tienen prioridad (en orden); si ninguna se cumple se muestra la elegida con el botón.</div>
       </div>
       <div className="prop-group">
         <h3>Fondo</h3>
         <Prop label="Imagen">
           <div className="row gap4">
             <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {project.background.file ?? '— color plano —'}
+              {dp.background.file ?? '— color plano —'}
             </span>
             <button
               className="small outline"
@@ -780,24 +878,24 @@ function ProjectProps() {
                 const a = await api.pickAsset('image');
                 if (!a) return;
                 if (a.error) toast(a.error, 'err');
-                if (a.width && a.height && (a.width !== project.canvas.width || a.height !== project.canvas.height)) {
-                  toast(`La imagen (${a.width}×${a.height}) no coincide con la textura (${project.canvas.width}×${project.canvas.height}); se escalará.`, 'err');
+                if (a.width && a.height && (a.width !== dp.canvas.width || a.height !== dp.canvas.height)) {
+                  toast(`La imagen (${a.width}×${a.height}) no coincide con la textura (${dp.canvas.width}×${dp.canvas.height}); se escalará.`, 'err');
                 }
                 useStore.getState().addAssetUrl(a.path, a.dataUrl);
-                patchProject((p) => (p.background.file = a.path));
+                patchDisplay((d) => (d.background.file = a.path));
               }}
             >
               Cambiar…
             </button>
-            {project.background.file && (
-              <button className="icon" onClick={() => patchProject((p) => (p.background.file = null))}>
+            {dp.background.file && (
+              <button className="icon" onClick={() => patchDisplay((d) => (d.background.file = null))}>
                 <Icon name="close" size={12} />
               </button>
             )}
           </div>
         </Prop>
         <Prop label="Color">
-          <ColorField value={project.background.color} onChange={(v) => patchProject((p) => (p.background.color = v))} />
+          <ColorField value={dp.background.color} onChange={(v) => patchDisplay((d) => (d.background.color = v))} />
         </Prop>
       </div>
       <div className="prop-group">

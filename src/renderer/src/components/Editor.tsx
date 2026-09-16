@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { useStore, toast } from '../store';
+import { useStore, toast, activeDisplayOf, activePageOf } from '../store';
 import { saveProjectFlow } from '../flows';
 import { CanvasEditor, isTyping } from './CanvasEditor';
 import { LayersPanel } from './LayersPanel';
@@ -11,6 +11,11 @@ import { Icon } from './icons';
 
 export function Editor() {
   const project = useStore((s) => s.project);
+  const dp = useStore(activeDisplayOf);
+  const activeDisplay = useStore((s) => s.activeDisplay);
+  const activePage = useStore((s) => s.activePage);
+  const setActiveDisplay = useStore((s) => s.setActiveDisplay);
+  const setActivePage = useStore((s) => s.setActivePage);
   const dirty = useStore((s) => s.dirty);
   const projectFile = useStore((s) => s.projectFile);
   const showPreview = useStore((s) => s.showPreview);
@@ -29,20 +34,21 @@ export function Editor() {
   useEffect(() => {
     if (!project) return;
     const assets = useStore.getState().assets;
-    for (const [name, path] of Object.entries(project.fonts)) {
+    for (const [name, path] of Object.entries(Object.assign({}, ...project.displays.map((d) => d.fonts)) as Record<string, string>)) {
       const url = assets[path];
       if (!url) continue;
       const face = new FontFace(name, `url(${url})`);
       face.load().then((f) => document.fonts.add(f)).catch(() => undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.fonts]);
+  }, [project?.displays]);
 
   // atajos de teclado
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
-      if (!s.project) return;
+      const page = activePageOf(s);
+      if (!s.project || !page) return;
       if (isTyping(e)) return;
       const ctrl = e.ctrlKey || e.metaKey;
       const step = e.shiftKey ? 10 : 1;
@@ -60,19 +66,19 @@ export function Editor() {
         s.duplicateSelected();
       } else if (ctrl && e.key.toLowerCase() === 'a') {
         e.preventDefault();
-        s.select(s.project.pages[0].elements.filter((el) => el.visible).map((el) => el.id));
+        s.select(page.elements.filter((el) => el.visible).map((el) => el.id));
       } else if (ctrl && e.key.toLowerCase() === 'c') {
-        const sel = s.project.pages[0].elements.filter((el) => s.selection.includes(el.id));
+        const sel = page.elements.filter((el) => s.selection.includes(el.id));
         if (sel.length) localStorage.setItem('acdg:clipboard', JSON.stringify(sel));
       } else if (ctrl && e.key.toLowerCase() === 'v') {
         const raw = localStorage.getItem('acdg:clipboard');
         if (!raw) return;
-        const items = JSON.parse(raw) as typeof s.project.pages[0]['elements'];
+        const items = JSON.parse(raw) as typeof page.elements;
         const ids: string[] = [];
-        s.patchProject((p) => {
+        s.patchPage((pg) => {
           for (const it of items) {
             const c = { ...it, id: `el_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, x: it.x + 20, y: it.y + 20 };
-            p.pages[0].elements.push(c);
+            pg.elements.push(c);
             ids.push(c.id);
           }
         });
@@ -101,9 +107,9 @@ export function Editor() {
       } else if (e.key === 'p' || e.key === 'P') {
         s.setPreviewMode(!s.previewMode);
       } else if (e.key === 'h' || e.key === 'H') {
-        if (s.selection.length) s.patchProject((p) => p.pages[0].elements.forEach((el) => s.selection.includes(el.id) && (el.visible = !el.visible)));
+        if (s.selection.length) s.patchPage((pg) => pg.elements.forEach((el) => s.selection.includes(el.id) && (el.visible = !el.visible)));
       } else if (e.key === 'l' || e.key === 'L') {
-        if (s.selection.length) s.patchProject((p) => p.pages[0].elements.forEach((el) => s.selection.includes(el.id) && (el.locked = !el.locked)));
+        if (s.selection.length) s.patchPage((pg) => pg.elements.forEach((el) => s.selection.includes(el.id) && (el.locked = !el.locked)));
       } else if (e.key === 'F1') {
         e.preventDefault();
         setHelp((h) => !h);
@@ -128,7 +134,7 @@ export function Editor() {
     return () => window.clearInterval(id);
   }, []);
 
-  if (!project) return null;
+  if (!project || !dp) return null;
 
   async function close() {
     const s = useStore.getState();
@@ -150,6 +156,26 @@ export function Editor() {
           {project.name}
           {dirty && <span className="dot">•</span>}
         </span>
+        {project.displays.length > 1 && (
+          <select className="display-switch" value={activeDisplay} onChange={(e) => setActiveDisplay(Number(e.target.value))} title="Display del coche que se está editando">
+            {project.displays.map((d, i) => (
+              <option key={d.display_id} value={i}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <div className="pages">
+          {dp.pages.map((pg, i) => (
+            <button key={pg.id} className={`page-tab ${i === activePage ? 'active' : ''}`} onClick={() => setActivePage(i)} title={pg.when ? 'Página con condición automática' : 'Página'}>
+              {pg.name}
+              {pg.when && <span className="dot">•</span>}
+            </button>
+          ))}
+          <button className="icon" title="Añadir página" onClick={() => useStore.getState().addPage()}>
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
         <button className="icon" onClick={() => saveProjectFlow()} title="Guardar (Ctrl+S)">
           <Icon name="save" />
         </button>
@@ -185,7 +211,7 @@ export function Editor() {
           className={`ghost ${physicalView ? 'active' : ''}`}
           onClick={() => useStore.getState().setPhysicalView(!physicalView)}
           title="Vista física: deforma el lienzo a la proporción real del display en el coche"
-          disabled={!profile?.displays.find((d) => d.id === project.display_id)?.physical_size_m}
+          disabled={!profile?.displays.find((d) => d.id === dp.display_id)?.physical_size_m}
         >
           <Icon name="monitor" size={14} /> Vista física
         </button>
@@ -211,7 +237,7 @@ export function Editor() {
       )}
       <div className="statusbar">
         <span>
-          {project.canvas.width} × {project.canvas.height} px
+          {dp.canvas.width} × {dp.canvas.height} px
         </span>
         <span>{hover ? `X ${hover.x}  Y ${hover.y}` : ''}</span>
         <span>{selection.length ? `${selection.length} seleccionado${selection.length > 1 ? 's' : ''}` : ''}</span>

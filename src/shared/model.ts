@@ -3,7 +3,7 @@
  * Es la única fuente de verdad: el editor lo renderiza y el generador lo traduce a display_config.lua.
  */
 
-export const PROJECT_FORMAT_VERSION = 1;
+export const PROJECT_FORMAT_VERSION = 2;
 
 /** Color en formato #RRGGBB o #RRGGBBAA. */
 export type Color = string;
@@ -246,11 +246,31 @@ export type DisplayElement =
   | CircleElement
   | GaugeElement;
 
+/** Condición que activa automáticamente una página (p. ej. "Boxes" cuando car.isInPitlane). */
+export interface PageCondition {
+  variable: string;
+  op: RuleOp;
+  value: number | boolean | RpmValue;
+}
+
 export interface Page {
   id: string;
   name: string;
   /** orden de dibujo: el primero se pinta debajo */
   elements: DisplayElement[];
+  /** si se cumple, esta página se muestra automáticamente (prioridad por orden); si no, se usa la seleccionada por botón */
+  when?: PageCondition;
+}
+
+/** Entrada de CSP (botón del volante / tecla extra) que pasa a la siguiente página. */
+export type PageSwitchInput = 'none' | 'extraA' | 'extraB' | 'extraC' | 'extraD' | 'extraE' | 'extraF' | 'extraG' | 'extraH';
+
+export interface PageSwitch {
+  input: PageSwitchInput;
+  /** volver a la primera página tras la última */
+  wrap: boolean;
+  /** recordar la página elegida entre sesiones (ac.storage) */
+  remember: boolean;
 }
 
 export interface ProjectSettings {
@@ -262,6 +282,20 @@ export interface ProjectSettings {
   snap: boolean;
   snapToElements: boolean;
   showCoordinates: boolean;
+  pageSwitch: PageSwitch;
+}
+
+/** Un display (una malla del coche) con sus páginas. Un proyecto puede tener varios (dash, volante, navegador…). */
+export interface DisplayProject {
+  display_id: string;
+  /** nombre visible (por defecto el del perfil) */
+  name: string;
+  canvas: { width: number; height: number };
+  background: { file: string | null; locked: boolean; color: Color };
+  settings: ProjectSettings;
+  pages: Page[];
+  /** fuentes importadas: nombre → ruta relativa dentro de assets/fonts */
+  fonts: Record<string, string>;
 }
 
 export interface Project {
@@ -270,13 +304,7 @@ export interface Project {
   name: string;
   profile: { id: string; version: number };
   car_id: string;
-  display_id: string;
-  canvas: { width: number; height: number };
-  background: { file: string | null; locked: boolean; color: Color };
-  settings: ProjectSettings;
-  pages: Page[];
-  /** fuentes importadas: nombre → ruta relativa dentro de assets/fonts */
-  fonts: Record<string, string>;
+  displays: DisplayProject[];
 }
 
 /* ---------- Fábricas ---------- */
@@ -306,6 +334,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   snap: true,
   snapToElements: true,
   showCoordinates: true,
+  pageSwitch: { input: 'none', wrap: true, remember: true },
 };
 
 function base(type: ElementType, name: string, x: number, y: number, w: number, h: number): ElementBase {
@@ -415,15 +444,25 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
   }
 }
 
+export function createDisplayProject(params: { displayId: string; name: string; width: number; height: number }): DisplayProject {
+  return {
+    display_id: params.displayId,
+    name: params.name,
+    canvas: { width: params.width, height: params.height },
+    background: { file: null, locked: true, color: '#000000' },
+    settings: { ...DEFAULT_SETTINGS, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch } },
+    pages: [{ id: 'main', name: 'Principal', elements: [] }],
+    fonts: {},
+  };
+}
+
 export function createEmptyProject(params: {
   name: string;
   profileId: string;
   profileVersion: number;
   carId: string;
-  displayId: string;
-  width: number;
-  height: number;
   appVersion: string;
+  displays: { displayId: string; name: string; width: number; height: number }[];
 }): Project {
   return {
     format_version: PROJECT_FORMAT_VERSION,
@@ -431,13 +470,49 @@ export function createEmptyProject(params: {
     name: params.name,
     profile: { id: params.profileId, version: params.profileVersion },
     car_id: params.carId,
-    display_id: params.displayId,
-    canvas: { width: params.width, height: params.height },
-    background: { file: null, locked: true, color: '#000000' },
-    settings: { ...DEFAULT_SETTINGS },
-    pages: [{ id: 'main', name: 'Principal', elements: [] }],
-    fonts: {},
+    displays: params.displays.map(createDisplayProject),
   };
+}
+
+export function createPage(name: string): Page {
+  return { id: newId('page'), name, elements: [] };
+}
+
+/**
+ * Migra proyectos antiguos al formato actual.
+ * v1: un único display en la raíz (display_id/canvas/background/settings/pages/fonts).
+ */
+export function migrateProject(raw: unknown): Project {
+  const p = raw as Record<string, unknown>;
+  if (!p || typeof p !== 'object') throw new Error('project.json inválido');
+  const version = Number(p.format_version ?? 1);
+  if (version > PROJECT_FORMAT_VERSION) throw new Error(`El proyecto se creó con una versión más reciente de la aplicación (formato ${version}).`);
+  if (version === 1) {
+    const d: DisplayProject = {
+      display_id: String(p.display_id ?? 'display'),
+      name: String(p.display_id ?? 'Display'),
+      canvas: p.canvas as DisplayProject['canvas'],
+      background: p.background as DisplayProject['background'],
+      settings: { ...DEFAULT_SETTINGS, ...(p.settings as Partial<ProjectSettings>), pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch } },
+      pages: (p.pages as Page[]) ?? [{ id: 'main', name: 'Principal', elements: [] }],
+      fonts: (p.fonts as Record<string, string>) ?? {},
+    };
+    return {
+      format_version: PROJECT_FORMAT_VERSION,
+      app_version: String(p.app_version ?? ''),
+      name: String(p.name ?? 'Display'),
+      profile: p.profile as Project['profile'],
+      car_id: String(p.car_id ?? ''),
+      displays: [d],
+    };
+  }
+  const proj = p as unknown as Project;
+  for (const d of proj.displays) {
+    d.settings = { ...DEFAULT_SETTINGS, ...d.settings, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) } };
+    if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];
+    d.fonts = d.fonts ?? {};
+  }
+  return proj;
 }
 
 /** Resuelve un RpmValue a rpm absolutas usando el limitador. */

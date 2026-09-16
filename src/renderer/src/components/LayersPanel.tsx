@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ElementType } from '@shared/model';
-import { useStore } from '../store';
+import { useStore, activePageOf } from '../store';
 import { typeLabel } from './PropertiesPanel';
 import { Icon } from './icons';
 
@@ -19,17 +19,17 @@ const ADD: { type: ElementType; label: string; icon: string }[] = [
 ];
 
 export function LayersPanel() {
-  const project = useStore((s) => s.project);
+  const page = useStore(activePageOf);
   const selection = useStore((s) => s.selection);
   const select = useStore((s) => s.select);
   const addElement = useStore((s) => s.addElement);
   const updateElement = useStore((s) => s.updateElement);
   const reorder = useStore((s) => s.reorder);
-  const patchProject = useStore((s) => s.patchProject);
+  const patchPage = useStore((s) => s.patchPage);
   const [filter, setFilter] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
-  if (!project) return null;
-  const els = [...project.pages[0].elements].reverse();
+  if (!page) return null;
+  const els = [...page.elements].reverse();
   const f = filter.toLowerCase();
   const shown = f ? els.filter((e) => e.name.toLowerCase().includes(f) || typeLabel(e.type).toLowerCase().includes(f)) : els;
 
@@ -66,8 +66,8 @@ export function LayersPanel() {
               e.preventDefault();
               const from = e.dataTransfer.getData('text/acdg-layer');
               if (!from || from === el.id) return;
-              patchProject((p) => {
-                const arr = p.pages[0].elements;
+              patchPage((pg) => {
+                const arr = pg.elements;
                 const i = arr.findIndex((x) => x.id === from);
                 const [moved] = arr.splice(i, 1);
                 const j = arr.findIndex((x) => x.id === el.id);

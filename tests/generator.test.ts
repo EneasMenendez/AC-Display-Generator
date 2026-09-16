@@ -23,10 +23,8 @@ function sampleProject(): Project {
     profileId: 'av_toyota_starlet_millington.driver_display',
     profileVersion: 2,
     carId: 'av_toyota_starlet_millington',
-    displayId: 'driver_display',
-    width: 1593,
-    height: 987,
     appVersion: '0.1.0',
+    displays: [{ displayId: 'driver_display', name: 'Driver Display', width: 1593, height: 987 }],
   });
   const text = createElement('text') as TextElement;
   text.binding = { variable: 'speed', decimals: 0, prefix: '', suffix: ' km/h', padZeros: 0, showSign: false };
@@ -36,7 +34,10 @@ function sampleProject(): Project {
   const shift = createElement('shift_light');
   const icon = createElement('icon');
   const gauge = createElement('gauge');
-  p.pages[0].elements.push(rpm, text, gear, shift, icon, gauge);
+  p.displays[0].pages[0].elements.push(rpm, text, gear, shift, icon, gauge);
+  // segunda página con condición automática y cambio por botón
+  p.displays[0].pages.push({ id: 'pit', name: 'Boxes', elements: [], when: { variable: 'in_pitlane', op: '==', value: true } });
+  p.displays[0].settings.pageSwitch = { input: 'extraA', wrap: true, remember: true };
   return p;
 }
 
@@ -71,7 +72,7 @@ describe('generador', () => {
   const display = profile.displays[0];
 
   it('produce Lua sintácticamente válido y con las variables usadas', () => {
-    const gen = generateConfigLua(sampleProject(), display);
+    const gen = generateConfigLua(sampleProject(), sampleProject().displays[0], display);
     expect(() => luaparse.parse(gen.lua, { luaVersion: '5.1' })).not.toThrow();
     expect(gen.variables).toEqual(expect.arrayContaining(['speed', 'rpm', 'gear', 'abs_active', 'water_temp']));
     // abs_active es physics_only → función con fallback
@@ -79,6 +80,10 @@ describe('generador', () => {
     // el icono integrado se mapea a icons/abs.png
     expect(gen.assets).toContainEqual({ source: 'builtin:abs', target: 'icons/abs.png' });
     expect(gen.lua).toContain("file = 'icons/abs.png'");
+    // páginas: condición y botón de cambio
+    expect(gen.variables).toContain('in_pitlane');
+    expect(gen.lua).toMatch(/when = \{[\s\S]*variable = 'in_pitlane'/);
+    expect(gen.lua).toContain("input = 'extraA'");
   });
 
   it('runtime y display.lua son válidos', () => {

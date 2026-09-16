@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { DisplayElement } from '@shared/model';
-import { useStore } from '../store';
+import { useStore, activeDisplayOf, activePageOf } from '../store';
 import { resolveSim } from '../sim';
-import { drawScene, type DrawEnv } from '../render/draw';
+import { drawScene, pageMatches, type DrawEnv } from '../render/draw';
 
 /**
  * Lienzo WYSIWYG: zoom/pan, selección, arrastre, redimensionado con tiradores, marco de selección,
@@ -47,7 +47,7 @@ export function CanvasEditor() {
   // ---------- transformación vista ----------
   function view() {
     const s = useStore.getState();
-    const p = s.project!;
+    const p = activeDisplayOf(s)!;
     let ky = 1;
     if (s.physicalView && s.profile) {
       const d = s.profile.displays.find((x) => x.id === p.display_id);
@@ -67,9 +67,10 @@ export function CanvasEditor() {
   function fit() {
     const wrap = wrapRef.current;
     const s = useStore.getState();
-    if (!wrap || !s.project) return;
-    const W = s.project.canvas.width;
-    const H = s.project.canvas.height;
+    const dp = activeDisplayOf(s);
+    if (!wrap || !dp) return;
+    const W = dp.canvas.width;
+    const H = dp.canvas.height;
     const zoom = Math.min((wrap.clientWidth - 40) / W, (wrap.clientHeight - 40) / H);
     s.setZoom(zoom);
     s.setPan({ x: (wrap.clientWidth - W * zoom) / 2, y: (wrap.clientHeight - H * zoom) / 2 });
@@ -98,7 +99,7 @@ export function CanvasEditor() {
       const canvas = canvasRef.current;
       const wrap = wrapRef.current;
       const s = useStore.getState();
-      if (!canvas || !wrap || !s.project) return;
+      if (!canvas || !wrap || !activeDisplayOf(s)) return;
       const dpr = window.devicePixelRatio || 1;
       const cw = wrap.clientWidth;
       const ch = wrap.clientHeight;
@@ -125,7 +126,7 @@ export function CanvasEditor() {
         s.setSim('rpm', Math.round(1000 + (lim - 1000) * Math.min(1, cyc * 1.15)));
       }
 
-      const p = s.project;
+      const p = activeDisplayOf(s)!;
       const display = s.profile?.displays.find((d) => d.id === p.display_id);
       const defaults = display?.defaults ?? { rpm_limiter: 8000, rpm_warning_pct: 0.85, rpm_redline_pct: 0.95, max_fuel_l: 60, water_temp_range: [40, 130], oil_temp_range: [40, 150], oil_pressure_range: [0, 8], speed_max: 300 };
       const simCtx = resolveSim(s.sim, defaults, t, s.ambient);
@@ -151,7 +152,10 @@ export function CanvasEditor() {
       g.imageSmoothingEnabled = true;
       g.imageSmoothingQuality = 'high';
       const bg = p.background.file ? images.current.get(p.background.file) ?? null : null;
-      drawScene(g, p, simCtx, env, bg);
+      // en previsualización se puede seguir la lógica de páginas del juego (condiciones automáticas)
+      let page = activePageOf(s)!;
+      if (s.previewMode && s.followPageRules) page = p.pages.find((pg) => pageMatches(pg, simCtx)) ?? page;
+      drawScene(g, p, page, simCtx, env, bg);
       g.restore();
 
       if (s.previewMode) return;
@@ -185,7 +189,7 @@ export function CanvasEditor() {
 
       // selección
       const sel = new Set(s.selection);
-      const els = p.pages[0].elements;
+      const els = activePageOf(s)!.elements;
       for (const el of els) {
         if (!sel.has(el.id)) continue;
         const X = v.px + el.x * v.sx;
@@ -271,7 +275,7 @@ export function CanvasEditor() {
 
   function hitElement(x: number, y: number): DisplayElement | null {
     const s = useStore.getState();
-    const els = s.project!.pages[0].elements;
+    const els = activePageOf(s)!.elements;
     for (let i = els.length - 1; i >= 0; i--) {
       const el = els[i];
       if (!el.visible) continue;
@@ -283,7 +287,7 @@ export function CanvasEditor() {
   function hitHandle(clientX: number, clientY: number): Handle | null {
     const s = useStore.getState();
     if (s.selection.length !== 1) return null;
-    const el = s.project!.pages[0].elements.find((e) => e.id === s.selection[0]);
+    const el = activePageOf(s)!.elements.find((e) => e.id === s.selection[0]);
     if (!el || el.locked) return null;
     const v = view();
     const r = canvasRef.current!.getBoundingClientRect();
@@ -300,7 +304,7 @@ export function CanvasEditor() {
 
   function onPointerDown(e: React.PointerEvent) {
     const s = useStore.getState();
-    if (!s.project) return;
+    if (!activePageOf(s)) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     if (e.button === 1 || (e.button === 0 && space.current)) {
       drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: s.pan.x, panY: s.pan.y };
@@ -310,7 +314,7 @@ export function CanvasEditor() {
     const { x, y } = toCanvas(e.clientX, e.clientY);
     const handle = hitHandle(e.clientX, e.clientY);
     if (handle) {
-      const el = s.project.pages[0].elements.find((el) => el.id === s.selection[0])!;
+      const el = activePageOf(s)!.elements.find((el) => el.id === s.selection[0])!;
       s.snapshot();
       drag.current = { kind: 'resize', handle, startX: x, startY: y, orig: new Map([[el.id, rectOf(el)]]), bbox: rectOf(el) };
       return;
@@ -321,7 +325,7 @@ export function CanvasEditor() {
       else if (!s.selection.includes(el.id)) s.select([el.id]);
       const sel = useStore.getState().selection;
       const orig = new Map<string, Rect>();
-      for (const it of s.project.pages[0].elements) if (sel.includes(it.id) && !it.locked) orig.set(it.id, rectOf(it));
+      for (const it of activePageOf(s)!.elements) if (sel.includes(it.id) && !it.locked) orig.set(it.id, rectOf(it));
       drag.current = { kind: 'move', startX: x, startY: y, orig, moved: false };
     } else {
       drag.current = { kind: 'marquee', startX: x, startY: y, curX: x, curY: y, additive: e.shiftKey };
@@ -331,7 +335,7 @@ export function CanvasEditor() {
 
   function onPointerMove(e: React.PointerEvent) {
     const s = useStore.getState();
-    if (!s.project) return;
+    if (!activePageOf(s)) return;
     const { x, y } = toCanvas(e.clientX, e.clientY);
     s.setHoverPos({ x: Math.round(x), y: Math.round(y) });
     const d = drag.current;
@@ -365,8 +369,8 @@ export function CanvasEditor() {
       const snapped = snap(target, [...d.orig.keys()], e.altKey);
       dx = snapped.x - bb.x;
       dy = snapped.y - bb.y;
-      s.patchProject((p) => {
-        for (const el of p.pages[0].elements) {
+      s.patchPage((page) => {
+        for (const el of page.elements) {
           const o = d.orig.get(el.id);
           if (o) {
             el.x = Math.round(o.x + dx);
@@ -422,14 +426,14 @@ export function CanvasEditor() {
     const d = drag.current;
     drag.current = null;
     guides.current = [];
-    if (!d || !s.project) return;
+    if (!d || !activePageOf(s)) return;
     if (d.kind === 'marquee') {
       const x0 = Math.min(d.startX, d.curX);
       const y0 = Math.min(d.startY, d.curY);
       const x1 = Math.max(d.startX, d.curX);
       const y1 = Math.max(d.startY, d.curY);
       if (x1 - x0 < 2 && y1 - y0 < 2) return;
-      const ids = s.project.pages[0].elements.filter((el) => el.visible && el.x < x1 && el.x + el.width > x0 && el.y < y1 && el.y + el.height > y0).map((el) => el.id);
+      const ids = activePageOf(s)!.elements.filter((el) => el.visible && el.x < x1 && el.x + el.width > x0 && el.y < y1 && el.y + el.height > y0).map((el) => el.id);
       s.select(ids, d.additive);
     }
     if (d.kind === 'move' && !d.moved && !e.shiftKey) {
@@ -454,11 +458,11 @@ export function CanvasEditor() {
   // ---------- ajuste ----------
   function snapCandidates(exclude: string[]) {
     const s = useStore.getState();
-    const p = s.project!;
+    const p = activeDisplayOf(s)!;
     const xs = [0, p.canvas.width / 2, p.canvas.width];
     const ys = [0, p.canvas.height / 2, p.canvas.height];
     if (p.settings.snapToElements) {
-      for (const el of p.pages[0].elements) {
+      for (const el of activePageOf(s)!.elements) {
         if (exclude.includes(el.id) || !el.visible) continue;
         xs.push(el.x, el.x + el.width / 2, el.x + el.width);
         ys.push(el.y, el.y + el.height / 2, el.y + el.height);
@@ -469,7 +473,7 @@ export function CanvasEditor() {
 
   function snap(r: Rect, exclude: string[], disabled: boolean): Rect {
     const s = useStore.getState();
-    const p = s.project!;
+    const p = activeDisplayOf(s)!;
     guides.current = [];
     if (disabled || !p.settings.snap) return r;
     const th = 6 / s.zoom;
@@ -503,7 +507,7 @@ export function CanvasEditor() {
 
   function snapResize(r: Rect, handle: Handle, exclude: string[], disabled: boolean): Rect {
     const s = useStore.getState();
-    const p = s.project!;
+    const p = activeDisplayOf(s)!;
     guides.current = [];
     if (disabled || !p.settings.snap) return r;
     const th = 6 / s.zoom;

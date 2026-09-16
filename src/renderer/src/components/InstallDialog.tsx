@@ -35,22 +35,28 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
   const [conflicts, setConflicts] = useState<DetectedDisplay[]>([]);
   const [disableOthers, setDisableOthers] = useState(true);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
-  const display = profile?.displays.find((d) => d.id === project.display_id);
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => project.displays.map((d) => d.display_id));
+  // displays del proyecto con su definición en el perfil
+  const targets = project.displays.map((dp) => ({ dp, def: profile?.displays.find((d) => d.id === dp.display_id) }));
+  const chosen = targets.filter((t) => t.def && selectedIds.includes(t.dp.display_id));
+  const missing = targets.filter((t) => !t.def);
 
   useEffect(() => {
-    if (!car || !display) return;
-    // displays ajenos (hechos a mano o de otro perfil) que dibujan sobre la misma malla
+    if (!car || chosen.length === 0) return;
+    // displays ajenos (hechos a mano o de otro perfil) que dibujan sobre las mismas mallas
     api
       .scanDisplays(car.path)
       .then((sc) => {
-        const mine = display.meshes.map((m) => m.toLowerCase());
-        setConflicts(sc.displays.filter((d) => d.acdg?.displayId !== display.id && d.meshes.some((m) => mine.includes(m.toLowerCase()))));
+        const mine = chosen.flatMap((t) => t.def!.meshes.map((m) => m.toLowerCase()));
+        const own = new Set(chosen.map((t) => t.def!.id));
+        setConflicts(sc.displays.filter((d) => !(d.acdg && own.has(d.acdg.displayId)) && d.meshes.some((m) => mine.includes(m.toLowerCase()))));
       })
       .catch(() => setConflicts([]));
     api.listBackups(car.path, target).then(setBackups).catch(() => setBackups([]));
-  }, [car, display, target, result]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [car, target, result, selectedIds.join(',')]);
 
-  if (!car || !profile || !display) {
+  if (!car || !profile || targets.length === 0) {
     return (
       <div className="modal-bg" onClick={onClose}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -72,21 +78,24 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         if (!d) return;
         exportDir = d;
       }
-      if (install && car!.installedDisplays.includes(display!.id)) {
+      const existing = chosen.filter((t) => car!.installedDisplays.includes(t.def!.id));
+      if (install && existing.length) {
         const idx = await api.confirm(
-          `Ya existe un display "${display!.id}" generado en este vehículo.`,
+          `Ya ${existing.length === 1 ? 'existe el display' : 'existen los displays'} ${existing.map((t) => `"${t.def!.id}"`).join(', ')} en este vehículo.`,
           'Se hará una copia de seguridad y se actualizará. ¿Continuar?',
           ['Actualizar', 'Cancelar'],
         );
         if (idx !== 0) return;
       }
       // iconos integrados usados → PNG
-      const gen = generateConfigLua(project, display!);
       const extraFiles: Record<string, Uint8Array> = {};
-      for (const a of gen.assets) {
-        if (!a.source.startsWith('builtin:')) continue;
-        const ic = icons.find((i) => `builtin:${i.id}` === a.source);
-        if (ic) extraFiles[a.target] = await rasterizeSvg(ic.svg);
+      for (const t of chosen) {
+        const gen = generateConfigLua(project, t.dp, t.def!);
+        for (const a of gen.assets) {
+          if (!a.source.startsWith('builtin:') || extraFiles[a.target]) continue;
+          const ic = icons.find((i) => `builtin:${i.id}` === a.source);
+          if (ic) extraFiles[a.target] = await rasterizeSvg(ic.svg);
+        }
       }
       const r = await api.install({
         carPath: car!.path,
@@ -99,10 +108,11 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         exportDir,
         disableSections: install && disableOthers ? conflicts.map((c) => ({ iniFile: c.iniFile, section: c.section })) : [],
         writeProfile: install && target.kind === 'car',
+        displayIds: chosen.map((t) => t.dp.display_id),
       });
       setResult(r);
       if (r.ok) {
-        toast(install ? 'Display instalado' : 'Paquete exportado');
+        toast(install ? (chosen.length === 1 ? 'Display instalado' : `${chosen.length} displays instalados`) : 'Paquete exportado');
         const info2 = await api.scanCar(car!.path);
         useStore.getState().setCar(info2);
         await api.saveSettings({ convertToDds: dds });
@@ -127,9 +137,26 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
               </td>
             </tr>
             <tr>
-              <td>Display</td>
+              <td>{targets.length === 1 ? 'Display' : 'Displays'}</td>
               <td>
-                {display.name} · malla <code>{display.meshes.join(', ')}</code> · {project.canvas.width}×{project.canvas.height}
+                {targets.map(({ dp, def }) => (
+                  <label key={dp.display_id} className="row small" style={{ gap: 6, marginBottom: 2 }}>
+                    <input
+                      type="checkbox"
+                      disabled={!def || targets.length === 1}
+                      checked={!!def && selectedIds.includes(dp.display_id)}
+                      onChange={(e) => setSelectedIds(e.target.checked ? [...selectedIds, dp.display_id] : selectedIds.filter((x) => x !== dp.display_id))}
+                    />
+                    <b>{dp.name}</b>
+                    {def ? (
+                      <span className="muted">
+                        malla <code>{def.meshes.join(', ')}</code> · {dp.canvas.width}×{dp.canvas.height} · {dp.pages.length} página{dp.pages.length === 1 ? '' : 's'}
+                      </span>
+                    ) : (
+                      <span className="err">no existe en el perfil ({dp.display_id})</span>
+                    )}
+                  </label>
+                ))}
               </td>
             </tr>
             <tr>
@@ -178,11 +205,12 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         )}
         {!car.valid && <div className="err small mb8">El vehículo tiene problemas: {car.problems.join(' ')}</div>}
         <p className="muted small">
-          Se creará <code>acdg/{display.id}/</code> con el runtime Lua, la configuración, la imagen y una copia del proyecto; en <code>ext_config.ini</code> solo se añade una línea{' '}
-          <code>[INCLUDE]</code> entre marcadores. Antes de tocar nada se hace una copia de seguridad.
+          Se creará {chosen.length === 1 ? <code>acdg/{chosen[0].def!.id}/</code> : <>una carpeta <code>acdg/&lt;display&gt;/</code> por display</>} con el runtime Lua, la configuración, la imagen y una copia del proyecto; en{' '}
+          <code>ext_config.ini</code> solo se añade una línea <code>[INCLUDE]</code> por display entre marcadores. Antes de tocar nada se hace una copia de seguridad.
+          {missing.length > 0 && <span className="err"> Los displays sin definición en el perfil no se generan.</span>}
         </p>
         <div className="row mb8">
-          <button className="primary" disabled={busy} onClick={() => run(true)}>
+          <button className="primary" disabled={busy || chosen.length === 0} onClick={() => run(true)}>
             {busy ? 'Generando…' : 'Generar e instalar'}
           </button>
           <button className="outline" disabled={busy} onClick={() => run(false)}>
@@ -263,23 +291,27 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
             ))}
-            <button
-              className="danger small"
-              onClick={async () => {
-                const idx = await api.confirm(`¿Desinstalar el display "${display.id}" de ${target.kind === 'car' ? 'este coche' : 'la skin ' + target.skin}?`, 'Se eliminará la carpeta generada y el bloque INCLUDE. El resto del coche no se toca.', ['Desinstalar', 'Cancelar']);
-                if (idx !== 0) return;
-                try {
-                  const done = await api.uninstall(car.path, target, display.id);
-                  toast(done.join('. ') || 'No había nada instalado.');
-                  useStore.getState().setCar(await api.scanCar(car.path));
-                  setResult(null);
-                } catch (e) {
-                  toast((e as Error).message, 'err');
-                }
-              }}
-            >
-              Desinstalar display
-            </button>
+            {chosen.map(({ dp, def }) => (
+              <button
+                key={dp.display_id}
+                className="danger small"
+                style={{ marginRight: 4 }}
+                onClick={async () => {
+                  const idx = await api.confirm(`¿Desinstalar el display "${def!.id}" de ${target.kind === 'car' ? 'este coche' : 'la skin ' + target.skin}?`, 'Se eliminará la carpeta generada y el bloque INCLUDE. El resto del coche no se toca.', ['Desinstalar', 'Cancelar']);
+                  if (idx !== 0) return;
+                  try {
+                    const done = await api.uninstall(car.path, target, def!.id);
+                    toast(done.join('. ') || 'No había nada instalado.');
+                    useStore.getState().setCar(await api.scanCar(car.path));
+                    setResult(null);
+                  } catch (e) {
+                    toast((e as Error).message, 'err');
+                  }
+                }}
+              >
+                Desinstalar {targets.length > 1 ? dp.name : 'display'}
+              </button>
+            ))}
           </div>
         </details>
       </div>

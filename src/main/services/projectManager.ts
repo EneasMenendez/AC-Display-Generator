@@ -3,7 +3,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { app } from 'electron';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import type { Project } from '@shared/model';
-import { PROJECT_FORMAT_VERSION } from '@shared/model';
+import { migrateProject } from '@shared/model';
 import { ddsToPng } from './imageManager';
 import type { RecentEntry } from '@shared/types';
 export type { RecentEntry };
@@ -104,19 +104,12 @@ export function openProject(file: string): { project: Project; assets: Record<st
   const zip = unzipSync(new Uint8Array(readFileSync(file)));
   const raw = zip['project.json'];
   if (!raw) throw new Error('El archivo no contiene project.json: no es un proyecto .acdisplay válido.');
-  const project = migrate(JSON.parse(strFromU8(raw)) as Project);
+  const project = migrateProject(JSON.parse(strFromU8(raw)));
   session.file = file;
   session.assets.clear();
   for (const [k, v] of Object.entries(zip)) if (k.startsWith('assets/')) session.assets.set(k, v);
   addRecent(file, project.name);
   return { project, assets: assetDataUrls() };
-}
-
-function migrate(p: Project): Project {
-  if (p.format_version > PROJECT_FORMAT_VERSION) {
-    throw new Error(`El proyecto se creó con una versión más reciente de la aplicación (formato ${p.format_version}).`);
-  }
-  return p;
 }
 
 /* ---------- recientes ---------- */
