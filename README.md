@@ -19,7 +19,7 @@ Funciona de punta a punta:
 - **Varios displays por coche** (dash, volante, navegador…) en un mismo proyecto, con selector en la barra superior; cada display con **varias páginas** (pestañas), condición automática por página (p. ej. "Boxes" cuando `in_pitlane`) y cambio con un botón extra de CSP (`extraA…H`, con vuelta al inicio y memoria entre sesiones). Al generar se instalan todos los displays seleccionados, cada uno en su carpeta `acdg/<display>/`.
 - Simulación con sliders, escenarios, RPM automáticas, ambiente día/noche, modo replay (variables sin físicas).
 - Proyecto `.acdisplay` (ZIP con `project.json` + assets), recientes, autoguardado de recuperación.
-- Generación: runtime Lua estable + `display_config.lua` de datos, `display.ini`, `[INCLUDE]` entre marcadores en `ext_config.ini`, backup, restaurar, desinstalar, exportar paquete sin instalar, DDS opcional, validación sintáctica del Lua.
+- Generación: `display.lua` autocontenido (configuración + runtime, sin `require`), la sección `[SCRIPTABLE_DISPLAY_ACDG_…]` escrita directamente en `ext_config.ini` entre marcadores, backup, restaurar, desinstalar, exportar paquete sin instalar, DDS opcional, validación sintáctica del Lua.
 
 Pendiente (ver fases en los requerimientos): fuentes DWrite empaquetadas probadas en juego, atlas de iconos, biblioteca de perfiles con versionado, lanzamiento de sesión desde Content Manager, instalador firmado, inglés.
 
@@ -35,6 +35,8 @@ npm run typecheck
 npm run build      # out/
 npm run dist       # instalador y portable en release/ (electron-builder)
 ```
+
+Tras generar hay que **volver a cargar la sesión** en AC: CSP lee `ext_config.ini` y los scripts al cargar la pista. El diálogo de generación incluye "Leer registro de CSP" para comprobar si el display se cargó (`[ACDG] display … cargado`) o hubo errores de Lua.
 
 Arnés de pruebas manual: con `ACDG_DEBUG=<carpeta>` la app vuelca la consola del renderer, ejecuta `<carpeta>/cmd.js` en el renderer (resultado en `cmd.out`), captura `shot.png` al crear `shot.request` y los diálogos nativos devuelven el contenido de `dialog.txt` si existe. `window.acdgStore` expone el estado (zustand).
 
@@ -59,12 +61,12 @@ Regla de oro: `src/renderer/src/render/draw.ts` (preview) y `resources/runtime/a
 
 ```
 content/cars/<id>/extension/
-  ext_config.ini                 + bloque "; ACDG BEGIN <display>" … "[INCLUDE: acdg/<display>/display.ini]" … "; ACDG END"
+  ext_config.ini                 + bloque "; ACDG BEGIN <display>" … [SCRIPTABLE_DISPLAY_ACDG_<DISPLAY>] MESHES/SCRIPT/… … "; ACDG END"
   acdg/<display>/
-    display.ini                  [SCRIPTABLE_DISPLAY_ACDG_<DISPLAY>] MESHES/SCRIPT/KEEP_BACKGROUND/SKIP_FRAMES (+ shader emisivo opcional)
-    display.lua                  carga runtime + config
-    acdg_runtime.lua             runtime (versionado)
-    display_config.lua           datos del proyecto (elementos, reglas, variables usadas)
+    display.ini                  copia de la sección (referencia / instalación manual)
+    display.lua                  script autocontenido: display_config + acdg_runtime (sin require)
+    acdg_runtime.lua             runtime (referencia, versionado)
+    display_config.lua           datos del proyecto (referencia)
     assets/, icons/, fonts/      recursos
     project.acdisplay            copia del proyecto para reeditar
     LEEME.txt

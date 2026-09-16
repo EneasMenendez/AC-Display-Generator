@@ -89,7 +89,11 @@ describe('generador', () => {
   it('runtime y display.lua son válidos', () => {
     const runtime = readFileSync('resources/runtime/acdg_runtime.lua', 'utf8');
     expect(() => luaparse.parse(runtime, { luaVersion: '5.1' })).not.toThrow();
-    expect(() => luaparse.parse(generateDisplayLua(), { luaVersion: '5.1' })).not.toThrow();
+    const gen = generateConfigLua(sampleProject(), sampleProject().displays[0], display);
+    const full = generateDisplayLua(gen.lua, runtime, 'driver_display');
+    expect(() => luaparse.parse(full, { luaVersion: '5.1' })).not.toThrow();
+    expect(full).not.toMatch(/\brequire\(/);
+    expect(full).toContain("ac.log('[ACDG] display");
   });
 
   it('genera display.ini con la sección y la condición ACTIVE', () => {
@@ -98,17 +102,18 @@ describe('generador', () => {
     expect(ini).toContain('MESHES = Plano_014_001');
     expect(ini).toContain('SCRIPT = acdg/driver_display/display.lua');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
-    expect(ini).toContain(">= 2050");
+    expect(ini).not.toContain('ACTIVE');
   });
 });
 
 describe('ext_config.ini', () => {
   const original = '[LIGHTING]\nEMISSIVE_MULT=1\n';
   it('añade, actualiza y elimina el bloque INCLUDE sin tocar el resto', () => {
-    const a = upsertIncludeBlock(original, 'driver_display', 'acdg/driver_display');
+    const body = '[SCRIPTABLE_DISPLAY_ACDG_DRIVER_DISPLAY]\nMESHES = m\nSCRIPT = acdg/driver_display/display.lua';
+    const a = upsertIncludeBlock(original, 'driver_display', body);
     expect(a).toContain(original);
-    expect(a).toContain('[INCLUDE: acdg/driver_display/display.ini]');
-    const b = upsertIncludeBlock(a, 'driver_display', 'acdg/driver_display');
+    expect(a).toContain('SCRIPT = acdg/driver_display/display.lua');
+    const b = upsertIncludeBlock(a, 'driver_display', body);
     expect(b.split('ACDG BEGIN').length).toBe(2);
     const c = removeIncludeBlock(b, 'driver_display');
     expect(c).not.toContain('ACDG');

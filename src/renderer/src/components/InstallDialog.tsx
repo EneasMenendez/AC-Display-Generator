@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { BackupEntry, DetectedDisplay, InstallResult, InstallTarget } from '@shared/types';
+import type { BackupEntry, CspLogReport, DetectedDisplay, InstallResult, InstallTarget } from '@shared/types';
 import { generateConfigLua } from '@shared/generator';
 import { api } from '../api';
 import { useStore, toast } from '../store';
@@ -35,6 +35,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
   const [conflicts, setConflicts] = useState<DetectedDisplay[]>([]);
   const [disableOthers, setDisableOthers] = useState(true);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [log, setLog] = useState<CspLogReport | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => project.displays.map((d) => d.display_id));
   // displays del proyecto con su definición en el perfil
   const targets = project.displays.map((dp) => ({ dp, def: profile?.displays.find((d) => d.id === dp.display_id) }));
@@ -261,7 +262,38 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {result?.ok && (
+          <div className="warn small mt8">
+            Para ver los cambios en el juego hay que <b>volver a cargar la sesión</b> (salir a Content Manager y entrar de nuevo): CSP lee la configuración y los scripts del coche al cargar la pista, no en caliente.
+          </div>
+        )}
         <hr />
+        <details>
+          <summary className="muted">Diagnóstico: ¿se cargó el display en la última sesión?</summary>
+          <div className="mt8 col">
+            <div className="row">
+              <button className="outline small" onClick={() => api.cspLog(car.id).then(setLog).catch((e) => toast((e as Error).message, 'err'))}>
+                Leer registro de CSP
+              </button>
+              {log && <span className="muted small">{log.exists ? `sesión iniciada ${log.started ?? '?'} · log modificado ${new Date(log.modified!).toLocaleString()}` : 'no se encontró el log de CSP'}</span>}
+            </div>
+            {log?.exists && (
+              <>
+                <div className="small">
+                  {log.carLoaded ? <span className="ok">El coche cargó su configuración en esa sesión.</span> : <span className="warn">Ese registro no corresponde a una sesión con este coche.</span>}{' '}
+                  {log.acdgLines.length > 0 ? <span className="ok">Display ACDG cargado ({log.acdgLines.length} líneas).</span> : <span className="err">No aparece ninguna línea del display ACDG: el script no se cargó (¿sesión anterior a la instalación?).</span>}
+                </div>
+                {log.acdgLines.length > 0 && <pre style={{ maxHeight: 140 }}>{log.acdgLines.join('\n')}</pre>}
+                {log.errorLines.length > 0 && (
+                  <>
+                    <div className="err small">Errores relacionados con Lua/displays:</div>
+                    <pre style={{ maxHeight: 160 }}>{log.errorLines.join('\n')}</pre>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </details>
         <details>
           <summary className="muted">Copias de seguridad y desinstalación</summary>
           <div className="mt8">

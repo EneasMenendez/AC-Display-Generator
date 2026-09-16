@@ -113,7 +113,6 @@ export function install(opts: InstallOptions): InstallResult {
 
   let luaOk = true;
   const runtime = runtimeSource();
-  const displayLua = generateDisplayLua();
   const many = selected.length > 1;
 
   for (const dp of selected) {
@@ -127,6 +126,7 @@ export function install(opts: InstallOptions): InstallResult {
     const files: Record<string, Uint8Array | string> = {};
     let ok = step(`${tag}Generar Lua y configuración`, () => {
       const gen = generateConfigLua(project, dp, display);
+      const displayLua = generateDisplayLua(gen.lua, runtime, display.id);
       for (const [name, code] of [
         ['display_config.lua', gen.lua],
         ['acdg_runtime.lua', runtime],
@@ -167,6 +167,7 @@ export function install(opts: InstallOptions): InstallResult {
         delete files[target];
         files[ddsName] = new Uint8Array(dds);
         files['display_config.lua'] = (files['display_config.lua'] as string).replace(target, ddsName);
+        files['display.lua'] = (files['display.lua'] as string).replace(target, ddsName);
         return `${width}×${height}, ${Math.round(dds.length / 1024)} KB`;
       });
     }
@@ -193,9 +194,14 @@ export function install(opts: InstallOptions): InstallResult {
     if (!ok) continue;
 
     if (opts.install) {
-      step(`${tag}Añadir INCLUDE a ext_config.ini`, () => {
+      step(`${tag}Añadir sección a ext_config.ini`, () => {
         const current = existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '';
-        const updated = upsertIncludeBlock(current, display.id, folderRel);
+        // la sección se escribe directamente (sin INCLUDE) entre marcadores
+        const body = (files['display.ini'] as string)
+          .split('\n')
+          .filter((l) => !l.startsWith(';'))
+          .join('\n');
+        const updated = upsertIncludeBlock(current, display.id, body);
         mkdirSync(dirname(extConfig), { recursive: true });
         writeFileSync(extConfig, updated, 'utf8');
         return current === '' ? 'ext_config.ini creado' : hasIncludeBlock(current, display.id) ? 'actualizado' : 'añadido';
@@ -210,7 +216,9 @@ export function install(opts: InstallOptions): InstallResult {
     step(`${tag}Comprobar instalación`, () => {
       const required = ['display.ini', 'display.lua', 'acdg_runtime.lua', 'display_config.lua'];
       for (const f of required) if (!existsSync(join(folder, f))) throw new Error(`Falta ${f}`);
-      if (opts.install && !hasIncludeBlock(readFileSync(extConfig, 'utf8'), display.id)) throw new Error('El bloque INCLUDE no se escribió.');
+      if (opts.install && !hasIncludeBlock(readFileSync(extConfig, 'utf8'), display.id)) throw new Error('El bloque de ext_config.ini no se escribió.');
+      // el script final no debe depender de require
+      if (/\brequire\(/.test(readFileSync(join(folder, 'display.lua'), 'utf8'))) throw new Error('display.lua contiene require().');
       const cfg = readFileSync(join(folder, 'display_config.lua'), 'utf8');
       if (/\{\{[A-Z_]+\}\}/.test(cfg)) throw new Error('Quedan marcadores de plantilla sin resolver.');
     });
@@ -305,7 +313,7 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
     const txt = readFileSync(extConfig, 'utf8');
     if (hasIncludeBlock(txt, displayId)) {
       writeFileSync(extConfig, removeIncludeBlock(txt, displayId), 'utf8');
-      done.push('Eliminado bloque INCLUDE de ext_config.ini');
+      done.push('Eliminada la sección de ext_config.ini');
     }
   }
   // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la carpeta)

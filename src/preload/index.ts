@@ -46,6 +46,7 @@ export const api = {
   installedProject: (carPath: string, target: unknown, displayId: string) => invoke('install:installedProject', carPath, target, displayId),
 
   openPath: (p: string) => invoke('shell:openPath', p),
+  cspLog: (carId: string) => invoke('csp:log', carId),
   launchCM: (cmPath: string) => invoke('shell:launchCM', cmPath),
   confirm: (message: string, detail: string, buttons: string[]) => invoke('dialog:confirm', message, detail, buttons),
 };

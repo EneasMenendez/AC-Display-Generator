@@ -17,6 +17,7 @@ import * as inst from './services/installer';
 import { loadSettings, saveSettings, type AppSettings } from './services/settings';
 import { RUNTIME_VERSION } from '@shared/generator';
 import { resourcesDir } from './services/resources';
+import { readCspLog } from './services/cspLog';
 
 const execFileAsync = promisify(execFile);
 
@@ -182,6 +183,7 @@ export function registerIpc(): void {
 
   // ---------- shell ----------
   ipcMain.handle('shell:openPath', (_e, p: string) => shell.openPath(p));
+  ipcMain.handle('csp:log', (_e, carId: string) => readCspLog(carId));
   ipcMain.handle('shell:launchCM', async (_e, cmPath: string) => {
     // TODO(v1.2): lanzar directamente una sesión con el coche mediante el esquema acmanager://
     try {

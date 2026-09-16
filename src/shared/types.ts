@@ -194,6 +194,19 @@ export interface BackupEntry {
   displays: string[];
 }
 
+export interface CspLogReport {
+  file: string;
+  exists: boolean;
+  modified: string | null;
+  /** fecha/hora del arranque del juego según la primera línea del log */
+  started: string | null;
+  /** el coche cargó su configuración en esa sesión */
+  carLoaded: boolean;
+  acdgLines: string[];
+  errorLines: string[];
+  luaLines: string[];
+}
+
 export interface BuiltinIcon {
   id: string;
   svg: string;
@@ -243,6 +256,7 @@ export interface AcdgApi {
   installedProject(carPath: string, target: InstallTarget, displayId: string): Promise<string | null>;
 
   openPath(p: string): Promise<string>;
+  cspLog(carId: string): Promise<CspLogReport>;
   launchCM(cmPath: string): Promise<boolean>;
   confirm(message: string, detail: string, buttons: string[]): Promise<number>;
 }

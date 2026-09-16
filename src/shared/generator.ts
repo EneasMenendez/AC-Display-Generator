@@ -240,7 +240,6 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   lines.push(`; Perfil ${profile.id} v${profile.profile_version} — no editar a mano`);
   lines.push('');
   lines.push(`[SCRIPTABLE_DISPLAY_ACDG_${display.id.toUpperCase()}]`);
-  lines.push(`ACTIVE = $" read('csp/version', 0) >= ${profile.csp_min_build} "`);
   lines.push(`MESHES = ${display.meshes.join(', ')}`);
   lines.push(`SCRIPT = ${opts.folder}/display.lua`);
   lines.push(`KEEP_BACKGROUND = ${display.keep_background ? 1 : 0}`);
@@ -250,7 +249,6 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   const em = display.emissive;
   if (em.mode === 'shader_replacement') {
     lines.push(`[SHADER_REPLACEMENT_ACDG_${display.id.toUpperCase()}]`);
-    lines.push(`ACTIVE = $" read('csp/version', 0) >= ${profile.csp_min_build} "`);
     lines.push(`MESHES = ${display.meshes.join(', ')}`);
     lines.push(`SHADER = ${em.shader}`);
     lines.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
@@ -271,41 +269,61 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
 
 /* ---------- display.lua ---------- */
 
-export function generateDisplayLua(): string {
+/**
+ * display.lua autocontenido: configuración + runtime en un único archivo, sin `require`
+ * (así no depende de cómo resuelva CSP package.path en scripts de coche).
+ */
+export function generateDisplayLua(configLua: string, runtimeLua: string, displayId: string): string {
   return [
-    '-- Generado por AC Display Generator. No editar a mano.',
-    "local dir = __dirname or '.'",
+    '-- Generado por AC Display Generator. No editar a mano: abre project.acdisplay en la aplicación y vuelve a generar.',
+    `-- Display: ${displayId}. Este archivo incluye display_config.lua y acdg_runtime.lua (se guardan aparte solo como referencia).`,
     '-- en los scripts de display `car` es el coche propietario; `sim` no siempre está definido como global',
     'sim = sim or ac.getSim()',
-    "local runtime = require('acdg_runtime')",
-    "local config = require('display_config')",
-    'runtime.init(config, dir)',
+    '',
+    '-- ===== display_config.lua =====',
+    'local ACDG_CONFIG = (function()',
+    configLua.trimEnd(),
+    'end)()',
+    '',
+    '-- ===== acdg_runtime.lua =====',
+    'local ACDG_RUNTIME = (function()',
+    runtimeLua.trimEnd(),
+    'end)()',
+    '',
+    "local dir = __dirname or '.'",
+    'ACDG_RUNTIME.init(ACDG_CONFIG, dir)',
+    `ac.log('[ACDG] display "${displayId}" cargado desde ' .. tostring(dir) .. ' (runtime ' .. tostring(ACDG_RUNTIME.version) .. ')')`,
     '',
     'function script.update(dt)',
-    '  runtime.update(dt)',
+    '  ACDG_RUNTIME.update(dt)',
     'end',
     '',
   ].join('\n');
 }
 
-/* ---------- Bloque INCLUDE en ext_config.ini ---------- */
+/* ---------- Bloque ACDG en ext_config.ini ---------- */
 
 export function includeMarkers(displayId: string): { begin: string; end: string } {
   return { begin: `; ACDG BEGIN ${displayId}`, end: `; ACDG END ${displayId}` };
 }
 
-export function includeBlock(displayId: string, folder: string): string {
+/**
+ * Bloque que se escribe en ext_config.ini entre marcadores: contiene directamente las secciones del
+ * display (el contenido de display.ini), sin [INCLUDE], para no depender de cómo resuelve CSP las rutas
+ * de archivos incluidos. SCRIPT queda relativo a extension/, como en los coches de referencia.
+ */
+export function includeBlock(displayId: string, body: string): string {
   const m = includeMarkers(displayId);
-  return `${m.begin}\n[INCLUDE: ${folder}/display.ini]\n${m.end}\n`;
+  return `${m.begin}\n${body.trim()}\n${m.end}\n`;
 }
 
 /**
- * Inserta o sustituye el bloque INCLUDE del display en el contenido de ext_config.ini.
+ * Inserta o sustituye el bloque del display en el contenido de ext_config.ini.
  * Nunca toca el resto del archivo.
  */
-export function upsertIncludeBlock(extConfig: string, displayId: string, folder: string): string {
+export function upsertIncludeBlock(extConfig: string, displayId: string, body: string): string {
   const m = includeMarkers(displayId);
-  const block = includeBlock(displayId, folder);
+  const block = includeBlock(displayId, body);
   const re = new RegExp(`${escapeRe(m.begin)}[\\s\\S]*?${escapeRe(m.end)}\\r?\\n?`);
   if (re.test(extConfig)) return extConfig.replace(re, block);
   const sep = extConfig.length === 0 ? '' : extConfig.endsWith('\n') ? '\n' : '\n\n';
@@ -362,7 +380,9 @@ export function generateReadme(project: Project, dp: DisplayProject, display: Di
     `  1. Copia la carpeta "${folder}" dentro de content/cars/<coche>/extension/ (o skins/<skin>/).`,
     '  2. Añade al final de ext_config.ini:',
     '',
-    includeBlock(display.id, folder).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
+    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_ACDG_${display.id.toUpperCase()}]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${folder}/display.lua\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
+    '',
+    '  3. Reinicia la sesión (o el juego): CSP lee la configuración del coche al cargar la pista.',
     '',
     'Para modificar el diseño abre project.acdisplay con AC Display Generator y vuelve a generar.',
     '',
