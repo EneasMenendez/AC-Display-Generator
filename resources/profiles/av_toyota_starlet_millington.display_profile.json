@@ -1,0 +1,30 @@
+{
+  "profile_version": 2,
+  "id": "av_toyota_starlet_millington.driver_display",
+  "name": "Toyota Starlet Millington – Driver Display",
+  "author": "Kronos Simracing / AC Display Generator",
+  "car_ids": ["av_toyota_starlet_millington"],
+  "min_app_version": "0.1.0",
+  "min_runtime_version": "0.1.0",
+  "csp_min_build": 2050,
+  "displays": [
+    {
+      "id": "driver_display",
+      "name": "Driver Display",
+      "meshes": ["Plano_014_001"],
+      "texture_size": { "width": 1593, "height": 987 },
+      "physical_size_m": { "width": 0.094063, "height": 0.075243 },
+      "keep_background": true,
+      "skip_frames": 1,
+      "max_distance_m": 50,
+      "emissive": { "mode": "none", "brightness_default": 1.0 },
+      "defaults": {
+        "rpm_limiter": 8000,
+        "rpm_warning_pct": 0.85,
+        "rpm_redline_pct": 0.95,
+        "max_fuel_l": 60,
+        "water_temp_range": [40, 130]
+      }
+    }
+  ]
+}

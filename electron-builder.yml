@@ -1,0 +1,19 @@
+appId: com.acdisplaygenerator.app
+productName: AC Display Generator
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+extraResources:
+  - from: resources
+    to: resources
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

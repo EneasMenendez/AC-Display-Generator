@@ -1,0 +1,692 @@
+-- ============================================================
+-- AC Display Generator — runtime Lua
+-- Librería estable que dibuja un display a partir de display_config.lua.
+-- No editar a mano: se sustituye al regenerar el display.
+-- Requiere CSP con scriptable displays (ui.* + car/sim state).
+-- ============================================================
+
+ACDG = ACDG or {}
+ACDG.version = '0.1.0'
+
+local cfg = nil
+local W, H = 0, 0
+local scriptDir = nil
+local fonts = {}
+local state = {}          -- estado por elemento (histéresis, suavizado)
+local t = 0               -- tiempo acumulado (parpadeos)
+local brightness = 1
+local nightTarget = 1
+local nightCurrent = 1
+local physicsOk = true
+
+local VEC0 = vec2(0, 0)
+local VEC1 = vec2(1, 1)
+local WHITE = rgbm(1, 1, 1, 1)
+
+-- ------------------------------------------------------------
+-- Utilidades
+-- ------------------------------------------------------------
+
+local function num(v)
+  if type(v) == 'number' and v == v then return v end
+  return 0
+end
+
+local function hexToRgbm(s)
+  if type(s) ~= 'string' or s:sub(1, 1) ~= '#' then return nil end
+  local hex = s:sub(2)
+  if #hex == 6 then hex = hex .. 'FF' end
+  if #hex ~= 8 then return nil end
+  local r = tonumber(hex:sub(1, 2), 16) or 0
+  local g = tonumber(hex:sub(3, 4), 16) or 0
+  local b = tonumber(hex:sub(5, 6), 16) or 0
+  local a = tonumber(hex:sub(7, 8), 16) or 255
+  return rgbm(r / 255, g / 255, b / 255, a / 255)
+end
+
+-- Convierte recursivamente cadenas "#RRGGBB[AA]" a rgbm.
+local function convertColors(tbl)
+  for k, v in pairs(tbl) do
+    if type(v) == 'table' then
+      convertColors(v)
+    elseif type(v) == 'string' and v:sub(1, 1) == '#' and (#v == 7 or #v == 9) then
+      local c = hexToRgbm(v)
+      if c then tbl[k] = c end
+    end
+  end
+end
+
+local tmpColor = rgbm(1, 1, 1, 1)
+-- Devuelve un color aplicando brillo global y opacidad (reutiliza un rgbm temporal).
+local function col(c, opacity)
+  if c == nil then return WHITE end
+  local b = brightness * nightCurrent
+  tmpColor.r = c.r * b
+  tmpColor.g = c.g * b
+  tmpColor.b = c.b * b
+  tmpColor.mult = c.mult * (opacity or 1)
+  return tmpColor
+end
+
+local function limiter()
+  local l = num(car.rpmLimiter)
+  if l <= 0 then l = num(cfg.defaults.rpmLimiter) end
+  if l <= 0 then l = 8000 end
+  return l
+end
+
+-- Resuelve un valor de RPM (número o "85%").
+local function rpmValue(v)
+  if type(v) == 'number' then return v end
+  if type(v) == 'string' then
+    local pct = tonumber(v:match('^([%d%.]+)%%$'))
+    if pct then return pct / 100 * limiter() end
+    return tonumber(v) or 0
+  end
+  return 0
+end
+
+local function blinkOn(hz)
+  if not hz or hz <= 0 then return true end
+  return (t * hz) % 1 < 0.5
+end
+
+local function clamp01(x)
+  if x < 0 then return 0 end
+  if x > 1 then return 1 end
+  return x
+end
+
+local function lerp(a, b, k)
+  return a + (b - a) * k
+end
+
+-- ------------------------------------------------------------
+-- Variables
+-- ------------------------------------------------------------
+
+local varCache = {}
+
+function ACDG.rpmPct()
+  return clamp01(num(car.rpm) / limiter())
+end
+
+function ACDG.fuelPct()
+  local m = num(car.maxFuel)
+  if m <= 0 then m = num(cfg.defaults.maxFuel) end
+  if m <= 0 then return 0 end
+  return clamp01(num(car.fuel) / m)
+end
+
+function ACDG.fuelLapsLeft()
+  local per = num(car.fuelPerLap)
+  if per <= 0 then return 0 end
+  return num(car.fuel) / per
+end
+
+function ACDG.lowFuel()
+  return ACDG.fuelPct() < (cfg.defaults.lowFuelPct or 0.1)
+end
+
+function ACDG.waterHot()
+  return num(car.waterTemperature) >= (cfg.defaults.waterHot or 110)
+end
+
+function ACDG.oilLowPressure()
+  return num(car.rpm) > 500 and num(car.oilPressure) < (cfg.defaults.oilLowPressure or 1)
+end
+
+function ACDG.batteryLow()
+  return num(car.batteryVoltage) < (cfg.defaults.batteryLow or 12)
+end
+
+local function getVar(id)
+  local v = varCache[id]
+  if v ~= nil then return v end
+  local fn = cfg.vars[id]
+  if not fn then return nil end
+  local ok, res = pcall(fn)
+  if not ok or res == nil then
+    local meta = cfg.varMeta[id]
+    res = meta and meta.fallback or 0
+  end
+  varCache[id] = res
+  return res
+end
+
+-- ------------------------------------------------------------
+-- Formato (espejo de src/shared/format.ts)
+-- ------------------------------------------------------------
+
+local function pad(n, w)
+  local s = tostring(n)
+  while #s < w do s = '0' .. s end
+  return s
+end
+
+local function formatTime(ms, fmt)
+  fmt = fmt or 'm:ss.mmm'
+  if ms == nil or ms ~= ms or ms < 0 then
+    return fmt == 'h:mm:ss' and '-:--:--' or '-:--.---'
+  end
+  local total = math.floor(ms)
+  local h = math.floor(total / 3600000)
+  local m = math.floor((total % 3600000) / 60000)
+  local s = math.floor((total % 60000) / 1000)
+  local mil = total % 1000
+  if fmt == 'm:ss.mmm' then
+    return string.format('%d:%s.%s', h * 60 + m, pad(s, 2), pad(mil, 3))
+  elseif fmt == "m'ss\"mm" then
+    return string.format('%d\'%s"%s', h * 60 + m, pad(s, 2), pad(math.floor(mil / 10), 2))
+  elseif fmt == 'm:ss.m' then
+    return string.format('%d:%s.%d', h * 60 + m, pad(s, 2), math.floor(mil / 100))
+  elseif fmt == 'ss.mmm' then
+    return string.format('%d.%s', (h * 60 + m) * 60 + s, pad(mil, 3))
+  elseif fmt == 'h:mm:ss' then
+    return string.format('%d:%s:%s', h, pad(m, 2), pad(s, 2))
+  end
+  return string.format('%d:%s.%s', h * 60 + m, pad(s, 2), pad(mil, 3))
+end
+
+local function formatNumber(value, decimals, padZeros, showSign)
+  if value == nil or value ~= value then return '-' end
+  decimals = math.max(0, math.min(6, decimals or 0))
+  local s = string.format('%.' .. decimals .. 'f', math.abs(value))
+  if padZeros and padZeros > 0 then
+    local int, frac = s:match('^(%d+)%.?(%d*)$')
+    if int then
+      s = pad(int, padZeros)
+      if frac and #frac > 0 then s = s .. '.' .. frac end
+    end
+  end
+  if value < 0 then s = '-' .. s
+  elseif showSign and value > 0 then s = '+' .. s end
+  return s
+end
+
+local CONV = {
+  ['km/h'] = { mph = { 0.621371, 0 } },
+  ['°C'] = { ['°F'] = { 1.8, 32 } },
+  bar = { psi = { 14.5038, 0 } },
+  psi = { bar = { 1 / 14.5038, 0 } },
+  L = { gal = { 0.264172, 0 } },
+}
+
+local function convertUnit(value, from, to)
+  if from == '%' then return value * 100 end
+  if not to or to == from then return value end
+  local c = CONV[from] and CONV[from][to]
+  if not c then return value end
+  return value * c[1] + c[2]
+end
+
+local function autoUnit(base)
+  local units = cfg.settings.units or 'auto'
+  local imperial = units == 'imperial' or (units == 'auto' and car.prefersImperialUnits)
+  if not imperial then return nil end
+  if base == 'km/h' then return 'mph' end
+  if base == '°C' then return '°F' end
+  if base == 'bar' then return 'psi' end
+  if base == 'L' then return 'gal' end
+  return nil
+end
+
+function ACDG.format(binding)
+  if not binding.variable then return binding.staticText or '' end
+  local raw = getVar(binding.variable)
+  local meta = cfg.varMeta[binding.variable] or {}
+  local body
+  if raw == nil then
+    body = '-'
+  else
+    local key = raw
+    if type(raw) == 'number' then key = tostring(math.floor(raw + 0.5)) end
+    if type(raw) == 'boolean' then key = raw and 'true' or 'false' end
+    if binding.map and binding.map[key] ~= nil then
+      body = binding.map[key]
+    elseif type(raw) == 'boolean' then
+      body = raw and 'ON' or 'OFF'
+    elseif type(raw) == 'string' then
+      body = raw
+    elseif meta.type == 'time_ms' then
+      body = formatTime(raw, binding.timeFormat)
+    else
+      local unit = binding.unit
+      if unit == nil or unit == '' then unit = autoUnit(meta.unit) end
+      body = formatNumber(convertUnit(raw, meta.unit or '', unit), binding.decimals, binding.padZeros, binding.showSign)
+    end
+  end
+  return (binding.prefix or '') .. body .. (binding.suffix or '')
+end
+
+-- ------------------------------------------------------------
+-- Reglas de estado
+-- ------------------------------------------------------------
+
+local function compare(a, op, b)
+  if type(a) == 'boolean' then a = a and 1 or 0 end
+  if type(b) == 'boolean' then b = b and 1 or 0 end
+  if type(b) == 'string' then b = rpmValue(b) end
+  if type(a) ~= 'number' or type(b) ~= 'number' then return false end
+  if op == '>' then return a > b end
+  if op == '>=' then return a >= b end
+  if op == '<' then return a < b end
+  if op == '<=' then return a <= b end
+  if op == '==' then return a == b end
+  if op == '!=' then return a ~= b end
+  return false
+end
+
+-- Devuelve: visible, opacity, colorOverride, imageOverride
+local function applyRules(el)
+  local visible = el.visible ~= false
+  local opacity = el.opacity or 1
+  local color, image = nil, nil
+  local rules = el.rules
+  if rules then
+    for i = 1, #rules do
+      local r = rules[i]
+      if compare(getVar(r.when.variable), r.when.op, r.when.value) then
+        local s = r.set
+        if s.visible ~= nil then visible = s.visible end
+        if s.opacity ~= nil then opacity = s.opacity end
+        if s.color ~= nil then color = s.color end
+        if s.image ~= nil then image = s.image end
+        if s.blinkHz and s.blinkHz > 0 and not blinkOn(s.blinkHz) then visible = false end
+      end
+    end
+  end
+  return visible, opacity, color, image
+end
+
+-- ------------------------------------------------------------
+-- Fuentes y texto
+-- ------------------------------------------------------------
+
+local function getFont(name, bold)
+  local key = (name or 'Segoe UI') .. (bold and ':b' or '')
+  local f = fonts[key]
+  if f then return f end
+  local def = cfg.fonts[name or '']
+  local dir = nil
+  if def and def.dir then dir = scriptDir .. '/' .. def.dir end
+  local ok, font = pcall(ui.DWriteFont, name or 'Segoe UI', dir)
+  if not ok or not font then font = ui.DWriteFont('Segoe UI') end
+  if bold then font = font:weight(ui.DWriteFont.Weight.Bold) end
+  fonts[key] = font
+  return font
+end
+
+local ALIGN_H = { left = ui.Alignment.Start, center = ui.Alignment.Center, right = ui.Alignment.End }
+local ALIGN_V = { top = ui.Alignment.Start, middle = ui.Alignment.Center, bottom = ui.Alignment.End }
+
+local p1, p2 = vec2(), vec2()
+
+local function drawText(text, x, y, w, h, style, color, opacity)
+  ui.pushDWriteFont(getFont(style.font, style.bold))
+  p1.x, p1.y = x, y
+  p2.x, p2.y = x + w, y + h
+  ui.dwriteDrawTextClipped(text, style.size or 32, p1, p2,
+    ALIGN_H[style.align or 'center'] or ui.Alignment.Center,
+    ALIGN_V[style.valign or 'middle'] or ui.Alignment.Center,
+    false, col(color or style.color, opacity))
+  ui.popDWriteFont()
+end
+
+-- ------------------------------------------------------------
+-- Dibujo de elementos
+-- ------------------------------------------------------------
+
+local draw = {}
+
+local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, active, colorFn, opacity)
+  -- colorFn(i, isActive) -> rgbm
+  local horizontal = orientation ~= 'vertical'
+  local len = horizontal and w or h
+  local segLen = (len - gap * (n - 1)) / n
+  if segLen < 1 then segLen = 1 end
+  for i = 1, n do
+    local idx = reverse and (n - i + 1) or i
+    local off = (i - 1) * (segLen + gap)
+    if horizontal then
+      p1.x, p1.y = x + off, y
+      p2.x, p2.y = x + off + segLen, y + h
+    else
+      -- vertical: el segmento 1 está abajo
+      p1.x, p1.y = x, y + h - off - segLen
+      p2.x, p2.y = x + w, y + h - off
+    end
+    local c = colorFn(idx, idx <= active)
+    if c then ui.drawRectFilled(p1, p2, col(c, opacity), radius or 0) end
+  end
+end
+
+local function continuousBar(x, y, w, h, orientation, reverse, frac, radius, colorBg, colorFill, opacity)
+  p1.x, p1.y = x, y
+  p2.x, p2.y = x + w, y + h
+  if colorBg then ui.drawRectFilled(p1, p2, col(colorBg, opacity), radius or 0) end
+  frac = clamp01(frac)
+  if frac <= 0 then return end
+  if orientation == 'vertical' then
+    local fh = h * frac
+    if reverse then p1.y, p2.y = y, y + fh else p1.y, p2.y = y + h - fh, y + h end
+  else
+    local fw = w * frac
+    if reverse then p1.x, p2.x = x + w - fw, x + w else p1.x, p2.x = x, x + fw end
+  end
+  ui.drawRectFilled(p1, p2, col(colorFill, opacity), radius or 0)
+end
+
+function draw.text(el, opacity, colorOverride)
+  drawText(ACDG.format(el.binding), el.x, el.y, el.width, el.height, el.style, colorOverride, opacity)
+end
+
+function draw.gear(el, opacity, colorOverride)
+  local g = getVar('gear')
+  local key = tostring(math.floor(num(g) + 0.5))
+  local txt = (el.config.map and el.config.map[key]) or key
+  local color = colorOverride
+  if not color and el.config.limiterColor and car.isEngineLimiterOn then color = el.config.limiterColor end
+  drawText(txt, el.x, el.y, el.width, el.height, el.config.style, color, opacity)
+end
+
+function draw.rpm_bar(el, opacity)
+  local c = el.config
+  local rpm = num(car.rpm)
+  local minR, maxR = rpmValue(c.min), rpmValue(c.max)
+  local warnR, redR = rpmValue(c.warning), rpmValue(c.redline)
+  if maxR <= minR then maxR = minR + 1 end
+  local frac = clamp01((rpm - minR) / (maxR - minR))
+  local onLimiter = car.isEngineLimiterOn or rpm >= maxR - 1
+  local limiterVisible = onLimiter and blinkOn(c.limiterBlinkHz)
+  local colors = c.colors
+  local function zoneColor(r)
+    if r >= redR then return colors.redline end
+    if r >= warnR then return colors.warning end
+    return colors.normal
+  end
+  if c.style == 'segments' then
+    local n = math.max(1, math.floor(c.segments or 10))
+    local active = math.floor(frac * n + 0.0001)
+    segmentedBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, n, c.gap or 0, c.radius, active,
+      function(i, isActive)
+        if onLimiter then
+          if limiterVisible then return colors.limiter end
+          return colors.off
+        end
+        if not isActive then return colors.off end
+        if c.perSegmentColors then
+          return zoneColor(minR + (i - 0.5) / n * (maxR - minR))
+        end
+        return zoneColor(rpm)
+      end, opacity)
+  else
+    local fill = zoneColor(rpm)
+    if onLimiter then
+      if not limiterVisible then fill = colors.off else fill = colors.limiter end
+    end
+    continuousBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, c.radius, colors.off, fill, opacity)
+  end
+end
+
+function draw.shift_light(el, opacity, colorOverride)
+  local c = el.config
+  local st = state[el.id]
+  if not st then st = { on = false }; state[el.id] = st end
+  local rpm = num(car.rpm)
+  local onR, offR = rpmValue(c.rpmOn), rpmValue(c.rpmOff)
+  if st.on then
+    if rpm < offR then st.on = false end
+  else
+    if rpm >= onR then st.on = true end
+  end
+  local lit = st.on and blinkOn(c.blinkHz)
+  local color = lit and (colorOverride or c.colorOn) or c.colorOff
+  if c.shape == 'circle' then
+    p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
+    ui.drawCircleFilled(p1, math.min(el.width, el.height) / 2, col(color, opacity), 32)
+  else
+    p1.x, p1.y = el.x, el.y
+    p2.x, p2.y = el.x + el.width, el.y + el.height
+    ui.drawRectFilled(p1, p2, col(color, opacity), c.radius or 0)
+  end
+end
+
+local function thresholdColor(value, base, thresholds)
+  local color = base
+  if thresholds then
+    for i = 1, #thresholds do
+      if value >= thresholds[i].value then color = thresholds[i].color end
+    end
+  end
+  return color
+end
+
+function draw.bar(el, opacity, colorOverride)
+  local c = el.config
+  local raw = num(getVar(c.variable))
+  local st = state[el.id]
+  if not st then st = { v = raw }; state[el.id] = st end
+  if c.smoothingMs and c.smoothingMs > 0 then
+    local k = clamp01(ACDG.dt / (c.smoothingMs / 1000))
+    st.v = lerp(st.v, raw, k)
+  else
+    st.v = raw
+  end
+  local value = st.v
+  local range = c.max - c.min
+  if range == 0 then range = 1 end
+  local fill = colorOverride or thresholdColor(value, c.colorFill, c.thresholds)
+  if c.bipolar then
+    -- barra con centro en cero
+    local frac = clamp01(math.abs(value) / math.max(math.abs(c.max), math.abs(c.min), 0.0001))
+    p1.x, p1.y = el.x, el.y
+    p2.x, p2.y = el.x + el.width, el.y + el.height
+    ui.drawRectFilled(p1, p2, col(c.colorBg, opacity), c.radius or 0)
+    if c.orientation == 'vertical' then
+      local cy = el.y + el.height / 2
+      local fh = el.height / 2 * frac
+      if value >= 0 then p1.y, p2.y = cy - fh, cy else p1.y, p2.y = cy, cy + fh end
+    else
+      local cx = el.x + el.width / 2
+      local fw = el.width / 2 * frac
+      if value >= 0 then p1.x, p2.x = cx, cx + fw else p1.x, p2.x = cx - fw, cx end
+    end
+    if frac > 0 then ui.drawRectFilled(p1, p2, col(fill, opacity), c.radius or 0) end
+    return
+  end
+  local frac = clamp01((value - c.min) / range)
+  if c.style == 'segments' then
+    local n = math.max(1, math.floor(c.segments or 10))
+    local active = math.floor(frac * n + 0.0001)
+    segmentedBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, n, c.gap or 0, c.radius, active,
+      function(i, isActive)
+        if isActive then return fill end
+        return c.colorBg
+      end, opacity)
+  else
+    continuousBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, c.radius, c.colorBg, fill, opacity)
+  end
+end
+
+function draw.icon(el, opacity, colorOverride, imageOverride)
+  local c = el.config
+  local on = true
+  if c.variable then
+    local v = getVar(c.variable)
+    if type(v) == 'number' then v = v ~= 0 end
+    if c.showWhen == 'when_true' then on = v == true
+    elseif c.showWhen == 'when_false' then on = v ~= true end
+  end
+  local color
+  if on then color = colorOverride or c.colorOn
+  elseif c.dimWhenOff then color = c.colorOff
+  else return end
+  local file = imageOverride or el.file
+  if not file then return end
+  p1.x, p1.y = el.x, el.y
+  p2.x, p2.y = el.x + el.width, el.y + el.height
+  ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(color, opacity))
+end
+
+local FIT = { stretch = 0, fill = 1, fit = 2 }
+
+function draw.image(el, opacity, colorOverride, imageOverride)
+  local file = imageOverride or el.file
+  if not file or file == '' then return end
+  p1.x, p1.y = el.x, el.y
+  p2.x, p2.y = el.x + el.width, el.y + el.height
+  ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(colorOverride or el.config.tint, opacity), VEC0, VEC1, FIT[el.config.fit or 'stretch'] or 0)
+end
+
+function draw.rect(el, opacity, colorOverride)
+  local c = el.config
+  p1.x, p1.y = el.x, el.y
+  p2.x, p2.y = el.x + el.width, el.y + el.height
+  ui.drawRectFilled(p1, p2, col(colorOverride or c.fill, opacity), c.radius or 0)
+  if c.strokeWidth and c.strokeWidth > 0 then
+    ui.drawRect(p1, p2, col(c.stroke, opacity), c.radius or 0, nil, c.strokeWidth)
+  end
+end
+
+function draw.line(el, opacity, colorOverride)
+  local c = el.config
+  p1.x, p1.y = el.x, el.y + el.height / 2
+  p2.x, p2.y = el.x + el.width, el.y + el.height / 2
+  ui.drawLine(p1, p2, col(colorOverride or c.color, opacity), c.thickness or 2)
+end
+
+function draw.circle(el, opacity, colorOverride)
+  local c = el.config
+  p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
+  local r = math.min(el.width, el.height) / 2
+  ui.drawCircleFilled(p1, r, col(colorOverride or c.fill, opacity), 48)
+  if c.strokeWidth and c.strokeWidth > 0 then
+    ui.drawCircle(p1, r, col(c.stroke, opacity), 48, c.strokeWidth)
+  end
+end
+
+function draw.gauge(el, opacity, colorOverride)
+  local c = el.config
+  local value = num(getVar(c.variable))
+  local range = c.max - c.min
+  if range == 0 then range = 1 end
+  local frac = clamp01((value - c.min) / range)
+  local cx, cy = el.x + el.width / 2, el.y + el.height / 2
+  local radius = math.min(el.width, el.height) / 2 - (c.thickness or 10) / 2
+  local a0 = math.rad(c.startAngle or 135)
+  local a1 = math.rad(c.endAngle or 405)
+  if c.clockwise == false then a0, a1 = a1, a0 end
+  local fill = colorOverride or thresholdColor(value, c.color, c.thresholds)
+  p1.x, p1.y = cx, cy
+  local segs = 48
+  if c.style == 'segments' then
+    local n = math.max(1, math.floor(c.segments or 10))
+    local active = math.floor(frac * n + 0.0001)
+    local sweep = (a1 - a0) / n
+    local gapA = math.rad(c.gap or 2)
+    for i = 1, n do
+      local s0 = a0 + (i - 1) * sweep + gapA / 2
+      local s1 = a0 + i * sweep - gapA / 2
+      ui.pathClear()
+      ui.pathArcTo(p1, radius, s0, s1, 8)
+      ui.pathStroke(col(i <= active and fill or c.bgColor, opacity), false, c.thickness or 10)
+    end
+  else
+    ui.pathClear()
+    ui.pathArcTo(p1, radius, a0, a1, segs)
+    ui.pathStroke(col(c.bgColor, opacity), false, c.thickness or 10)
+    if frac > 0 then
+      ui.pathClear()
+      ui.pathArcTo(p1, radius, a0, a0 + (a1 - a0) * frac, math.max(2, math.floor(segs * frac)))
+      ui.pathStroke(col(fill, opacity), false, c.thickness or 10)
+    end
+  end
+end
+
+local function drawElement(el)
+  local visible, opacity, colorOverride, imageOverride = applyRules(el)
+  if not visible or opacity <= 0 then return end
+  local fn = draw[el.type]
+  if not fn then return end
+  local rot = el.rotation or 0
+  if rot ~= 0 then ui.beginRotation() end
+  fn(el, opacity, colorOverride, imageOverride)
+  if rot ~= 0 then
+    p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
+    ui.endPivotRotation(rot, p1)
+  end
+end
+
+-- ------------------------------------------------------------
+-- Ciclo de vida
+-- ------------------------------------------------------------
+
+function ACDG.init(config, dir)
+  cfg = config
+  scriptDir = dir or '.'
+  convertColors(cfg)
+  W, H = cfg.display.width, cfg.display.height
+  brightness = cfg.settings.brightness or 1
+  cfg.vars = cfg.vars or {}
+  cfg.varMeta = cfg.varMeta or {}
+  cfg.fonts = cfg.fonts or {}
+  cfg.defaults = cfg.defaults or {}
+  state = {}
+  fonts = {}
+end
+
+function ACDG.setBrightness(b)
+  brightness = b
+end
+
+local function updateNight(dt)
+  local s = cfg.settings
+  local target = 1
+  if s.nightMode == 'headlights' then
+    if car.headlightsActive then target = s.nightBrightness or 0.6 end
+  elseif s.nightMode == 'time' then
+    local h = num(sim.timeHours) + num(sim.timeMinutes) / 60
+    if h < 7 or h >= 20 then target = s.nightBrightness or 0.6 end
+  end
+  nightTarget = target
+  nightCurrent = lerp(nightCurrent, nightTarget, clamp01(dt * 2))
+end
+
+ACDG.dt = 0
+
+function ACDG.update(dt)
+  if not cfg then return end
+  -- rendimiento: coches lejanos y no enfocados no se actualizan
+  local maxD = cfg.display.maxDistance or 50
+  if not car.focused and num(car.distanceToCamera) > maxD then
+    ac.skipFrame()
+    return
+  end
+  ACDG.dt = dt
+  t = t + dt
+  physicsOk = car.physicsAvailable ~= false
+  for k in pairs(varCache) do varCache[k] = nil end
+  updateNight(dt)
+
+  -- fondo: siempre se repinta entero (evita rastros con KEEP_BACKGROUND=1 e imágenes con alfa)
+  p1.x, p1.y = 0, 0
+  p2.x, p2.y = W, H
+  if cfg.background.color then
+    local c = col(cfg.background.color, 1)
+    c.mult = 1
+    ui.drawRectFilled(p1, p2, c)
+  end
+  if cfg.background.file then
+    ui.drawImage(scriptDir .. '/' .. cfg.background.file, p1, p2, col(WHITE, 1))
+  end
+
+  local page = cfg.pages[ACDG.currentPage or 1] or cfg.pages[1]
+  if not page then return end
+  local els = page.elements
+  for i = 1, #els do
+    drawElement(els[i])
+  end
+end
+
+return ACDG

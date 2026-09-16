@@ -1,0 +1,838 @@
+import type { DisplayElement, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
+import { newId } from '@shared/model';
+import { VARIABLE_MAP } from '@shared/variables';
+import { api } from '../api';
+import { useStore, toast } from '../store';
+import { Chk, ColorField, FontSelect, Num, Prop, RpmField, Sel, Txt, VarSelect } from './fields';
+import { Icon } from './icons';
+
+export function PropertiesPanel() {
+  const project = useStore((s) => s.project);
+  const selection = useStore((s) => s.selection);
+  const profile = useStore((s) => s.profile);
+  const patchProject = useStore((s) => s.patchProject);
+  if (!project) return null;
+  const els = project.pages[0].elements.filter((e) => selection.includes(e.id));
+  const display = profile?.displays.find((d) => d.id === project.display_id);
+  const limiter = display?.defaults.rpm_limiter ?? 8000;
+
+  if (els.length === 0) return <ProjectProps />;
+  if (els.length > 1) return <MultiProps els={els} />;
+  const el = els[0];
+  const update = (patch: Partial<DisplayElement> | ((e: DisplayElement) => void), commit = true) => useStore.getState().updateElement(el.id, patch, commit);
+
+  return (
+    <div>
+      <div className="prop-group">
+        <h3>
+          <span>{typeLabel(el.type)}</span>
+          <span className="row gap4">
+            <button className={`icon ${el.visible ? '' : 'active'}`} title={el.visible ? 'Ocultar' : 'Mostrar'} onClick={() => update({ visible: !el.visible })}>
+              <Icon name={el.visible ? 'eye' : 'eyeOff'} size={14} />
+            </button>
+            <button className={`icon ${el.locked ? 'active' : ''}`} title={el.locked ? 'Desbloquear' : 'Bloquear'} onClick={() => update({ locked: !el.locked })}>
+              <Icon name={el.locked ? 'lock' : 'unlock'} size={14} />
+            </button>
+          </span>
+        </h3>
+        <Prop label="Nombre">
+          <Txt value={el.name} onChange={(v) => update({ name: v })} />
+        </Prop>
+        <Prop label="Posición X / Y">
+          <div className="pair">
+            <Num value={el.x} onChange={(v) => update({ x: v })} />
+            <Num value={el.y} onChange={(v) => update({ y: v })} />
+          </div>
+        </Prop>
+        <Prop label="Ancho / Alto">
+          <div className="pair">
+            <Num value={el.width} onChange={(v) => update({ width: v })} min={1} />
+            <Num value={el.height} onChange={(v) => update({ height: v })} min={1} />
+          </div>
+        </Prop>
+        <Prop label="Rotación / Opac.">
+          <div className="pair">
+            <Num value={el.rotation} onChange={(v) => update({ rotation: v })} step={1} />
+            <Num value={el.opacity} onChange={(v) => update({ opacity: v })} step={0.05} min={0} max={1} />
+          </div>
+        </Prop>
+        <div className="quick-actions">
+          <button className="small ghost" onClick={() => patchProject((p) => centerEl(p.canvas.width, undefined, el.id, p))}>
+            Centrar horizontal
+          </button>
+          <button className="small ghost" onClick={() => patchProject((p) => centerEl(undefined, p.canvas.height, el.id, p))}>
+            Centrar vertical
+          </button>
+        </div>
+      </div>
+
+      {el.type === 'text' && <TextProps el={el} update={update} />}
+      {el.type === 'gear' && (
+        <div className="prop-group">
+          <h3>Marcha</h3>
+          <StyleProps style={el.config.style} onChange={(s) => update((e) => e.type === 'gear' && (e.config.style = s))} />
+          <Prop label="Reversa / Neutral">
+            <div className="pair">
+              <Txt value={el.config.map['-1'] ?? 'R'} onChange={(v) => update((e) => e.type === 'gear' && (e.config.map['-1'] = v))} />
+              <Txt value={el.config.map['0'] ?? 'N'} onChange={(v) => update((e) => e.type === 'gear' && (e.config.map['0'] = v))} />
+            </div>
+          </Prop>
+          <Prop label="Color en limitador">
+            <ColorField value={el.config.limiterColor ?? '#FF2D2D'} onChange={(v) => update((e) => e.type === 'gear' && (e.config.limiterColor = v))} />
+          </Prop>
+        </div>
+      )}
+      {el.type === 'rpm_bar' && (
+        <div className="prop-group">
+          <h3>Barra RPM</h3>
+          <Prop label="Orientación">
+            <Sel value={el.config.orientation} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.orientation = v))} options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]} />
+          </Prop>
+          <Prop label="Estilo">
+            <Sel value={el.config.style} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.style = v))} options={[{ value: 'segments', label: 'Segmentos / LEDs' }, { value: 'continuous', label: 'Continua' }]} />
+          </Prop>
+          {el.config.style === 'segments' && (
+            <Prop label="Segmentos / Sep.">
+              <div className="pair">
+                <Num value={el.config.segments} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.segments = v))} min={1} max={200} />
+                <Num value={el.config.gap} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.gap = v))} min={0} />
+              </div>
+            </Prop>
+          )}
+          <Prop label="Esquinas">
+            <Num value={el.config.radius} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.radius = v))} min={0} />
+          </Prop>
+          <Prop label="RPM mín.">
+            <RpmField value={el.config.min} limiter={limiter} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.min = v))} />
+          </Prop>
+          <Prop label="RPM máx.">
+            <RpmField value={el.config.max} limiter={limiter} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.max = v))} />
+          </Prop>
+          <Prop label="Advertencia">
+            <RpmField value={el.config.warning} limiter={limiter} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.warning = v))} />
+          </Prop>
+          <Prop label="Zona roja">
+            <RpmField value={el.config.redline} limiter={limiter} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.redline = v))} />
+          </Prop>
+          {(['normal', 'warning', 'redline', 'limiter', 'off'] as const).map((k) => (
+            <Prop key={k} label={`Color ${{ normal: 'normal', warning: 'aviso', redline: 'rojo', limiter: 'limitador', off: 'apagado' }[k]}`}>
+              <ColorField value={el.config.colors[k]} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.colors[k] = v))} />
+            </Prop>
+          ))}
+          <Prop label="Parpadeo limit. (Hz)">
+            <Num value={el.config.limiterBlinkHz} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.limiterBlinkHz = v))} min={0} max={30} step={0.5} />
+          </Prop>
+          <Prop label="Opciones">
+            <div className="col gap4">
+              <Chk value={el.config.perSegmentColors} label="Color por zona de cada segmento" onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.perSegmentColors = v))} />
+              <Chk value={el.config.reverse} label="Invertir sentido" onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.reverse = v))} />
+            </div>
+          </Prop>
+        </div>
+      )}
+      {el.type === 'shift_light' && (
+        <div className="prop-group">
+          <h3>Shift light</h3>
+          <Prop label="Enciende a">
+            <RpmField value={el.config.rpmOn} limiter={limiter} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.rpmOn = v))} />
+          </Prop>
+          <Prop label="Apaga por debajo">
+            <RpmField value={el.config.rpmOff} limiter={limiter} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.rpmOff = v))} />
+          </Prop>
+          <Prop label="Forma">
+            <Sel value={el.config.shape} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.shape = v))} options={[{ value: 'circle', label: 'Círculo' }, { value: 'rect', label: 'Rectángulo' }]} />
+          </Prop>
+          <Prop label="Color encendido">
+            <ColorField value={el.config.colorOn} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.colorOn = v))} />
+          </Prop>
+          <Prop label="Color apagado">
+            <ColorField value={el.config.colorOff} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.colorOff = v))} />
+          </Prop>
+          <Prop label="Parpadeo (Hz)">
+            <Num value={el.config.blinkHz} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.blinkHz = v))} min={0} max={30} step={0.5} />
+          </Prop>
+        </div>
+      )}
+      {el.type === 'bar' && (
+        <div className="prop-group">
+          <h3>Barra</h3>
+          <Prop label="Variable">
+            <VarSelect value={el.config.variable} onlyNumeric onChange={(v) => update((e) => e.type === 'bar' && v && ((e.config.variable = v), applyRange(e, v)))} />
+          </Prop>
+          <Prop label="Mín. / Máx.">
+            <div className="pair">
+              <Num value={el.config.min} onChange={(v) => update((e) => e.type === 'bar' && (e.config.min = v))} />
+              <Num value={el.config.max} onChange={(v) => update((e) => e.type === 'bar' && (e.config.max = v))} />
+            </div>
+          </Prop>
+          <Prop label="Orientación">
+            <Sel value={el.config.orientation} onChange={(v) => update((e) => e.type === 'bar' && (e.config.orientation = v))} options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]} />
+          </Prop>
+          <Prop label="Estilo">
+            <Sel value={el.config.style} onChange={(v) => update((e) => e.type === 'bar' && (e.config.style = v))} options={[{ value: 'continuous', label: 'Continua' }, { value: 'segments', label: 'Segmentos' }]} />
+          </Prop>
+          {el.config.style === 'segments' && (
+            <Prop label="Segmentos / Sep.">
+              <div className="pair">
+                <Num value={el.config.segments} onChange={(v) => update((e) => e.type === 'bar' && (e.config.segments = v))} min={1} />
+                <Num value={el.config.gap} onChange={(v) => update((e) => e.type === 'bar' && (e.config.gap = v))} min={0} />
+              </div>
+            </Prop>
+          )}
+          <Prop label="Esquinas">
+            <Num value={el.config.radius} onChange={(v) => update((e) => e.type === 'bar' && (e.config.radius = v))} min={0} />
+          </Prop>
+          <Prop label="Color relleno">
+            <ColorField value={el.config.colorFill} onChange={(v) => update((e) => e.type === 'bar' && (e.config.colorFill = v))} />
+          </Prop>
+          <Prop label="Color fondo">
+            <ColorField value={el.config.colorBg} onChange={(v) => update((e) => e.type === 'bar' && (e.config.colorBg = v))} />
+          </Prop>
+          <Prop label="Suavizado (ms)">
+            <Num value={el.config.smoothingMs} onChange={(v) => update((e) => e.type === 'bar' && (e.config.smoothingMs = v))} min={0} step={50} />
+          </Prop>
+          <Prop label="Opciones">
+            <div className="col gap4">
+              <Chk value={el.config.bipolar} label="Bipolar (centro en cero)" onChange={(v) => update((e) => e.type === 'bar' && (e.config.bipolar = v))} />
+              <Chk value={el.config.reverse} label="Invertir sentido" onChange={(v) => update((e) => e.type === 'bar' && (e.config.reverse = v))} />
+            </div>
+          </Prop>
+          <ThresholdsEditor thresholds={el.config.thresholds} onChange={(t) => update((e) => e.type === 'bar' && (e.config.thresholds = t))} />
+        </div>
+      )}
+      {el.type === 'gauge' && (
+        <div className="prop-group">
+          <h3>Indicador circular</h3>
+          <Prop label="Variable">
+            <VarSelect value={el.config.variable} onlyNumeric onChange={(v) => update((e) => e.type === 'gauge' && v && ((e.config.variable = v), applyRange(e, v)))} />
+          </Prop>
+          <Prop label="Mín. / Máx.">
+            <div className="pair">
+              <Num value={el.config.min} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.min = v))} />
+              <Num value={el.config.max} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.max = v))} />
+            </div>
+          </Prop>
+          <Prop label="Ángulo ini. / fin">
+            <div className="pair">
+              <Num value={el.config.startAngle} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.startAngle = v))} />
+              <Num value={el.config.endAngle} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.endAngle = v))} />
+            </div>
+          </Prop>
+          <Prop label="Grosor">
+            <Num value={el.config.thickness} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.thickness = v))} min={1} />
+          </Prop>
+          <Prop label="Estilo">
+            <Sel value={el.config.style} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.style = v))} options={[{ value: 'arc', label: 'Arco continuo' }, { value: 'segments', label: 'Segmentos' }]} />
+          </Prop>
+          {el.config.style === 'segments' && (
+            <Prop label="Segmentos / Sep.(°)">
+              <div className="pair">
+                <Num value={el.config.segments} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.segments = v))} min={1} />
+                <Num value={el.config.gap} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.gap = v))} min={0} step={0.5} />
+              </div>
+            </Prop>
+          )}
+          <Prop label="Color">
+            <ColorField value={el.config.color} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.color = v))} />
+          </Prop>
+          <Prop label="Color fondo">
+            <ColorField value={el.config.bgColor} onChange={(v) => update((e) => e.type === 'gauge' && (e.config.bgColor = v))} />
+          </Prop>
+          <Prop label="Sentido">
+            <Chk value={el.config.clockwise} label="Horario" onChange={(v) => update((e) => e.type === 'gauge' && (e.config.clockwise = v))} />
+          </Prop>
+          <ThresholdsEditor thresholds={el.config.thresholds} onChange={(t) => update((e) => e.type === 'gauge' && (e.config.thresholds = t))} />
+        </div>
+      )}
+      {el.type === 'icon' && <IconProps el={el} update={update} />}
+      {el.type === 'image' && (
+        <div className="prop-group">
+          <h3>Imagen</h3>
+          <Prop label="Archivo">
+            <div className="row gap4">
+              <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {el.config.file || '—'}
+              </span>
+              <button
+                className="small outline"
+                onClick={async () => {
+                  const a = await api.pickAsset('image');
+                  if (!a) return;
+                  if (a.error) toast(a.error, 'err');
+                  useStore.getState().addAssetUrl(a.path, a.dataUrl);
+                  update((e) => {
+                    if (e.type !== 'image') return;
+                    e.config.file = a.path;
+                    if (a.width && a.height) {
+                      e.width = a.width;
+                      e.height = a.height;
+                    }
+                  });
+                }}
+              >
+                Importar…
+              </button>
+            </div>
+          </Prop>
+          <Prop label="Tinte">
+            <ColorField value={el.config.tint} onChange={(v) => update((e) => e.type === 'image' && (e.config.tint = v))} />
+          </Prop>
+          <Prop label="Ajuste">
+            <Sel value={el.config.fit} onChange={(v) => update((e) => e.type === 'image' && (e.config.fit = v))} options={[{ value: 'stretch', label: 'Estirar' }, { value: 'fit', label: 'Ajustar (mantener proporción)' }, { value: 'fill', label: 'Rellenar' }]} />
+          </Prop>
+        </div>
+      )}
+      {el.type === 'rect' && (
+        <div className="prop-group">
+          <h3>Rectángulo</h3>
+          <Prop label="Relleno">
+            <ColorField value={el.config.fill} onChange={(v) => update((e) => e.type === 'rect' && (e.config.fill = v))} />
+          </Prop>
+          <Prop label="Borde">
+            <ColorField value={el.config.stroke} onChange={(v) => update((e) => e.type === 'rect' && (e.config.stroke = v))} />
+          </Prop>
+          <Prop label="Grosor / Esquinas">
+            <div className="pair">
+              <Num value={el.config.strokeWidth} onChange={(v) => update((e) => e.type === 'rect' && (e.config.strokeWidth = v))} min={0} />
+              <Num value={el.config.radius} onChange={(v) => update((e) => e.type === 'rect' && (e.config.radius = v))} min={0} />
+            </div>
+          </Prop>
+        </div>
+      )}
+      {el.type === 'circle' && (
+        <div className="prop-group">
+          <h3>Círculo</h3>
+          <Prop label="Relleno">
+            <ColorField value={el.config.fill} onChange={(v) => update((e) => e.type === 'circle' && (e.config.fill = v))} />
+          </Prop>
+          <Prop label="Borde">
+            <ColorField value={el.config.stroke} onChange={(v) => update((e) => e.type === 'circle' && (e.config.stroke = v))} />
+          </Prop>
+          <Prop label="Grosor borde">
+            <Num value={el.config.strokeWidth} onChange={(v) => update((e) => e.type === 'circle' && (e.config.strokeWidth = v))} min={0} />
+          </Prop>
+        </div>
+      )}
+      {el.type === 'line' && (
+        <div className="prop-group">
+          <h3>Línea</h3>
+          <Prop label="Color">
+            <ColorField value={el.config.color} onChange={(v) => update((e) => e.type === 'line' && (e.config.color = v))} />
+          </Prop>
+          <Prop label="Grosor">
+            <Num value={el.config.thickness} onChange={(v) => update((e) => e.type === 'line' && (e.config.thickness = v))} min={1} />
+          </Prop>
+        </div>
+      )}
+
+      <RulesEditor el={el} update={update} limiter={limiter} />
+    </div>
+  );
+}
+
+function applyRange(e: DisplayElement, variable: string): void {
+  const def = VARIABLE_MAP[variable];
+  if (!def) return;
+  if (e.type === 'bar' || e.type === 'gauge') {
+    e.config.min = def.range[0];
+    e.config.max = def.range[1];
+  }
+}
+
+function centerEl(w: number | undefined, h: number | undefined, id: string, p: { pages: { elements: DisplayElement[] }[] }): void {
+  const el = p.pages[0].elements.find((e) => e.id === id);
+  if (!el) return;
+  if (w !== undefined) el.x = Math.round(w / 2 - el.width / 2);
+  if (h !== undefined) el.y = Math.round(h / 2 - el.height / 2);
+}
+
+export function typeLabel(t: DisplayElement['type']): string {
+  return {
+    text: 'Texto',
+    rpm_bar: 'Barra RPM',
+    shift_light: 'Shift light',
+    bar: 'Barra',
+    gear: 'Marcha',
+    icon: 'Icono',
+    image: 'Imagen',
+    rect: 'Rectángulo',
+    line: 'Línea',
+    circle: 'Círculo',
+    gauge: 'Indicador circular',
+  }[t];
+}
+
+function StyleProps({ style, onChange }: { style: TextStyle; onChange: (s: TextStyle) => void }) {
+  const set = (patch: Partial<TextStyle>) => onChange({ ...style, ...patch });
+  return (
+    <>
+      <Prop label="Fuente">
+        <div className="row gap4">
+          <FontSelect value={style.font} onChange={(v) => set({ font: v })} />
+          <button
+            className="icon"
+            title="Importar fuente TTF/OTF al proyecto"
+            onClick={async () => {
+              const a = await api.pickAsset('font');
+              if (!a?.name) return;
+              useStore.getState().patchProject((p) => (p.fonts[a.name!] = a.path));
+              const face = new FontFace(a.name, `url(${a.dataUrl})`);
+              face.load().then((f) => document.fonts.add(f)).catch(() => undefined);
+              set({ font: a.name });
+            }}
+          >
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
+      </Prop>
+      <Prop label="Tamaño / Espaciado">
+        <div className="pair">
+          <Num value={style.size} onChange={(v) => set({ size: v })} min={4} />
+          <Num value={style.letterSpacing} onChange={(v) => set({ letterSpacing: v })} />
+        </div>
+      </Prop>
+      <Prop label="Color">
+        <ColorField value={style.color} onChange={(v) => set({ color: v })} />
+      </Prop>
+      <Prop label="Alineación">
+        <div className="pair">
+          <Sel value={style.align} onChange={(v) => set({ align: v })} options={[{ value: 'left', label: 'Izquierda' }, { value: 'center', label: 'Centro' }, { value: 'right', label: 'Derecha' }]} />
+          <Sel value={style.valign} onChange={(v) => set({ valign: v })} options={[{ value: 'top', label: 'Arriba' }, { value: 'middle', label: 'Medio' }, { value: 'bottom', label: 'Abajo' }]} />
+        </div>
+      </Prop>
+      <Prop label="Negrita">
+        <Chk value={style.bold} onChange={(v) => set({ bold: v })} />
+      </Prop>
+    </>
+  );
+}
+
+function TextProps({ el, update }: { el: Extract<DisplayElement, { type: 'text' }>; update: (fn: (e: DisplayElement) => void) => void }) {
+  const b = el.binding;
+  const def = b.variable ? VARIABLE_MAP[b.variable] : undefined;
+  const setB = (patch: Partial<typeof b>) => update((e) => e.type === 'text' && Object.assign(e.binding, patch));
+  const unitOptions = def ? unitChoices(def.unit) : [];
+  return (
+    <>
+      <div className="prop-group">
+        <h3>Contenido</h3>
+        <Prop label="Variable">
+          <VarSelect value={b.variable} allowNone onChange={(v) => setB({ variable: v })} />
+        </Prop>
+        {def?.physics_only && <div className="warn small mb8">* No disponible en replays ni coches remotos: se mostrará el valor por defecto.</div>}
+        {!b.variable && (
+          <Prop label="Texto">
+            <Txt value={b.staticText ?? ''} onChange={(v) => setB({ staticText: v })} />
+          </Prop>
+        )}
+        {def && def.type === 'time_ms' && (
+          <Prop label="Formato de tiempo">
+            <Sel<TimeFormat>
+              value={b.timeFormat ?? 'm:ss.mmm'}
+              onChange={(v) => setB({ timeFormat: v })}
+              options={[
+                { value: 'm:ss.mmm', label: '1:23.456' },
+                { value: "m'ss\"mm", label: '1\'23"45' },
+                { value: 'm:ss.m', label: '1:23.4' },
+                { value: 'ss.mmm', label: '83.456' },
+                { value: 'h:mm:ss', label: '0:01:23' },
+              ]}
+            />
+          </Prop>
+        )}
+        {def && def.type !== 'time_ms' && def.type !== 'boolean' && (
+          <>
+            <Prop label="Decimales / Ceros">
+              <div className="pair">
+                <Num value={b.decimals} onChange={(v) => setB({ decimals: v })} min={0} max={6} />
+                <Num value={b.padZeros} onChange={(v) => setB({ padZeros: v })} min={0} max={6} />
+              </div>
+            </Prop>
+            {unitOptions.length > 1 && (
+              <Prop label="Unidad">
+                <select value={b.unit ?? ''} onChange={(e) => setB({ unit: e.target.value || undefined })}>
+                  {unitOptions.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </Prop>
+            )}
+            <Prop label="Mostrar signo">
+              <Chk value={b.showSign} onChange={(v) => setB({ showSign: v })} />
+            </Prop>
+          </>
+        )}
+        {def?.type === 'boolean' && (
+          <Prop label="Texto ON / OFF">
+            <div className="pair">
+              <Txt value={b.map?.true ?? 'ON'} onChange={(v) => setB({ map: { ...b.map, true: v } })} />
+              <Txt value={b.map?.false ?? 'OFF'} onChange={(v) => setB({ map: { ...b.map, false: v } })} />
+            </div>
+          </Prop>
+        )}
+        {b.variable && (
+          <Prop label="Prefijo / Sufijo">
+            <div className="pair">
+              <Txt value={b.prefix} onChange={(v) => setB({ prefix: v })} />
+              <Txt value={b.suffix} onChange={(v) => setB({ suffix: v })} />
+            </div>
+          </Prop>
+        )}
+      </div>
+      <div className="prop-group">
+        <h3>Estilo</h3>
+        <StyleProps style={el.style} onChange={(s) => update((e) => e.type === 'text' && (e.style = s))} />
+      </div>
+    </>
+  );
+}
+
+function unitChoices(base: string): { value: string; label: string }[] {
+  const map: Record<string, string[]> = { 'km/h': ['mph'], '°C': ['°F'], bar: ['psi'], psi: ['bar'], L: ['gal'] };
+  const alts = map[base];
+  if (!alts) return [];
+  return [{ value: '', label: `${base} (automático)` }, { value: base, label: base }, ...alts.map((a) => ({ value: a, label: a }))];
+}
+
+function IconProps({ el, update }: { el: Extract<DisplayElement, { type: 'icon' }>; update: (fn: (e: DisplayElement) => void) => void }) {
+  const icons = useStore((s) => s.icons);
+  const assets = useStore((s) => s.assets);
+  const c = el.config;
+  const set = (patch: Partial<typeof c>) => update((e) => e.type === 'icon' && Object.assign(e.config, patch));
+  const customIcons = Object.keys(assets).filter((k) => k.startsWith('assets/icons/'));
+  return (
+    <div className="prop-group">
+      <h3>Icono</h3>
+      <Prop label="Icono">
+        <div className="row gap4">
+          <select value={c.icon} onChange={(e) => set({ icon: e.target.value })}>
+            <optgroup label="Integrados">
+              {icons.map((i) => (
+                <option key={i.id} value={`builtin:${i.id}`}>
+                  {i.id}
+                </option>
+              ))}
+            </optgroup>
+            {customIcons.length > 0 && (
+              <optgroup label="Del proyecto">
+                {customIcons.map((k) => (
+                  <option key={k} value={k}>
+                    {k.replace('assets/icons/', '')}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          <button
+            className="icon"
+            title="Importar icono PNG (blanco sobre transparente para poder colorearlo)"
+            onClick={async () => {
+              const a = await api.pickAsset('icon');
+              if (!a) return;
+              useStore.getState().addAssetUrl(a.path, a.dataUrl);
+              set({ icon: a.path });
+            }}
+          >
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
+      </Prop>
+      <Prop label="Variable">
+        <VarSelect value={c.variable} allowNone onlyBoolean onChange={(v) => set({ variable: v })} />
+      </Prop>
+      {c.variable && (
+        <Prop label="Mostrar">
+          <Sel value={c.showWhen} onChange={(v) => set({ showWhen: v })} options={[{ value: 'when_true', label: 'Cuando está activo' }, { value: 'when_false', label: 'Cuando NO está activo' }, { value: 'always', label: 'Siempre' }]} />
+        </Prop>
+      )}
+      <Prop label="Color activo">
+        <ColorField value={c.colorOn} onChange={(v) => set({ colorOn: v })} />
+      </Prop>
+      <Prop label="Inactivo">
+        <div className="col gap4">
+          <Chk value={c.dimWhenOff} label="Mostrar atenuado (si no, se oculta)" onChange={(v) => set({ dimWhenOff: v })} />
+          {c.dimWhenOff && <ColorField value={c.colorOff} onChange={(v) => set({ colorOff: v })} />}
+        </div>
+      </Prop>
+    </div>
+  );
+}
+
+function ThresholdsEditor({ thresholds, onChange }: { thresholds: Threshold[]; onChange: (t: Threshold[]) => void }) {
+  return (
+    <div className="mt8">
+      <h3>
+        <span>Umbrales de color</span>
+        <button className="small ghost" onClick={() => onChange([...thresholds, { value: 0, color: '#FF2D2D' }])}>
+          <Icon name="plus" size={12} /> Añadir
+        </button>
+      </h3>
+      {thresholds.map((t, i) => (
+        <div key={i} className="row gap4 mb8">
+          <span className="muted small">≥</span>
+          <Num value={t.value} onChange={(v) => onChange(thresholds.map((x, j) => (j === i ? { ...x, value: v } : x)))} />
+          <ColorField value={t.color} onChange={(v) => onChange(thresholds.map((x, j) => (j === i ? { ...x, color: v } : x)))} />
+          <button className="icon" onClick={() => onChange(thresholds.filter((_, j) => j !== i))}>
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RulesEditor({ el, update, limiter }: { el: DisplayElement; update: (fn: (e: DisplayElement) => void) => void; limiter: number }) {
+  const setRule = (id: string, fn: (r: Rule) => void) =>
+    update((e) => {
+      const r = e.rules.find((x) => x.id === id);
+      if (r) fn(r);
+    });
+  return (
+    <div className="prop-group">
+      <h3>
+        <span>Estados (reglas)</span>
+        <button className="small ghost" onClick={() => update((e) => e.rules.push({ id: newId('rule'), when: { variable: 'rpm', op: '>=', value: '95%' }, set: { color: '#FF2D2D' } }))}>
+          <Icon name="plus" size={12} /> Añadir
+        </button>
+      </h3>
+      {el.rules.length === 0 && <div className="muted small">Sin reglas. Una regla cambia color, visibilidad, opacidad o parpadeo cuando una variable cumple una condición.</div>}
+      {el.rules.map((r) => {
+        const def = VARIABLE_MAP[r.when.variable];
+        const isBool = def?.type === 'boolean';
+        return (
+          <div key={r.id} className="rule">
+            <div className="row gap4">
+              <span className="muted small">Si</span>
+              <VarSelect value={r.when.variable} onChange={(v) => v && setRule(r.id, (x) => ((x.when.variable = v), (x.when.value = VARIABLE_MAP[v]?.type === 'boolean' ? true : 0)))} />
+              <button className="icon" onClick={() => update((e) => (e.rules = e.rules.filter((x) => x.id !== r.id)))}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+            <div className="row gap4">
+              {isBool ? (
+                <Sel value={r.when.value === true ? 'true' : 'false'} onChange={(v) => setRule(r.id, (x) => ((x.when.op = '=='), (x.when.value = v === 'true')))} options={[{ value: 'true', label: 'está activo' }, { value: 'false', label: 'NO está activo' }]} />
+              ) : (
+                <>
+                  <select value={r.when.op} onChange={(e) => setRule(r.id, (x) => (x.when.op = e.target.value as Rule['when']['op']))} style={{ width: 56 }}>
+                    {['>', '>=', '<', '<=', '==', '!='].map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+                  {r.when.variable === 'rpm' ? (
+                    <RpmField value={typeof r.when.value === 'boolean' ? 0 : r.when.value} limiter={limiter} onChange={(v) => setRule(r.id, (x) => (x.when.value = v))} />
+                  ) : (
+                    <Num value={Number(r.when.value)} onChange={(v) => setRule(r.id, (x) => (x.when.value = v))} />
+                  )}
+                </>
+              )}
+            </div>
+            <div className="row gap4 wrap">
+              <Chk value={r.set.color !== undefined} label="Color" onChange={(v) => setRule(r.id, (x) => (x.set.color = v ? '#FF2D2D' : undefined))} />
+              {r.set.color !== undefined && <ColorField value={r.set.color} onChange={(v) => setRule(r.id, (x) => (x.set.color = v))} />}
+            </div>
+            <div className="row gap4 wrap">
+              <Chk value={r.set.visible !== undefined} label="Visibilidad" onChange={(v) => setRule(r.id, (x) => (x.set.visible = v ? false : undefined))} />
+              {r.set.visible !== undefined && (
+                <Sel value={r.set.visible ? 'show' : 'hide'} onChange={(v) => setRule(r.id, (x) => (x.set.visible = v === 'show'))} options={[{ value: 'hide', label: 'ocultar' }, { value: 'show', label: 'mostrar' }]} />
+              )}
+            </div>
+            <div className="row gap4 wrap">
+              <Chk value={r.set.blinkHz !== undefined} label="Parpadeo (Hz)" onChange={(v) => setRule(r.id, (x) => (x.set.blinkHz = v ? 4 : undefined))} />
+              {r.set.blinkHz !== undefined && <Num value={r.set.blinkHz} onChange={(v) => setRule(r.id, (x) => (x.set.blinkHz = v))} min={0.5} max={30} step={0.5} />}
+              <Chk value={r.set.opacity !== undefined} label="Opacidad" onChange={(v) => setRule(r.id, (x) => (x.set.opacity = v ? 0.5 : undefined))} />
+              {r.set.opacity !== undefined && <Num value={r.set.opacity} onChange={(v) => setRule(r.id, (x) => (x.set.opacity = v))} min={0} max={1} step={0.05} />}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MultiProps({ els }: { els: DisplayElement[] }) {
+  const patchProject = useStore((s) => s.patchProject);
+  const ids = els.map((e) => e.id);
+  const align = (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') =>
+    patchProject((p) => {
+      const sel = p.pages[0].elements.filter((e) => ids.includes(e.id) && !e.locked);
+      const x0 = Math.min(...sel.map((e) => e.x));
+      const x1 = Math.max(...sel.map((e) => e.x + e.width));
+      const y0 = Math.min(...sel.map((e) => e.y));
+      const y1 = Math.max(...sel.map((e) => e.y + e.height));
+      for (const e of sel) {
+        if (mode === 'left') e.x = x0;
+        if (mode === 'right') e.x = x1 - e.width;
+        if (mode === 'hcenter') e.x = Math.round((x0 + x1) / 2 - e.width / 2);
+        if (mode === 'top') e.y = y0;
+        if (mode === 'bottom') e.y = y1 - e.height;
+        if (mode === 'vcenter') e.y = Math.round((y0 + y1) / 2 - e.height / 2);
+      }
+    });
+  const distribute = (axis: 'x' | 'y') =>
+    patchProject((p) => {
+      const sel = p.pages[0].elements.filter((e) => ids.includes(e.id) && !e.locked).sort((a, b) => (axis === 'x' ? a.x - b.x : a.y - b.y));
+      if (sel.length < 3) return;
+      const first = sel[0];
+      const last = sel[sel.length - 1];
+      const total = axis === 'x' ? last.x + last.width - first.x : last.y + last.height - first.y;
+      const sizes = sel.reduce((s, e) => s + (axis === 'x' ? e.width : e.height), 0);
+      const gap = (total - sizes) / (sel.length - 1);
+      let cur = axis === 'x' ? first.x : first.y;
+      for (const e of sel) {
+        if (axis === 'x') e.x = Math.round(cur);
+        else e.y = Math.round(cur);
+        cur += (axis === 'x' ? e.width : e.height) + gap;
+      }
+    });
+  return (
+    <div>
+      <h3>{els.length} elementos seleccionados</h3>
+      <div className="prop-group">
+        <h3>Alinear</h3>
+        <div className="row gap4 wrap">
+          <button className="small outline" onClick={() => align('left')}>
+            Izquierda
+          </button>
+          <button className="small outline" onClick={() => align('hcenter')}>
+            Centro
+          </button>
+          <button className="small outline" onClick={() => align('right')}>
+            Derecha
+          </button>
+        </div>
+        <div className="row gap4 wrap mt8">
+          <button className="small outline" onClick={() => align('top')}>
+            Arriba
+          </button>
+          <button className="small outline" onClick={() => align('vcenter')}>
+            Medio
+          </button>
+          <button className="small outline" onClick={() => align('bottom')}>
+            Abajo
+          </button>
+        </div>
+      </div>
+      <div className="prop-group">
+        <h3>Distribuir</h3>
+        <div className="row gap4">
+          <button className="small outline" onClick={() => distribute('x')} disabled={els.length < 3}>
+            Horizontal
+          </button>
+          <button className="small outline" onClick={() => distribute('y')} disabled={els.length < 3}>
+            Vertical
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectProps() {
+  const project = useStore((s) => s.project)!;
+  const profile = useStore((s) => s.profile);
+  const car = useStore((s) => s.car);
+  const patchProject = useStore((s) => s.patchProject);
+  const s = project.settings;
+  const set = (patch: Partial<typeof s>) => patchProject((p) => Object.assign(p.settings, patch));
+  const display = profile?.displays.find((d) => d.id === project.display_id);
+  return (
+    <div>
+      <div className="prop-group">
+        <h3>Proyecto</h3>
+        <Prop label="Nombre">
+          <Txt value={project.name} onChange={(v) => patchProject((p) => (p.name = v))} />
+        </Prop>
+        <table className="info small">
+          <tbody>
+            <tr>
+              <td>Vehículo</td>
+              <td>{car?.name ?? project.car_id}</td>
+            </tr>
+            <tr>
+              <td>Perfil</td>
+              <td>{profile?.name ?? project.profile.id}</td>
+            </tr>
+            <tr>
+              <td>Display</td>
+              <td>
+                {display?.name ?? project.display_id} · {project.canvas.width}×{project.canvas.height}
+              </td>
+            </tr>
+            <tr>
+              <td>Malla</td>
+              <td className="mono">{display?.meshes.join(', ')}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="prop-group">
+        <h3>Fondo</h3>
+        <Prop label="Imagen">
+          <div className="row gap4">
+            <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {project.background.file ?? '— color plano —'}
+            </span>
+            <button
+              className="small outline"
+              onClick={async () => {
+                const a = await api.pickAsset('image');
+                if (!a) return;
+                if (a.error) toast(a.error, 'err');
+                if (a.width && a.height && (a.width !== project.canvas.width || a.height !== project.canvas.height)) {
+                  toast(`La imagen (${a.width}×${a.height}) no coincide con la textura (${project.canvas.width}×${project.canvas.height}); se escalará.`, 'err');
+                }
+                useStore.getState().addAssetUrl(a.path, a.dataUrl);
+                patchProject((p) => (p.background.file = a.path));
+              }}
+            >
+              Cambiar…
+            </button>
+            {project.background.file && (
+              <button className="icon" onClick={() => patchProject((p) => (p.background.file = null))}>
+                <Icon name="close" size={12} />
+              </button>
+            )}
+          </div>
+        </Prop>
+        <Prop label="Color">
+          <ColorField value={project.background.color} onChange={(v) => patchProject((p) => (p.background.color = v))} />
+        </Prop>
+      </div>
+      <div className="prop-group">
+        <h3>Brillo</h3>
+        <Prop label="Brillo global">
+          <Num value={s.brightness} onChange={(v) => set({ brightness: v })} min={0.05} max={3} step={0.05} />
+        </Prop>
+        <Prop label="Modo noche">
+          <Sel value={s.nightMode} onChange={(v) => set({ nightMode: v })} options={[{ value: 'off', label: 'Desactivado' }, { value: 'headlights', label: 'Con las luces encendidas' }, { value: 'time', label: 'Por hora (20:00–07:00)' }]} />
+        </Prop>
+        {s.nightMode !== 'off' && (
+          <Prop label="Brillo nocturno">
+            <Num value={s.nightBrightness} onChange={(v) => set({ nightBrightness: v })} min={0.05} max={1} step={0.05} />
+          </Prop>
+        )}
+      </div>
+      <div className="prop-group">
+        <h3>Unidades</h3>
+        <Prop label="Sistema">
+          <Sel value={s.units} onChange={(v) => set({ units: v })} options={[{ value: 'auto', label: 'Automático (según el coche)' }, { value: 'metric', label: 'Métrico (km/h, °C, bar, L)' }, { value: 'imperial', label: 'Imperial (mph, °F, psi, gal)' }]} />
+        </Prop>
+      </div>
+      <div className="prop-group">
+        <h3>Editor</h3>
+        <Prop label="Rejilla (px)">
+          <Num value={s.grid} onChange={(v) => set({ grid: v })} min={0} max={256} />
+        </Prop>
+        <Prop label="Ajuste">
+          <div className="col gap4">
+            <Chk value={s.snap} label="Ajustar a rejilla y bordes" onChange={(v) => set({ snap: v })} />
+            <Chk value={s.snapToElements} label="Ajustar a otros elementos" onChange={(v) => set({ snapToElements: v })} />
+          </div>
+        </Prop>
+      </div>
+      <div className="muted small">Selecciona un elemento en el lienzo o en la lista de capas para editar sus propiedades.</div>
+    </div>
+  );
+}
