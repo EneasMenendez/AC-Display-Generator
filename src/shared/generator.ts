@@ -199,6 +199,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
       brightness: dp.settings.brightness * display.emissive.brightness_default,
       nightBrightness: dp.settings.nightBrightness,
       nightMode: dp.settings.nightMode,
+      refreshHz: dp.settings.refreshHz || 0,
       pageSwitch: dp.settings.pageSwitch,
     },
     defaults: {

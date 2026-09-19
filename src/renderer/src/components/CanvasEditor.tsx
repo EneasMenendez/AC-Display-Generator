@@ -44,6 +44,7 @@ export function CanvasEditor() {
   const fitted = useRef(false);
   const lastT = useRef(performance.now());
   const t0 = useRef(performance.now());
+  const heldCtx = useRef<{ display: string; at: number; ctx: ReturnType<typeof resolveSim> } | null>(null);
 
   // ---------- transformación vista ----------
   function view() {
@@ -132,7 +133,14 @@ export function CanvasEditor() {
       const p = activeDisplayOf(s)!;
       const display = s.profile?.displays.find((d) => d.id === p.display_id);
       const defaults = display?.defaults ?? { rpm_limiter: 8000, rpm_warning_pct: 0.85, rpm_redline_pct: 0.95, max_fuel_l: 60, water_temp_range: [40, 130], oil_temp_range: [40, 150], oil_pressure_range: [0, 8], speed_max: 300 };
-      const simCtx = resolveSim(s.sim, defaults, t, s.ambient);
+      // frecuencia de refresco del display: los valores solo cambian cada 1/Hz s (como en el juego)
+      let simCtx = resolveSim(s.sim, defaults, t, s.ambient);
+      const hz = p.settings.refreshHz || 0;
+      if (hz > 0) {
+        const held = heldCtx.current;
+        if (held && held.display === p.display_id && t - held.at < 1 / hz && t >= held.at) simCtx = held.ctx;
+        else heldCtx.current = { display: p.display_id, at: t, ctx: simCtx };
+      } else heldCtx.current = null;
       const env: DrawEnv = { images: images.current, brightness: p.settings.brightness * s.ambient, state: drawState.current, dt };
 
       const g = canvas.getContext('2d')!;

@@ -31,6 +31,8 @@ function project(): Project {
   d.pages.push({ id: 'pit', name: 'Boxes', elements: [createElement('text')], when: { variable: 'in_pitlane', op: '==', value: true } });
   d.settings.pageSwitch = { input: 'extraA', wrap: true, remember: true };
   d.settings.nightMode = 'headlights';
+  d.settings.refreshHz = 0;
+  text.binding.updateHz = 10;
   d.background.file = 'assets/bg.png';
   return p;
 }
@@ -115,6 +117,33 @@ describe('runtime Lua generado', () => {
       await engine.doString('CALLS = {}; CARV.focused = false; CARV.distanceToCamera = 500; script.update(0.016)');
       expect(String(await engine.doString('return CALLS[1]'))).toBe('skipFrame');
       expect(Number(await engine.doString('return #CALLS'))).toBe(1);
+    } finally {
+      engine.global.close();
+    }
+  }, 30000);
+
+  it('frecuencia de refresco: a 30 Hz se salta la mayoría de los frames y el texto a 10 Hz se congela', async () => {
+    const p = project();
+    p.displays[0].settings.refreshHz = 30;
+    const gen = generateConfigLua(p, p.displays[0], profile.displays[0]);
+    const lua = generateDisplayLua(gen.lua, readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'), 'driver_display');
+    const engine = await new LuaFactory().createEngine();
+    try {
+      await engine.doString(STUBS);
+      await engine.doString(lua);
+      // 60 frames a 60 fps (0,96 s) → ~29 redibujados y el resto saltados
+      await engine.doString('CALLS = {}; for i = 1, 60 do script.update(0.016) end');
+      const skips = Number(await engine.doString('local n = 0 for i = 1, #CALLS do if CALLS[i] == "skipFrame" then n = n + 1 end end return n'));
+      expect(skips).toBeGreaterThanOrEqual(28);
+      expect(skips).toBeLessThanOrEqual(33);
+      // el texto con updateHz = 10 se recalcula ~10 veces por segundo: el tiempo de vuelta mostrado va por saltos
+      await engine.doString('TEXTS = {}; CARV.lapTimeMs = 0; for i = 1, 60 do CARV.lapTimeMs = CARV.lapTimeMs + 16; script.update(0.016) end');
+      const shown = (await engine.doString('local t = {} for i = 1, #TEXTS do t[#t + 1] = TEXTS[i].text end return table.concat(t, "|")')) as string;
+      const lapTexts = shown.split('|').filter((x) => /^\d+'\d\d"\d\d$/.test(x));
+      const distinct = new Set(lapTexts).size;
+      expect(lapTexts.length).toBeGreaterThan(20);
+      expect(distinct).toBeLessThanOrEqual(12);
+      expect(distinct).toBeGreaterThanOrEqual(8);
     } finally {
       engine.global.close();
     }

@@ -428,6 +428,18 @@ function TextProps({ el, update }: { el: Extract<DisplayElement, { type: 'text' 
             <Txt value={b.staticText ?? ''} onChange={(v) => setB({ staticText: v })} />
           </Prop>
         )}
+        {def && (
+          <Prop label="Actualizar" title="Frecuencia propia de este texto: entre actualizaciones el valor se congela (útil para que las milésimas sean legibles)">
+            <Sel
+              value={String(b.updateHz ?? 0)}
+              onChange={(v) => setB({ updateHz: Number(v) || undefined })}
+              options={[
+                { value: '0', label: 'Como el display' },
+                ...[30, 20, 10, 5, 4, 2, 1].map((hz) => ({ value: String(hz), label: `${hz} Hz` })),
+              ]}
+            />
+          </Prop>
+        )}
         {def && def.type === 'time_ms' && (
           <Prop label="Formato de tiempo">
             <Sel<TimeFormat>
@@ -1000,6 +1012,20 @@ function ProjectProps() {
             <Num value={s.nightBrightness} onChange={(v) => set({ nightBrightness: v })} min={0.05} max={1} step={0.05} />
           </Prop>
         )}
+      </div>
+      <div className="prop-group">
+        <h3>Refresco</h3>
+        <Prop label="Frecuencia" title="Cuántas veces por segundo se redibuja el display en el juego. Los displays reales suelen ir a 10–30 Hz; con menos frecuencia los valores rápidos (milésimas) se leen mejor y se ahorra rendimiento.">
+          <Sel
+            value={String(s.refreshHz || 0)}
+            onChange={(v) => set({ refreshHz: Number(v) })}
+            options={[
+              { value: '0', label: 'Cada frame (máxima)' },
+              ...[60, 30, 25, 20, 15, 10, 5].map((hz) => ({ value: String(hz), label: `${hz} Hz` })),
+            ]}
+          />
+        </Prop>
+        <div className="muted small">Cada texto puede tener además su propia frecuencia (propiedades del texto → Actualizar).</div>
       </div>
       <div className="prop-group">
         <h3>Unidades</h3>

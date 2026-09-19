@@ -14,7 +14,7 @@ export interface DrawEnv {
   /** brillo global (proyecto × ambiente) */
   brightness: number;
   /** estado persistente entre frames (histéresis, suavizado) */
-  state: Map<string, { on?: boolean; v?: number }>;
+  state: Map<string, { on?: boolean; v?: number; text?: string; at?: number }>;
   dt: number;
 }
 
@@ -221,8 +221,19 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
 
   switch (el.type) {
     case 'text': {
-      const raw = varValue(ctx, el.binding.variable);
-      drawText(g, formatBinding(el.binding, raw), x, y, w, h, el.style, C(rr.color ?? el.style.color));
+      const hz = el.binding.updateHz ?? 0;
+      let text: string;
+      if (hz > 0) {
+        // frecuencia propia del texto: se congela entre actualizaciones (igual que el runtime)
+        const st = env.state.get(el.id) ?? {};
+        env.state.set(el.id, st);
+        if (st.text === undefined || st.at === undefined || ctx.t - st.at >= 1 / hz || ctx.t < st.at) {
+          st.text = formatBinding(el.binding, varValue(ctx, el.binding.variable));
+          st.at = ctx.t;
+        }
+        text = st.text;
+      } else text = formatBinding(el.binding, varValue(ctx, el.binding.variable));
+      drawText(g, text, x, y, w, h, el.style, C(rr.color ?? el.style.color));
       break;
     }
     case 'gear': {

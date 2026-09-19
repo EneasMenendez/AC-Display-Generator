@@ -88,6 +88,8 @@ export interface TextBinding {
   map?: Record<string, string>;
   padZeros: number;
   showSign: boolean;
+  /** frecuencia de actualización propia del texto (Hz); 0/undefined = la del display */
+  updateHz?: number;
 }
 
 export interface TextElement extends ElementBase {
@@ -283,6 +285,8 @@ export interface ProjectSettings {
   snapToElements: boolean;
   showCoordinates: boolean;
   pageSwitch: PageSwitch;
+  /** frecuencia de refresco del display en el juego (Hz); 0 = cada frame */
+  refreshHz: number;
 }
 
 /** Un display (una malla del coche) con sus páginas. Un proyecto puede tener varios (dash, volante, navegador…). */
@@ -335,6 +339,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   snapToElements: true,
   showCoordinates: true,
   pageSwitch: { input: 'none', wrap: true, remember: true },
+  refreshHz: 0,
 };
 
 function base(type: ElementType, name: string, x: number, y: number, w: number, h: number): ElementBase {

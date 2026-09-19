@@ -403,7 +403,21 @@ local function continuousBar(x, y, w, h, orientation, reverse, frac, radius, col
 end
 
 function draw.text(el, opacity, colorOverride)
-  drawText(ACDG.format(el.binding), el.x, el.y, el.width, el.height, el.style, colorOverride, opacity)
+  local hz = el.binding.updateHz or 0
+  local text
+  if hz > 0 then
+    -- frecuencia propia: el texto se congela entre actualizaciones (p. ej. milésimas legibles)
+    local st = state[el.id]
+    if not st then st = { at = -1e9 }; state[el.id] = st end
+    if st.text == nil or t - st.at >= 1 / hz then
+      st.text = ACDG.format(el.binding)
+      st.at = t
+    end
+    text = st.text
+  else
+    text = ACDG.format(el.binding)
+  end
+  drawText(text, el.x, el.y, el.width, el.height, el.style, colorOverride, opacity)
 end
 
 function draw.gear(el, opacity, colorOverride)
@@ -728,6 +742,7 @@ local function updateNight(dt)
 end
 
 ACDG.dt = 0
+local refreshAcc = 0
 
 function ACDG.update(dt)
   if not cfg then return end
@@ -736,6 +751,20 @@ function ACDG.update(dt)
   if not car.focused and num(car.distanceToCamera) > maxD then
     ac.skipFrame()
     return
+  end
+  -- frecuencia de refresco: entre actualizaciones se conserva el frame anterior
+  local hz = cfg.settings.refreshHz or 0
+  if hz > 0 then
+    refreshAcc = refreshAcc + dt
+    local period = 1 / hz
+    if refreshAcc < period then
+      ac.skipFrame()
+      return
+    end
+    refreshAcc = refreshAcc - period
+    if refreshAcc > period then refreshAcc = 0 end
+    -- t avanza solo cuando se dibuja (misma semántica que el editor)
+    dt = period
   end
   ACDG.dt = dt
   t = t + dt
