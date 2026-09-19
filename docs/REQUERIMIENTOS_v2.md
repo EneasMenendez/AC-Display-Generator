@@ -89,6 +89,7 @@ Cambio v2.1 (acordado tras la primera versión): al seleccionar el vehículo la 
 - Buscar automáticamente un perfil de display compatible (orden de búsqueda en la sección 25).
 - No asumir que todos los vehículos utilizan la misma estructura, malla o material.
 - Mostrar el nombre del vehículo, perfil encontrado, versión y configuración del display.
+- [v2.3] Si el vehículo ya tiene un proyecto generado, se abre directamente; desde el editor, "+ Display" permite añadir más displays al mismo proyecto (importando uno definido a mano en `extension/` o eligiendo una malla del kn5). La definición se añade al perfil del vehículo y "Quitar este display del proyecto" lo elimina.
 - [v2.3] Al crear el proyecto, las secciones de display ajenas de `extension/` (en `ext_config.ini`, sus includes u otros .ini) que usen las mallas del proyecto se desactivan automáticamente (comentadas con `;ACDG-OFF;`, con copia de seguridad previa) para que no se superpongan con lo generado; "Desinstalar" las reactiva.
 - [v2] Detectar si ya existe un display generado por la aplicación (bloque `; ACDG BEGIN <id>` en `ext_config.ini`) y abrir automáticamente el proyecto guardado en `extension/acdg_project.acdisplay`.
 - [v2] Detectar si el `ext_config.ini` ya contiene un `[SCRIPTABLE_DISPLAY_...]` sobre la misma malla que el perfil y avisar del conflicto.

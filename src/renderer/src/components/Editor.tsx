@@ -7,6 +7,7 @@ import { LayersPanel } from './LayersPanel';
 import { PropertiesPanel } from './PropertiesPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { InstallDialog } from './InstallDialog';
+import { AddDisplayDialog } from './AddDisplayDialog';
 import { Icon } from './icons';
 
 export function Editor() {
@@ -28,6 +29,7 @@ export function Editor() {
   const future = useStore((s) => s.future);
   const profile = useStore((s) => s.profile);
   const [install, setInstall] = useState(false);
+  const [addDisplay, setAddDisplay] = useState(false);
   const [help, setHelp] = useState(false);
 
   // cargar fuentes del proyecto en el documento
@@ -165,6 +167,9 @@ export function Editor() {
             ))}
           </select>
         )}
+        <button className="ghost" onClick={() => setAddDisplay(true)} title="Añadir otro display del coche al proyecto (copiloto, volante…)">
+          <Icon name="plus" size={14} /> Display
+        </button>
         <div className="pages">
           {dp.pages.map((pg, i) => (
             <button key={pg.id} className={`page-tab ${i === activePage ? 'active' : ''}`} onClick={() => setActivePage(i)} title={pg.when ? 'Página con condición automática' : 'Página'}>
@@ -245,6 +250,7 @@ export function Editor() {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectFile ?? 'sin guardar'}</span>
       </div>
       {install && <InstallDialog onClose={() => setInstall(false)} />}
+      {addDisplay && <AddDisplayDialog onClose={() => setAddDisplay(false)} />}
       {help && (
         <div className="modal-bg" onClick={() => setHelp(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

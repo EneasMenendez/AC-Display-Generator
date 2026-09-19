@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import { ProfileSchema } from '@shared/profile';
 import type { DetectedDisplay, ExtensionScan, ImageInfo, Kn5Info, LuaImportResult, ProfileHit } from '@shared/types';
-import { createEmptyProject } from '@shared/model';
+import { createEmptyProject, type DisplayProject } from '@shared/model';
 import { api } from '../api';
 import { hasUvRegion, physicalSizeFromMesh, regionFromKn5Uv, uvRegionPx, type UvRegion } from '@shared/uv';
 import { useStore, toast } from '../store';
@@ -36,7 +36,7 @@ export interface DisplayEntry {
  * Convierte un display detectado en extension/ (sección + script hecho a mano) en una definición de display.
  * Resolución: RESOLUTION del ini → constantes del script → imagen referenciada → textura del material (kn5).
  */
-async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<{ def: DisplayDef; image: ImageInfo | null; note: string }> {
+export async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<{ def: DisplayDef; image: ImageInfo | null; note: string }> {
   let size = d.resolution ?? (d.hints.width && d.hints.height ? { width: d.hints.width, height: d.hints.height } : null);
   let image: ImageInfo | null = null;
   let note = '';
@@ -104,6 +104,57 @@ async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: str
   return { def, image, note };
 }
 
+/**
+ * Vuelca una entrada del asistente en un display del proyecto: fondo, elementos importados del script
+ * y sus imágenes/iconos como recursos del proyecto (assets ← ruta → data URL para el editor).
+ */
+export async function materializeEntry(e: DisplayEntry, dp: DisplayProject, assets: Record<string, string>): Promise<void> {
+  if (e.image) {
+    const added = await api.addAssetFile(e.image.file, 'assets');
+    dp.background.file = added.path;
+    assets[added.path] = e.image.dataUrl ?? added.dataUrl;
+  }
+  if (e.layout) {
+    // las imágenes/iconos del script se copian como recursos del proyecto
+    for (const el of e.layout.elements) {
+      try {
+        if (el.type === 'image' && el.config.file && /[\\/]/.test(el.config.file)) {
+          const a = await api.addAssetFile(el.config.file, 'assets');
+          el.config.file = a.path;
+          assets[a.path] = a.dataUrl;
+        } else if (el.type === 'icon' && el.config.icon && !el.config.icon.startsWith('builtin:') && /[\\/]/.test(el.config.icon)) {
+          const a = await api.addAssetFile(el.config.icon, 'assets/icons');
+          el.config.icon = a.path;
+          assets[a.path] = a.dataUrl;
+        }
+      } catch {
+        /* recurso no copiable: el elemento queda sin imagen */
+      }
+    }
+    dp.pages[0].elements.push(...e.layout.elements);
+  }
+}
+
+/** Importa un display detectado (sección + script) como entrada del asistente, sin tocar el estado. */
+export async function importDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<DisplayEntry> {
+  const r = await defFromDetected(d, carPath, kn5File, usedIds);
+  let image = r.image;
+  let lay: LuaImportResult | null = null;
+  const notes: string[] = r.note ? [r.note] : [];
+  // el script se ejecuta en un simulador para extraer todos sus textos, barras, imágenes e iconos
+  if (d.script && d.scriptExists && d.scriptValid) {
+    try {
+      lay = await api.importLua(d.script, r.def.texture_size.width, r.def.texture_size.height);
+      notes.push(...lay.warnings);
+      if (!image && lay.background) image = await api.imageInfo(lay.background);
+      notes.unshift(`${lay.elements.length} elementos importados del script (${lay.calls} llamadas de dibujo).`);
+    } catch (e) {
+      notes.push(`No se pudo importar el script: ${(e as Error).message}`);
+    }
+  }
+  return { def: r.def, include: true, image, layout: lay, source: 'imported', detected: d, notes };
+}
+
 /** Perfil combinado a partir de los displays incluidos (cuando no hay perfil en el coche). */
 function buildProfile(carId: string, carName: string, defs: DisplayDef[], base?: DisplayProfile): DisplayProfile {
   if (base) {
@@ -155,9 +206,15 @@ export function Wizard() {
         // 1) display(s) generados por esta aplicación con proyecto → se carga el proyecto directamente
         const own = sc.displays.filter((d) => d.acdg?.projectFile);
         const manual = sc.displays.filter((d) => !d.acdg && d.meshes.length > 0);
-        if (own.length >= 1 && manual.length === 0) {
+        if (own.length >= 1) {
           setAutoMsg('Display generado por AC Display Generator encontrado: abriendo el proyecto…');
-          await openProjectFlow(own[0].acdg!.projectFile!, car.path);
+          if (await openProjectFlow(own[0].acdg!.projectFile!, car.path)) {
+            toast(
+              manual.length > 0
+                ? `Proyecto del vehículo abierto. Hay ${manual.length === 1 ? 'otro display definido a mano' : `${manual.length} displays definidos a mano`} en extension/: puedes importarlo${manual.length === 1 ? '' : 's'} con "+ Display" en la barra superior.`
+                : 'Proyecto del vehículo abierto. Para añadir otro display (p. ej. el del copiloto) usa "+ Display" en la barra superior.',
+            );
+          }
           return;
         }
         // 2) perfil distribuido dentro del vehículo
@@ -204,24 +261,7 @@ export function Wizard() {
     if (!car) return [];
     const usedIds = new Set(entries.filter((e) => e.source !== 'imported').map((e) => e.def.id));
     const out: DisplayEntry[] = [];
-    for (const d of list) {
-      const r = await defFromDetected(d, car.path, car.mainKn5, usedIds);
-      let image = r.image;
-      let lay: LuaImportResult | null = null;
-      const notes: string[] = r.note ? [r.note] : [];
-      // el script se ejecuta en un simulador para extraer todos sus textos, barras, imágenes e iconos
-      if (d.script && d.scriptExists && d.scriptValid) {
-        try {
-          lay = await api.importLua(d.script, r.def.texture_size.width, r.def.texture_size.height);
-          notes.push(...lay.warnings);
-          if (!image && lay.background) image = await api.imageInfo(lay.background);
-          notes.unshift(`${lay.elements.length} elementos importados del script (${lay.calls} llamadas de dibujo).`);
-        } catch (e) {
-          notes.push(`No se pudo importar el script: ${(e as Error).message}`);
-        }
-      }
-      out.push({ def: r.def, include: true, image, layout: lay, source: 'imported', detected: d, notes });
-    }
+    for (const d of list) out.push(await importDetected(d, car.path, car.mainKn5, usedIds));
     const next = [...entries.filter((e) => e.source !== 'imported' || !list.some((d) => d.section === e.detected?.section && d.iniFile === e.detected?.iniFile)), ...out];
     setEntries(next);
     setCreator(false);
@@ -256,34 +296,7 @@ export function Wizard() {
       displays: inc.map((e) => ({ displayId: e.def.id, name: e.def.name, width: e.def.texture_size.width, height: e.def.texture_size.height })),
     });
     const assets: Record<string, string> = {};
-    for (let i = 0; i < inc.length; i++) {
-      const e = inc[i];
-      const dp = project.displays[i];
-      if (e.image) {
-        const added = await api.addAssetFile(e.image.file, 'assets');
-        dp.background.file = added.path;
-        assets[added.path] = e.image.dataUrl ?? added.dataUrl;
-      }
-      if (e.layout) {
-        // las imágenes/iconos del script se copian como recursos del proyecto
-        for (const el of e.layout.elements) {
-          try {
-            if (el.type === 'image' && el.config.file && /[\\/]/.test(el.config.file)) {
-              const a = await api.addAssetFile(el.config.file, 'assets');
-              el.config.file = a.path;
-              assets[a.path] = a.dataUrl;
-            } else if (el.type === 'icon' && el.config.icon && !el.config.icon.startsWith('builtin:') && /[\\/]/.test(el.config.icon)) {
-              const a = await api.addAssetFile(el.config.icon, 'assets/icons');
-              el.config.icon = a.path;
-              assets[a.path] = a.dataUrl;
-            }
-          } catch {
-            /* recurso no copiable: el elemento queda sin imagen */
-          }
-        }
-        dp.pages[0].elements.push(...e.layout.elements);
-      }
-    }
+    for (let i = 0; i < inc.length; i++) await materializeEntry(inc[i], project.displays[i], assets);
     setProfile(prof, hit?.file ?? null);
     setAssets(assets);
     loadProject(project, null);
@@ -701,8 +714,10 @@ function ProfileStep(props: {
   );
 }
 
-function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
+export function CreatorForm({ onCreated, onDisplay, usedIds }: { onCreated?: (h: ProfileHit) => void; onDisplay?: (def: DisplayDef) => void; usedIds?: string[] }) {
   const car = useStore((s) => s.car)!;
+  // con onDisplay el formulario solo crea la definición de un display para añadirla a un perfil existente
+  const displayOnly = !!onDisplay;
   const [kn5, setKn5] = useState<Kn5Info | null>(null);
   const [kn5File, setKn5File] = useState(car.mainKn5 ?? car.kn5Files[0] ?? '');
   const [filter, setFilter] = useState('');
@@ -710,7 +725,7 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(512);
   const [pname, setPname] = useState(`${car.name} – Display`);
-  const [displayName, setDisplayName] = useState('Driver Display');
+  const [displayName, setDisplayName] = useState(displayOnly ? 'Codriver Display' : 'Driver Display');
   const [keepBg, setKeepBg] = useState(true);
   const [limiter, setLimiter] = useState(8000);
   const [maxFuel, setMaxFuel] = useState(60);
@@ -782,7 +797,36 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
     return r.data;
   }
 
+  function buildDisplay(): DisplayDef | null {
+    let id = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'display';
+    const used = new Set(usedIds ?? []);
+    let n = 2;
+    const base = id;
+    while (used.has(id)) id = `${base}_${n++}`;
+    const r = ProfileSchema.shape.displays.element.safeParse({
+      id,
+      name: displayName,
+      meshes: [mesh],
+      texture_size: { width, height },
+      uv_region: uvRegion ?? undefined,
+      physical_size_m: physical ?? undefined,
+      keep_background: keepBg,
+      emissive: emissive ? { mode: 'shader_replacement', shader: 'ksPerPixel', ks_emissive: [1, 1, 1], brightness_default: 1 } : { mode: 'none' },
+      defaults: { rpm_limiter: limiter, max_fuel_l: maxFuel },
+    });
+    if (!r.success) {
+      toast(r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 'err');
+      return null;
+    }
+    return r.data;
+  }
+
   async function save(where: 'car' | 'library' | 'session') {
+    if (displayOnly) {
+      const def = buildDisplay();
+      if (def) onDisplay!(def);
+      return;
+    }
     const p = build();
     if (!p) return;
     let file = '(sin guardar)';
@@ -790,7 +834,7 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
       if (where === 'car') file = await api.saveProfileToCar(p, car.path);
       else if (where === 'library') file = await api.saveProfileToLibrary(p);
       toast(where === 'session' ? 'Perfil creado para esta sesión' : `Perfil guardado en ${file}`);
-      onCreated({ profile: p, file, source: where === 'car' ? 'car' : where === 'library' ? 'library' : 'manual' });
+      onCreated?.({ profile: p, file, source: where === 'car' ? 'car' : where === 'library' ? 'library' : 'manual' });
     } catch (e) {
       toast((e as Error).message, 'err');
     }
@@ -798,7 +842,7 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
 
   return (
     <div className="card">
-      <h3>Modo creador — nuevo perfil de display</h3>
+      <h3>{displayOnly ? 'Nuevo display desde el modelo 3D' : 'Modo creador — nuevo perfil de display'}</h3>
       <p className="muted small">
         Selecciona la malla del display en el modelo 3D. La resolución se rellena automáticamente con la textura del material cuando es posible.
       </p>
@@ -829,10 +873,12 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
         </div>
       )}
       <div className="mt8" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-        <div className="prop">
-          <label>Nombre del perfil</label>
-          <input type="text" value={pname} onChange={(e) => setPname(e.target.value)} />
-        </div>
+        {!displayOnly && (
+          <div className="prop">
+            <label>Nombre del perfil</label>
+            <input type="text" value={pname} onChange={(e) => setPname(e.target.value)} />
+          </div>
+        )}
         <div className="prop">
           <label>Nombre del display</label>
           <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -856,10 +902,12 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
           <label>Combustible máx. (L)</label>
           <input type="number" value={maxFuel} onChange={(e) => setMaxFuel(Number(e.target.value))} />
         </div>
-        <div className="prop">
-          <label>CSP mínimo (build)</label>
-          <input type="number" value={cspBuild} onChange={(e) => setCspBuild(Number(e.target.value))} />
-        </div>
+        {!displayOnly && (
+          <div className="prop">
+            <label>CSP mínimo (build)</label>
+            <input type="number" value={cspBuild} onChange={(e) => setCspBuild(Number(e.target.value))} />
+          </div>
+        )}
         <div className="prop">
           <label>Opciones</label>
           <div className="col gap4">
@@ -873,15 +921,23 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
         </div>
       </div>
       <div className="row mt8">
-        <button className="primary" disabled={!mesh} onClick={() => save('car')}>
-          Guardar en el vehículo (extension/display_profile.json)
-        </button>
-        <button className="outline" disabled={!mesh} onClick={() => save('library')}>
-          Guardar en mi biblioteca
-        </button>
-        <button className="outline" disabled={!mesh} onClick={() => save('session')}>
-          Usar solo ahora
-        </button>
+        {displayOnly ? (
+          <button className="primary" disabled={!mesh} onClick={() => save('session')}>
+            Añadir display al proyecto
+          </button>
+        ) : (
+          <>
+            <button className="primary" disabled={!mesh} onClick={() => save('car')}>
+              Guardar en el vehículo (extension/display_profile.json)
+            </button>
+            <button className="outline" disabled={!mesh} onClick={() => save('library')}>
+              Guardar en mi biblioteca
+            </button>
+            <button className="outline" disabled={!mesh} onClick={() => save('session')}>
+              Usar solo ahora
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

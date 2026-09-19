@@ -891,6 +891,19 @@ function ProjectProps() {
           </tbody>
         </table>
       </div>
+      {project.displays.length > 1 && (
+        <div className="prop-group">
+          <button
+            className="small danger"
+            onClick={async () => {
+              const idx = await api.confirm(`¿Quitar el display "${dp.name}" del proyecto?`, 'Se pierden sus páginas y elementos (no se toca nada en el vehículo hasta volver a generar).', ['Quitar', 'Cancelar']);
+              if (idx === 0) useStore.getState().removeDisplay(project.displays.indexOf(dp));
+            }}
+          >
+            Quitar este display del proyecto
+          </button>
+        </div>
+      )}
       {display && <VisibleAreaProps display={display} />}
       <div className="prop-group">
         <h3>
