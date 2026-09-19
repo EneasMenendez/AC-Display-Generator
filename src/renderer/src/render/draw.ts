@@ -350,26 +350,26 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
       if (img && img.complete && img.naturalWidth > 0) {
         g.globalAlpha = O;
         const tint = rr.color ?? el.config.tint;
-        if (tint && tint.toUpperCase() !== '#FFFFFF' && tint.toUpperCase() !== '#FFFFFFFF') drawTinted(g, img, x, y, w, h, tint, B, O);
-        else {
-          let dx = x;
-          let dy = y;
-          let dw = w;
-          let dh = h;
-          if (el.config.fit !== 'stretch') {
-            const s = el.config.fit === 'fit' ? Math.min(w / img.naturalWidth, h / img.naturalHeight) : Math.max(w / img.naturalWidth, h / img.naturalHeight);
-            dw = img.naturalWidth * s;
-            dh = img.naturalHeight * s;
-            dx = x + (w - dw) / 2;
-            dy = y + (h - dh) / 2;
-            g.save();
-            g.beginPath();
-            g.rect(x, y, w, h);
-            g.clip();
-            g.drawImage(img, dx, dy, dw, dh);
-            g.restore();
-          } else g.drawImage(img, dx, dy, dw, dh);
+        const tinted = tint && tint.toUpperCase() !== '#FFFFFF' && tint.toUpperCase() !== '#FFFFFFFF';
+        // fit/fill: se conserva la proporción y se centra en la caja (igual que ui.ImageFit en CSP)
+        let dx = x;
+        let dy = y;
+        let dw = w;
+        let dh = h;
+        if (el.config.fit !== 'stretch') {
+          const s = el.config.fit === 'fit' ? Math.min(w / img.naturalWidth, h / img.naturalHeight) : Math.max(w / img.naturalWidth, h / img.naturalHeight);
+          dw = img.naturalWidth * s;
+          dh = img.naturalHeight * s;
+          dx = x + (w - dw) / 2;
+          dy = y + (h - dh) / 2;
+          g.save();
+          g.beginPath();
+          g.rect(x, y, w, h);
+          g.clip();
         }
+        if (tinted) drawTinted(g, img, dx, dy, dw, dh, tint, B, O);
+        else g.drawImage(img, dx, dy, dw, dh);
+        if (el.config.fit !== 'stretch') g.restore();
       } else {
         g.strokeStyle = C('#888888');
         g.setLineDash([6, 4]);

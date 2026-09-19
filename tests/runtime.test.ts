@@ -45,6 +45,7 @@ rgbm = setmetatable({}, { __call = function(_, r, g, b, m) return setmetatable({
 rgbm.colors = { white = rgbm(1,1,1,1) }
 script = {}
 CALLS = {}
+TEXTS = {}
 local function rec(name) return function(...) CALLS[#CALLS + 1] = name return 0 end end
 local font = { weight = function(self) return self end }
 ui = setmetatable({
@@ -52,7 +53,7 @@ ui = setmetatable({
   Alignment = { Start = -1, Center = 0, End = 1 },
   drawRectFilled = rec('drawRectFilled'), drawRect = rec('drawRect'), drawImage = rec('drawImage'),
   drawCircleFilled = rec('drawCircleFilled'), drawCircle = rec('drawCircle'), drawLine = rec('drawLine'),
-  dwriteDrawTextClipped = rec('dwriteDrawTextClipped'), measureDWriteText = function(t, s) return vec2(#t * s * 0.6, s * 1.33) end, pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
+  dwriteDrawTextClipped = function(text, size, a, b, ah, av) CALLS[#CALLS + 1] = 'dwriteDrawTextClipped'; TEXTS[#TEXTS + 1] = { text = text, size = size, y1 = a.y, y2 = b.y, x1 = a.x, x2 = b.x, av = av } return 0 end, measureDWriteText = function(t, s) return vec2(#t * s * 0.6, s * 1.33) end, pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
   pathClear = rec('pathClear'), pathArcTo = rec('pathArcTo'), pathStroke = rec('pathStroke'),
   beginRotation = rec('beginRotation'), endPivotRotation = rec('endPivotRotation'),
 }, { __index = function(_, k) return rec(k) end })
@@ -89,6 +90,20 @@ describe('runtime Lua generado', () => {
       await engine.doString('CARV.physicsAvailable = false; CARV.prefersImperialUnits = true; script.update(0.016)');
       const calls = Number(await engine.doString('return #CALLS'));
       expect(calls).toBeGreaterThan(20);
+      // colocación vertical del texto: caja de línea (1,33 × tamaño según el stub) centrada en la caja del
+      // elemento con la corrección de la fuente, alineación Start; horizontal = ancho completo de la caja
+      const gearEl = p.displays[0].pages[0].elements.find((e) => e.type === 'gear')! as { x: number; y: number; width: number; height: number; config: { style: { size: number } } };
+      const drawn = (await engine.doString('local t = {} for i = 1, #TEXTS do t[i] = TEXTS[i] end return t')) as Map<number, Map<string, unknown>> | Record<string, unknown>;
+      const list = drawn instanceof Map ? [...drawn.values()].map((m) => Object.fromEntries((m as Map<string, unknown>).entries())) : Object.values(drawn as Record<string, Map<string, unknown>>).map((m) => (m instanceof Map ? Object.fromEntries(m.entries()) : (m as Record<string, unknown>)));
+      const size = gearEl.config.style.size;
+      const lineH = size * 1.33;
+      const expectedTop = gearEl.y + gearEl.height / 2 + -0.06 * size - lineH / 2;
+      const g = list.find((t) => Math.abs(Number(t.y1) - expectedTop) < 0.01 && Number(t.size) === size);
+      expect(g, `no se dibujó la marcha en top=${expectedTop}; textos: ${JSON.stringify(list)}`).toBeTruthy();
+      expect(Number(g!.y2) - Number(g!.y1)).toBeCloseTo(lineH, 3);
+      expect(Number(g!.x1)).toBe(gearEl.x);
+      expect(Number(g!.x2)).toBe(gearEl.x + gearEl.width);
+      expect(Number(g!.av)).toBe(-1);
       // página automática: en pit lane se dibuja solo la página "Boxes" (1 texto + fondo)
       await engine.doString('CALLS = {}; CARV.isInPitlane = true; script.update(0.016)');
       const pitCalls = Number(await engine.doString('return #CALLS'));
