@@ -52,7 +52,7 @@ ui = setmetatable({
   Alignment = { Start = -1, Center = 0, End = 1 },
   drawRectFilled = rec('drawRectFilled'), drawRect = rec('drawRect'), drawImage = rec('drawImage'),
   drawCircleFilled = rec('drawCircleFilled'), drawCircle = rec('drawCircle'), drawLine = rec('drawLine'),
-  dwriteDrawTextClipped = rec('dwriteDrawTextClipped'), pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
+  dwriteDrawTextClipped = rec('dwriteDrawTextClipped'), measureDWriteText = function(t, s) return vec2(#t * s * 0.6, s * 1.33) end, pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
   pathClear = rec('pathClear'), pathArcTo = rec('pathArcTo'), pathStroke = rec('pathStroke'),
   beginRotation = rec('beginRotation'), endPivotRotation = rec('endPivotRotation'),
 }, { __index = function(_, k) return rec(k) end })
@@ -75,7 +75,7 @@ __dirname = 'C:/fake/extension'
 describe('runtime Lua generado', () => {
   it('display.lua se ejecuta sin errores con la API de CSP simulada y cambia de página', async () => {
     const p = project();
-    const gen = generateConfigLua(p, p.displays[0], profile.displays[0]);
+    const gen = generateConfigLua(p, p.displays[0], profile.displays[0], { fontMetrics: { 'Segoe UI': { line: 1.33, shift: -0.06 } } });
     const lua = generateDisplayLua(gen.lua, readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'), 'driver_display');
     const engine = await new LuaFactory().createEngine();
     try {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { BackupEntry, CspLogReport, DetectedDisplay, InstallResult, InstallTarget } from '@shared/types';
 import { generateConfigLua } from '@shared/generator';
+import { fontMetricsFor } from '../render/fontMetrics';
 import { api } from '../api';
 import { useStore, toast } from '../store';
 import { saveProjectFlow } from '../flows';
@@ -99,6 +100,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         }
       }
       const r = await api.install({
+        fontMetrics: fontMetricsFor(chosen.map((t) => t.dp)),
         carPath: car!.path,
         target,
         project,

@@ -157,6 +157,8 @@ export interface RecentEntry {
 export type InstallTarget = { kind: 'car' } | { kind: 'skin'; skin: string };
 
 export interface InstallOptions {
+  /** métricas de las fuentes usadas (medidas en el editor) para que el texto quede igual en el juego */
+  fontMetrics?: Record<string, { line: number; shift: number }>;
   carPath: string;
   target: InstallTarget;
   project: Project;

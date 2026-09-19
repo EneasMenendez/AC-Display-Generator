@@ -328,18 +328,33 @@ local function getFont(name, bold)
 end
 
 local ALIGN_H = { left = ui.Alignment.Start, center = ui.Alignment.Center, right = ui.Alignment.End }
-local ALIGN_V = { top = ui.Alignment.Start, middle = ui.Alignment.Center, bottom = ui.Alignment.End }
 
 local p1, p2 = vec2(), vec2()
 
+-- métricas por defecto (Segoe UI) si el editor no midió la fuente
+local DEFAULT_METRICS = { line = 1.33, shift = -0.139 }
+
+-- La colocación vertical no se delega a DirectWrite: se calcula aquí a partir de la altura medida del
+-- texto y de las métricas que midió el editor, para que el texto quede exactamente donde se ve en él.
 local function drawText(text, x, y, w, h, style, color, opacity)
+  local size = style.size or 32
   ui.pushDWriteFont(getFont(style.font, style.bold))
-  p1.x, p1.y = x, y
-  p2.x, p2.y = x + w, y + h
-  ui.dwriteDrawTextClipped(text, style.size or 32, p1, p2,
+  local m = (cfg.fontMetrics and cfg.fontMetrics[style.font or '']) or DEFAULT_METRICS
+  local lineH = size * (m.line or DEFAULT_METRICS.line)
+  local okM, measured = pcall(ui.measureDWriteText, text, size)
+  if okM and type(measured) == 'table' and type(measured.y) == 'number' and measured.y > 0 then lineH = measured.y end
+  -- línea de referencia del editor (textBaseline = 'middle') según la alineación vertical
+  local va = style.valign or 'middle'
+  local cy
+  if va == 'top' then cy = y + size * 0.55
+  elseif va == 'bottom' then cy = y + h - size * 0.55
+  else cy = y + h / 2 end
+  local top = cy + (m.shift or DEFAULT_METRICS.shift) * size - lineH / 2
+  p1.x, p1.y = x, top
+  p2.x, p2.y = x + w, top + lineH
+  ui.dwriteDrawTextClipped(text, size, p1, p2,
     ALIGN_H[style.align or 'center'] or ui.Alignment.Center,
-    ALIGN_V[style.valign or 'middle'] or ui.Alignment.Center,
-    false, col(color or style.color, opacity))
+    ui.Alignment.Start, false, col(color or style.color, opacity))
   ui.popDWriteFont()
 end
 

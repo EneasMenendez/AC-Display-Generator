@@ -128,13 +128,28 @@ function assetTarget(source: string, displayId: string): string {
 
 /* ---------- display_config.lua ---------- */
 
+/**
+ * Métricas de una fuente, en fracción del tamaño (em), medidas en el editor con canvas:
+ *  - line: alto de la caja de línea (ascent + descent) que usa DirectWrite para colocar el texto
+ *  - shift: desplazamiento que hay que aplicar en el juego para que el centro visual de las mayúsculas
+ *    quede donde lo pinta el editor (textBaseline = 'middle')
+ */
+export interface FontMetrics {
+  line: number;
+  shift: number;
+}
+
+export interface GenerateOptions {
+  fontMetrics?: Record<string, FontMetrics>;
+}
+
 export interface GeneratedConfig {
   lua: string;
   assets: AssetRef[];
   variables: string[];
 }
 
-export function generateConfigLua(project: Project, dp: DisplayProject, display: DisplayDef): GeneratedConfig {
+export function generateConfigLua(project: Project, dp: DisplayProject, display: DisplayDef, opts: GenerateOptions = {}): GeneratedConfig {
   const assets: AssetRef[] = [];
   const addAsset = (source: string): string => {
     const target = assetTarget(source, display.id);
@@ -178,6 +193,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
       maxDistance: display.max_distance_m,
     },
     background,
+    fontMetrics: opts.fontMetrics ?? {},
     settings: {
       units: dp.settings.units,
       brightness: dp.settings.brightness * display.emissive.brightness_default,

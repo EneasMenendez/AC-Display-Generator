@@ -195,7 +195,7 @@ export function install(opts: InstallOptions): InstallResult {
     // --- generación en memoria ---
     const files: Record<string, Uint8Array | string> = {};
     let ok = step(`${tag}Generar Lua y configuración`, () => {
-      const gen = generateConfigLua(project, dp, display);
+      const gen = generateConfigLua(project, dp, display, { fontMetrics: opts.fontMetrics });
       const displayLua = generateDisplayLua(gen.lua, runtime, display.id);
       for (const [name, code] of [
         ['display_config.lua', gen.lua],
