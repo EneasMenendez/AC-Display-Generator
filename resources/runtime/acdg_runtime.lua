@@ -386,6 +386,27 @@ local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, ac
   end
 end
 
+local U1, U2 = vec2(), vec2()
+
+-- barra con textura: el fondo entero y la textura de llenado descubierta según frac (uv parcial)
+local function imageBar(x, y, w, h, orientation, reverse, frac, fillFile, bgFile, tint, opacity)
+  p1.x, p1.y = x, y
+  p2.x, p2.y = x + w, y + h
+  if bgFile then ui.drawImage(scriptDir .. '/' .. bgFile, p1, p2, col(WHITE, opacity)) end
+  frac = clamp01(frac)
+  if frac <= 0 then return end
+  U1.x, U1.y = 0, 0
+  U2.x, U2.y = 1, 1
+  if orientation == 'vertical' then
+    local fh = h * frac
+    if reverse then p1.y, p2.y = y, y + fh; U2.y = frac else p1.y, p2.y = y + h - fh, y + h; U1.y = 1 - frac end
+  else
+    local fw = w * frac
+    if reverse then p1.x, p2.x = x + w - fw, x + w; U1.x = 1 - frac else p1.x, p2.x = x, x + fw; U2.x = frac end
+  end
+  ui.drawImage(scriptDir .. '/' .. fillFile, p1, p2, col(tint or WHITE, opacity), U1, U2)
+end
+
 local function continuousBar(x, y, w, h, orientation, reverse, frac, radius, colorBg, colorFill, opacity)
   p1.x, p1.y = x, y
   p2.x, p2.y = x + w, y + h
@@ -464,8 +485,158 @@ function draw.rpm_bar(el, opacity)
     if onLimiter then
       if not limiterVisible then fill = colors.off else fill = colors.limiter end
     end
-    continuousBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, c.radius, colors.off, fill, opacity)
+    if el.fillFile then
+      imageBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, (onLimiter and not limiterVisible) and 0 or frac, el.fillFile, el.bgFile, c.tintImage and fill or nil, opacity)
+    else
+      continuousBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, c.radius, colors.off, fill, opacity)
+    end
   end
+end
+
+-- ------------------------------------------------------------
+-- Luces de cambio (tira de LEDs)
+-- ------------------------------------------------------------
+
+-- posición (1..n) -> rango de encendido (0 = el primero)
+local function ledRanks(n, pattern)
+  local rank = {}
+  if pattern == 'edges_to_center' then
+    local l, r, k = 1, n, 0
+    while l <= r do
+      rank[l] = k; k = k + 1
+      if r ~= l then rank[r] = k; k = k + 1 end
+      l = l + 1; r = r - 1
+    end
+  elseif pattern == 'center_to_edges' then
+    local mid = (n + 1) / 2
+    local order = {}
+    for p = 1, n do order[p] = p end
+    table.sort(order, function(a, b)
+      local da, db = math.abs(a - mid), math.abs(b - mid)
+      if da == db then return a < b end
+      return da < db
+    end)
+    for k, p in ipairs(order) do rank[p] = k - 1 end
+  else
+    for p = 1, n do rank[p] = p - 1 end
+  end
+  return rank
+end
+
+local function ledZoneColor(rank, zones, fallback)
+  local acc = 0
+  if zones then
+    for i = 1, #zones do
+      acc = acc + math.max(0, math.floor(zones[i].count or 0))
+      if rank < acc then return zones[i].color end
+    end
+    if #zones > 0 then return zones[#zones].color end
+  end
+  return fallback
+end
+
+function draw.shift_lights(el, opacity, colorOverride, imageOverride)
+  local c = el.config
+  local rpm = num(car.rpm)
+  local startR, endR = rpmValue(c.rpmStart), rpmValue(c.rpmEnd)
+  if endR <= startR then endR = startR + 1 end
+  local n = math.max(1, math.floor(c.count or 10))
+  local frac = clamp01((rpm - startR) / (endR - startR))
+  local active = 0
+  if rpm >= startR then
+    active = math.floor(frac * n + 0.0001)
+    if frac < 1 then active = active + 1 end
+    if active > n then active = n end
+  end
+  local onLimiter = car.isEngineLimiterOn or rpm >= endR
+  local blink = onLimiter and (c.limiterBlinkHz or 0) > 0
+  local limiterVisible = blink and blinkOn(c.limiterBlinkHz)
+  local st = state[el.id]
+  if not st or st.n ~= n or st.pattern ~= c.pattern then
+    st = { n = n, pattern = c.pattern, ranks = ledRanks(n, c.pattern) }
+    state[el.id] = st
+  end
+  local vertical = c.orientation == 'vertical'
+  local len = vertical and el.height or el.width
+  local gap = c.gap or 0
+  local size = math.max(1, (len - gap * (n - 1)) / n)
+  local file = imageOverride or el.file
+  for p = 1, n do
+    local rank = st.ranks[p]
+    local lit = rank < active
+    local color
+    if blink then
+      lit = limiterVisible
+      color = c.limiterColor
+    else
+      color = colorOverride or ledZoneColor(rank, c.zones, c.limiterColor)
+    end
+    local show = true
+    if not lit then
+      if c.dimOff == false then show = false end
+      color = c.colorOff
+    end
+    if show then
+      local off = (p - 1) * (size + gap)
+      local lx = vertical and el.x or el.x + off
+      local ly = vertical and (el.y + el.height - off - size) or el.y
+      local lw = vertical and el.width or size
+      local lh = vertical and size or el.height
+      if file then
+        p1.x, p1.y = lx, ly
+        p2.x, p2.y = lx + lw, ly + lh
+        ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(color, opacity))
+      elseif c.shape == 'circle' then
+        p1.x, p1.y = lx + lw / 2, ly + lh / 2
+        ui.drawCircleFilled(p1, math.min(lw, lh) / 2, col(color, opacity), 24)
+      else
+        p1.x, p1.y = lx, ly
+        p2.x, p2.y = lx + lw, ly + lh
+        ui.drawRectFilled(p1, p2, col(color, opacity), c.radius or 0)
+      end
+    end
+  end
+end
+
+-- ------------------------------------------------------------
+-- Aguja
+-- ------------------------------------------------------------
+
+local PIV = vec2()
+
+function draw.needle(el, opacity, colorOverride, imageOverride)
+  local c = el.config
+  local raw = num(getVar(c.variable))
+  local st = state[el.id]
+  if not st then st = { v = raw }; state[el.id] = st end
+  if c.smoothingMs and c.smoothingMs > 0 then
+    st.v = lerp(st.v, raw, clamp01(ACDG.dt / (c.smoothingMs / 1000)))
+  else
+    st.v = raw
+  end
+  local range = c.max - c.min
+  if range == 0 then range = 1 end
+  local frac = (st.v - c.min) / range
+  if c.clamp ~= false then frac = clamp01(frac) end
+  local angle = c.angleMin + (c.angleMax - c.angleMin) * frac + (el.rotation or 0)
+  local px, py = el.x + (c.pivot and c.pivot.x or el.width / 2), el.y + (c.pivot and c.pivot.y or el.height)
+  local color = colorOverride or c.color
+  local file = imageOverride or el.file
+  ui.beginRotation()
+  if file then
+    p1.x, p1.y = el.x, el.y
+    p2.x, p2.y = el.x + el.width, el.y + el.height
+    ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(color, opacity))
+  else
+    p1.x, p1.y = px, py
+    p2.x, p2.y = el.x + el.width / 2, el.y
+    ui.drawLine(p1, p2, col(color, opacity), c.thickness or 6)
+    if (c.hubRadius or 0) > 0 then
+      ui.drawCircleFilled(p1, c.hubRadius, col(c.hubColor or color, opacity), 32)
+    end
+  end
+  PIV.x, PIV.y = px, py
+  ui.endPivotRotation(angle, PIV)
 end
 
 function draw.shift_light(el, opacity, colorOverride)
@@ -543,6 +714,8 @@ function draw.bar(el, opacity, colorOverride)
         if isActive then return fill end
         return c.colorBg
       end, opacity)
+  elseif el.fillFile then
+    imageBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, el.fillFile, el.bgFile, c.tintImage and fill or nil, opacity)
   else
     continuousBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, frac, c.radius, c.colorBg, fill, opacity)
   end
@@ -649,6 +822,7 @@ local function drawElement(el)
   local fn = draw[el.type]
   if not fn then return end
   local rot = el.rotation or 0
+  if el.type == 'needle' then rot = 0 end -- la aguja gira sobre su propio eje
   if rot ~= 0 then ui.beginRotation() end
   fn(el, opacity, colorOverride, imageOverride)
   if rot ~= 0 then

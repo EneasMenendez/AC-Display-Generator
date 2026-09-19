@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LuaFactory } from 'wasmoon';
-import { createElement, createEmptyProject, type Project, type TextElement } from '../src/shared/model';
+import { createElement, createEmptyProject, type NeedleElement, type Project, type RpmBarElement, type ShiftLightsElement, type TextElement } from '../src/shared/model';
 import { parseProfile } from '../src/shared/profile';
 import { generateConfigLua, generateDisplayLua } from '../src/shared/generator';
 
@@ -27,7 +27,16 @@ function project(): Project {
   text.rules.push({ id: 'r', when: { variable: 'rpm', op: '>=', value: '95%' }, set: { color: '#FF0000', blinkHz: 4 } });
   const speed = createElement('text') as TextElement;
   speed.binding = { variable: 'speed', decimals: 1, prefix: '', suffix: ' km/h', unit: 'mph', padZeros: 3, showSign: false };
-  d.pages[0].elements.push(createElement('rpm_bar'), createElement('shift_light'), createElement('bar'), createElement('gear'), createElement('icon'), createElement('gauge'), createElement('rect'), createElement('circle'), createElement('line'), text, speed);
+  const needle = createElement('needle') as NeedleElement;
+  needle.config.image = 'assets/needle.png';
+  const lights = createElement('shift_lights') as ShiftLightsElement;
+  lights.config.pattern = 'edges_to_center';
+  const texBar = createElement('rpm_bar') as RpmBarElement;
+  texBar.config.style = 'continuous';
+  texBar.config.fillImage = 'assets/bar_fill.png';
+  texBar.config.bgImage = 'assets/bar_bg.png';
+  texBar.config.tintImage = true;
+  d.pages[0].elements.push(createElement('rpm_bar'), createElement('shift_light'), createElement('bar'), createElement('gear'), createElement('icon'), createElement('gauge'), createElement('rect'), createElement('circle'), createElement('line'), text, speed, needle, lights, createElement('needle'), createElement('shift_lights'), texBar);
   d.pages.push({ id: 'pit', name: 'Boxes', elements: [createElement('text')], when: { variable: 'in_pitlane', op: '==', value: true } });
   d.settings.pageSwitch = { input: 'extraA', wrap: true, remember: true };
   d.settings.nightMode = 'headlights';
@@ -92,6 +101,12 @@ describe('runtime Lua generado', () => {
       await engine.doString('CARV.physicsAvailable = false; CARV.prefersImperialUnits = true; script.update(0.016)');
       const calls = Number(await engine.doString('return #CALLS'));
       expect(calls).toBeGreaterThan(20);
+      // aguja: rotación sobre su eje; textura de barra y LEDs con imagen
+      const names = String(await engine.doString('return table.concat(CALLS, ",")'));
+      expect(names).toContain('endPivotRotation');
+      expect(names).toContain('drawImage');
+      expect(gen.assets).toContainEqual({ source: 'assets/needle.png', target: 'driver_display_needle.png' });
+      expect(gen.assets).toContainEqual({ source: 'assets/bar_fill.png', target: 'driver_display_bar_fill.png' });
       // colocación vertical del texto: caja de línea (1,33 × tamaño según el stub) centrada en la caja del
       // elemento con la corrección de la fuente, alineación Start; horizontal = ancho completo de la caja
       const gearEl = p.displays[0].pages[0].elements.find((e) => e.type === 'gear')! as { x: number; y: number; width: number; height: number; config: { style: { size: number } } };

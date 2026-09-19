@@ -249,6 +249,17 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
       return { ...base, config: el.config, file: el.config.icon ? addAsset(el.config.icon) : undefined };
     case 'image':
       return { ...base, config: el.config, file: el.config.file ? addAsset(el.config.file) : undefined };
+    case 'rpm_bar':
+    case 'bar':
+      return {
+        ...base,
+        config: el.config,
+        fillFile: el.config.fillImage ? addAsset(el.config.fillImage) : undefined,
+        bgFile: el.config.bgImage ? addAsset(el.config.bgImage) : undefined,
+      };
+    case 'shift_lights':
+    case 'needle':
+      return { ...base, config: el.config, file: el.config.image ? addAsset(el.config.image) : undefined };
     default:
       return { ...base, config: (el as { config: unknown }).config };
   }

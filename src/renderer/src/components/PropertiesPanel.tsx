@@ -131,6 +131,153 @@ export function PropertiesPanel() {
               <Chk value={el.config.reverse} label="Invertir sentido" onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.reverse = v))} />
             </div>
           </Prop>
+          {el.config.style === 'continuous' && (
+            <>
+              <h3>Textura personalizada</h3>
+              <div className="muted small mb8">La textura de llenado se estira a toda la barra y se descubre según las RPM; la de fondo se dibuja entera debajo.</div>
+              <Prop label="Llenado">
+                <ImageField value={el.config.fillImage} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.fillImage = v))} onSize={(w, h) => update((e) => ((e.width = w), (e.height = h)))} />
+              </Prop>
+              <Prop label="Fondo">
+                <ImageField value={el.config.bgImage} onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.bgImage = v))} />
+              </Prop>
+              {el.config.fillImage && (
+                <Prop label="Opciones">
+                  <Chk value={!!el.config.tintImage} label="Teñir la textura con el color de la zona" onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.tintImage = v))} />
+                </Prop>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {el.type === 'shift_lights' && (
+        <div className="prop-group">
+          <h3>Luces de cambio</h3>
+          <Prop label="LEDs / Sep.">
+            <div className="pair">
+              <Num value={el.config.count} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.count = Math.max(1, Math.round(v))))} min={1} max={64} />
+              <Num value={el.config.gap} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.gap = v))} min={0} />
+            </div>
+          </Prop>
+          <Prop label="Orientación">
+            <Sel value={el.config.orientation} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.orientation = v))} options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]} />
+          </Prop>
+          <Prop label="Forma">
+            <Sel value={el.config.shape} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.shape = v))} options={[{ value: 'circle', label: 'Círculo' }, { value: 'rect', label: 'Rectángulo' }]} />
+          </Prop>
+          {el.config.shape === 'rect' && (
+            <Prop label="Esquinas">
+              <Num value={el.config.radius} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.radius = v))} min={0} />
+            </Prop>
+          )}
+          <Prop label="Orden" title="Orden en que se encienden los LEDs">
+            <Sel
+              value={el.config.pattern}
+              onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.pattern = v))}
+              options={[
+                { value: 'left_to_right', label: 'De un extremo al otro' },
+                { value: 'edges_to_center', label: 'De los extremos al centro' },
+                { value: 'center_to_edges', label: 'Del centro a los extremos' },
+              ]}
+            />
+          </Prop>
+          <Prop label="Primer LED a">
+            <RpmField value={el.config.rpmStart} limiter={limiter} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.rpmStart = v))} />
+          </Prop>
+          <Prop label="Todos a">
+            <RpmField value={el.config.rpmEnd} limiter={limiter} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.rpmEnd = v))} />
+          </Prop>
+          <h3>
+            <span>Tramos de color</span>
+            <button className="small ghost" onClick={() => update((e) => e.type === 'shift_lights' && e.config.zones.push({ count: 1, color: '#FFFFFF' }))}>
+              <Icon name="plus" size={12} /> Añadir
+            </button>
+          </h3>
+          <div className="muted small mb8">En orden de encendido; la suma debería ser {el.config.count} LEDs (ahora {el.config.zones.reduce((a, z) => a + z.count, 0)}).</div>
+          {el.config.zones.map((z, i) => (
+            <div key={i} className="row gap4 mb8">
+              <Num value={z.count} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.zones[i].count = Math.max(0, Math.round(v))))} min={0} />
+              <ColorField value={z.color} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.zones[i].color = v))} />
+              <button className="icon" title="Quitar tramo" disabled={el.config.zones.length <= 1} onClick={() => update((e) => e.type === 'shift_lights' && e.config.zones.splice(i, 1))}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+          ))}
+          <Prop label="Color apagado">
+            <ColorField value={el.config.colorOff} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.colorOff = v))} />
+          </Prop>
+          <Prop label="Limitador">
+            <div className="pair">
+              <Num value={el.config.limiterBlinkHz} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.limiterBlinkHz = v))} min={0} max={30} step={0.5} />
+              <ColorField value={el.config.limiterColor} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.limiterColor = v))} />
+            </div>
+          </Prop>
+          <Prop label="Textura LED">
+            <ImageField value={el.config.image} onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.image = v))} />
+          </Prop>
+          <Prop label="Opciones">
+            <Chk value={el.config.dimOff} label="Mostrar los LEDs apagados" onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.dimOff = v))} />
+          </Prop>
+        </div>
+      )}
+      {el.type === 'needle' && (
+        <div className="prop-group">
+          <h3>Aguja</h3>
+          <Prop label="Variable">
+            <VarSelect value={el.config.variable} onlyNumeric onChange={(v) => update((e) => e.type === 'needle' && v && ((e.config.variable = v), applyRange(e, v)))} />
+          </Prop>
+          <Prop label="Mín. / Máx." title="Valores de la variable en los extremos del recorrido">
+            <div className="pair">
+              <Num value={el.config.min} onChange={(v) => update((e) => e.type === 'needle' && (e.config.min = v))} />
+              <Num value={el.config.max} onChange={(v) => update((e) => e.type === 'needle' && (e.config.max = v))} />
+            </div>
+          </Prop>
+          <Prop label="Ángulo mín. / máx." title="Grados (horario) con el valor mínimo y con el máximo; 0 = la aguja tal y como está dibujada (apuntando hacia arriba)">
+            <div className="pair">
+              <Num value={el.config.angleMin} onChange={(v) => update((e) => e.type === 'needle' && (e.config.angleMin = v))} />
+              <Num value={el.config.angleMax} onChange={(v) => update((e) => e.type === 'needle' && (e.config.angleMax = v))} />
+            </div>
+          </Prop>
+          <Prop label="Eje X / Y" title="Punto de giro, en píxeles desde la esquina superior izquierda del elemento (también se puede arrastrar en el lienzo)">
+            <div className="pair">
+              <Num value={el.config.pivot.x} onChange={(v) => update((e) => e.type === 'needle' && (e.config.pivot.x = v))} />
+              <Num value={el.config.pivot.y} onChange={(v) => update((e) => e.type === 'needle' && (e.config.pivot.y = v))} />
+            </div>
+          </Prop>
+          <div className="row gap4 mb8 wrap">
+            <button className="small outline" onClick={() => update((e) => e.type === 'needle' && ((e.config.pivot.x = e.width / 2), (e.config.pivot.y = e.height / 2)))}>
+              Eje al centro
+            </button>
+            <button className="small outline" onClick={() => update((e) => e.type === 'needle' && ((e.config.pivot.x = e.width / 2), (e.config.pivot.y = e.height)))}>
+              Eje abajo
+            </button>
+          </div>
+          <Prop label="Textura" title="Imagen de la aguja apuntando hacia arriba; se gira alrededor del eje">
+            <ImageField value={el.config.image} onChange={(v) => update((e) => e.type === 'needle' && (e.config.image = v))} onSize={(w, h) => update((e) => ((e.width = w), (e.height = h)))} />
+          </Prop>
+          <Prop label={el.config.image ? 'Tinte' : 'Color'}>
+            <ColorField value={el.config.color} onChange={(v) => update((e) => e.type === 'needle' && (e.config.color = v))} />
+          </Prop>
+          {!el.config.image && (
+            <>
+              <Prop label="Grosor">
+                <Num value={el.config.thickness} onChange={(v) => update((e) => e.type === 'needle' && (e.config.thickness = v))} min={1} />
+              </Prop>
+              <Prop label="Centro (radio)">
+                <div className="pair">
+                  <Num value={el.config.hubRadius} onChange={(v) => update((e) => e.type === 'needle' && (e.config.hubRadius = v))} min={0} />
+                  <ColorField value={el.config.hubColor} onChange={(v) => update((e) => e.type === 'needle' && (e.config.hubColor = v))} />
+                </div>
+              </Prop>
+            </>
+          )}
+          <Prop label="Suavizado (ms)">
+            <Num value={el.config.smoothingMs} onChange={(v) => update((e) => e.type === 'needle' && (e.config.smoothingMs = v))} min={0} step={20} />
+          </Prop>
+          <Prop label="Opciones">
+            <Chk value={el.config.clamp} label="No pasar de los extremos" onChange={(v) => update((e) => e.type === 'needle' && (e.config.clamp = v))} />
+          </Prop>
+          <div className="muted small">Para el fondo del reloj añade un elemento Imagen debajo de la aguja.</div>
         </div>
       )}
       {el.type === 'shift_light' && (
@@ -201,6 +348,22 @@ export function PropertiesPanel() {
             </div>
           </Prop>
           <ThresholdsEditor thresholds={el.config.thresholds} onChange={(t) => update((e) => e.type === 'bar' && (e.config.thresholds = t))} />
+          {el.config.style === 'continuous' && !el.config.bipolar && (
+            <>
+              <h3>Textura personalizada</h3>
+              <Prop label="Llenado">
+                <ImageField value={el.config.fillImage} onChange={(v) => update((e) => e.type === 'bar' && (e.config.fillImage = v))} onSize={(w, h) => update((e) => ((e.width = w), (e.height = h)))} />
+              </Prop>
+              <Prop label="Fondo">
+                <ImageField value={el.config.bgImage} onChange={(v) => update((e) => e.type === 'bar' && (e.config.bgImage = v))} />
+              </Prop>
+              {el.config.fillImage && (
+                <Prop label="Opciones">
+                  <Chk value={!!el.config.tintImage} label="Teñir la textura con el color de la barra" onChange={(v) => update((e) => e.type === 'bar' && (e.config.tintImage = v))} />
+                </Prop>
+              )}
+            </>
+          )}
         </div>
       )}
       {el.type === 'gauge' && (
@@ -333,10 +496,39 @@ export function PropertiesPanel() {
   );
 }
 
+/** Selector de textura (asset de imagen del proyecto) con botón para quitarla. */
+function ImageField({ value, onChange, onSize }: { value: string | undefined; onChange: (v: string | undefined) => void; onSize?: (w: number, h: number) => void }) {
+  return (
+    <div className="row gap4">
+      <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={value}>
+        {value ? value.split('/').pop() : '—'}
+      </span>
+      <button
+        className="small outline"
+        onClick={async () => {
+          const a = await api.pickAsset('image');
+          if (!a) return;
+          if (a.error) toast(a.error, 'err');
+          useStore.getState().addAssetUrl(a.path, a.dataUrl);
+          onChange(a.path);
+          if (a.width && a.height && onSize) onSize(a.width, a.height);
+        }}
+      >
+        Elegir…
+      </button>
+      {value && (
+        <button className="icon" title="Quitar textura" onClick={() => onChange(undefined)}>
+          <Icon name="close" size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function applyRange(e: DisplayElement, variable: string): void {
   const def = VARIABLE_MAP[variable];
   if (!def) return;
-  if (e.type === 'bar' || e.type === 'gauge') {
+  if (e.type === 'bar' || e.type === 'gauge' || e.type === 'needle') {
     e.config.min = def.range[0];
     e.config.max = def.range[1];
   }
@@ -362,6 +554,8 @@ export function typeLabel(t: DisplayElement['type']): string {
     line: 'Línea',
     circle: 'Círculo',
     gauge: 'Indicador circular',
+    shift_lights: 'Luces de cambio',
+    needle: 'Aguja',
   }[t];
 }
 

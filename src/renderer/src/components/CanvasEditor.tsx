@@ -25,7 +25,8 @@ type Drag =
   | { kind: 'pan'; startX: number; startY: number; panX: number; panY: number }
   | { kind: 'move'; startX: number; startY: number; orig: Map<string, Rect>; moved: boolean }
   | { kind: 'resize'; handle: Handle; startX: number; startY: number; orig: Map<string, Rect>; bbox: Rect }
-  | { kind: 'marquee'; startX: number; startY: number; curX: number; curY: number; additive: boolean };
+  | { kind: 'marquee'; startX: number; startY: number; curX: number; curY: number; additive: boolean }
+  | { kind: 'pivot'; id: string };
 
 interface Guide {
   axis: 'x' | 'y';
@@ -231,6 +232,26 @@ export function CanvasEditor() {
       const els = activePageOf(s)!.elements;
       for (const el of els) {
         if (!sel.has(el.id)) continue;
+        if (el.type === 'needle' && s.selection.length === 1) {
+          // eje de giro de la aguja (arrastrable)
+          const px = v.px + (el.x + el.config.pivot.x) * v.sx;
+          const py = v.py + (el.y + el.config.pivot.y) * v.sy;
+          g.save();
+          g.strokeStyle = '#ffb020';
+          g.fillStyle = '#ffb02055';
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.arc(px, py, HANDLE_PX + 2, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+          g.beginPath();
+          g.moveTo(px - HANDLE_PX - 6, py);
+          g.lineTo(px + HANDLE_PX + 6, py);
+          g.moveTo(px, py - HANDLE_PX - 6);
+          g.lineTo(px, py + HANDLE_PX + 6);
+          g.stroke();
+          g.restore();
+        }
         const X = v.px + el.x * v.sx;
         const Y = v.py + el.y * v.sy;
         const Wd = el.width * v.sx;
@@ -323,6 +344,21 @@ export function CanvasEditor() {
     return null;
   }
 
+  /** eje de la aguja seleccionada bajo el puntero */
+  function hitPivot(clientX: number, clientY: number): string | null {
+    const s = useStore.getState();
+    if (s.selection.length !== 1) return null;
+    const el = activePageOf(s)!.elements.find((e) => e.id === s.selection[0]);
+    if (!el || el.locked || el.type !== 'needle') return null;
+    const v = view();
+    const r = canvasRef.current!.getBoundingClientRect();
+    const mx = clientX - r.left;
+    const my = clientY - r.top;
+    const px = v.px + (el.x + el.config.pivot.x) * v.sx;
+    const py = v.py + (el.y + el.config.pivot.y) * v.sy;
+    return Math.hypot(mx - px, my - py) <= HANDLE_PX + 3 ? el.id : null;
+  }
+
   function hitHandle(clientX: number, clientY: number): Handle | null {
     const s = useStore.getState();
     if (s.selection.length !== 1) return null;
@@ -351,6 +387,12 @@ export function CanvasEditor() {
     }
     if (e.button !== 0 || s.previewMode) return;
     const { x, y } = toCanvas(e.clientX, e.clientY);
+    const pivotId = hitPivot(e.clientX, e.clientY);
+    if (pivotId) {
+      s.snapshot();
+      drag.current = { kind: 'pivot', id: pivotId };
+      return;
+    }
     const handle = hitHandle(e.clientX, e.clientY);
     if (handle) {
       const el = activePageOf(s)!.elements.find((el) => el.id === s.selection[0])!;
@@ -381,7 +423,17 @@ export function CanvasEditor() {
     if (!d) {
       const h = hitHandle(e.clientX, e.clientY);
       const c = canvasRef.current!;
-      c.style.cursor = space.current ? 'grab' : h ? cursorFor(h) : hitElement(x, y) ? 'move' : 'default';
+      c.style.cursor = space.current ? 'grab' : hitPivot(e.clientX, e.clientY) ? 'crosshair' : h ? cursorFor(h) : hitElement(x, y) ? 'move' : 'default';
+      return;
+    }
+    if (d.kind === 'pivot') {
+      s.patchPage((page) => {
+        const el = page.elements.find((it) => it.id === d.id);
+        if (el && el.type === 'needle') {
+          el.config.pivot.x = Math.round(x - el.x);
+          el.config.pivot.y = Math.round(y - el.y);
+        }
+      }, false);
       return;
     }
     if (d.kind === 'pan') {

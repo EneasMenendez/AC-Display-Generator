@@ -37,6 +37,8 @@ const PATHS: Record<string, string> = {
   check: 'M3 8.5 6.5 12 13 4',
   alert: 'M8 2l6 11H2z M8 6.5v3 M8 11.5h.01',
   refresh: 'M13 8a5 5 0 1 1-1.5-3.5 M13 2.5v3h-3',
+  leds: 'M3 8a1.5 1.5 0 1 0 0-.01 M8 8a1.5 1.5 0 1 0 0-.01 M13 8a1.5 1.5 0 1 0 0-.01',
+  needle: 'M8 13V3 M5.5 5.5 8 3l2.5 2.5 M8 14a1.5 1.5 0 1 0 0-.01',
 };
 
 export function Icon({ name, size = 16, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {

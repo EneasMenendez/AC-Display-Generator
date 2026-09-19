@@ -80,6 +80,9 @@ export function usedAssets(project: Project): string[] {
     for (const page of d.pages) {
       for (const el of page.elements) {
         if (el.type === 'icon' && !el.config.icon.startsWith('builtin:')) used.add(el.config.icon);
+        if ((el.type === 'rpm_bar' || el.type === 'bar') && el.config.fillImage) used.add(el.config.fillImage);
+        if ((el.type === 'rpm_bar' || el.type === 'bar') && el.config.bgImage) used.add(el.config.bgImage);
+        if ((el.type === 'shift_lights' || el.type === 'needle') && el.config.image) used.add(el.config.image);
         if (el.type === 'image' && el.config.file) used.add(el.config.file);
         for (const r of el.rules) if (r.set.image && !r.set.image.startsWith('builtin:')) used.add(r.set.image);
       }

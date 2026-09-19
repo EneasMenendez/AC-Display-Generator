@@ -1,5 +1,6 @@
 import type { Color, DisplayElement, DisplayProject, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
 import { resolveRpm } from '@shared/model';
+import { ledRanks, ledZoneColor } from '@shared/leds';
 import { formatBinding } from '@shared/format';
 import { VARIABLE_MAP } from '@shared/variables';
 import type { SimContext } from '../sim';
@@ -131,6 +132,45 @@ function drawText(g: CanvasRenderingContext2D, text: string, x: number, y: numbe
 
 /* ---------- barras ---------- */
 
+/**
+ * Barra con textura: el fondo (bg) se dibuja entero y la textura de llenado se descubre según frac,
+ * recortada sobre la misma caja (la textura se estira a toda la barra, no al tramo lleno).
+ */
+function imageBar(
+  g: CanvasRenderingContext2D,
+  fill: HTMLImageElement,
+  bg: HTMLImageElement | null,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  vertical: boolean,
+  reverse: boolean,
+  frac: number,
+  tint: Color | null,
+  B: number,
+  O: number,
+): void {
+  g.save();
+  g.globalAlpha = O;
+  if (bg) g.drawImage(bg, x, y, w, h);
+  frac = clamp01(frac);
+  if (frac > 0) {
+    g.beginPath();
+    if (vertical) {
+      const fh = h * frac;
+      g.rect(x, reverse ? y : y + h - fh, w, fh);
+    } else {
+      const fw = w * frac;
+      g.rect(reverse ? x + w - fw : x, y, fw, h);
+    }
+    g.clip();
+    if (tint) drawTinted(g, fill, x, y, w, h, tint, B, O);
+    else g.drawImage(fill, x, y, w, h);
+  }
+  g.restore();
+}
+
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2);
   g.beginPath();
@@ -212,7 +252,8 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
   const O = rr.opacity;
   const C = (c: Color | undefined): string => css(c, B, O);
   g.save();
-  if (el.rotation) {
+  // la aguja aplica su rotación alrededor de su propio eje
+  if (el.rotation && el.type !== 'needle') {
     g.translate(el.x + el.width / 2, el.y + el.height / 2);
     g.rotate((el.rotation * Math.PI) / 180);
     g.translate(-(el.x + el.width / 2), -(el.y + el.height / 2));
@@ -268,8 +309,105 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
       } else {
         let fill = zone(rpm);
         if (onLimiter) fill = limiterVisible ? c.colors.limiter : c.colors.off;
-        continuousBar(g, x, y, w, h, vertical, c.reverse, frac, c.radius, C(c.colors.off), C(fill));
+        const fillImg = c.fillImage ? env.images.get(c.fillImage) : undefined;
+        if (fillImg && fillImg.complete && fillImg.naturalWidth > 0) {
+          const bgImg = c.bgImage ? env.images.get(c.bgImage) : undefined;
+          imageBar(g, fillImg, bgImg && bgImg.complete && bgImg.naturalWidth > 0 ? bgImg : null, x, y, w, h, vertical, c.reverse, onLimiter && !limiterVisible ? 0 : frac, c.tintImage ? fill : null, B, O);
+        } else continuousBar(g, x, y, w, h, vertical, c.reverse, frac, c.radius, C(c.colors.off), C(fill));
       }
+      break;
+    }
+    case 'shift_lights': {
+      const c = el.config;
+      const rpm = Number(ctx.values.rpm ?? 0);
+      const start = rpmOf(c.rpmStart, ctx);
+      let end = rpmOf(c.rpmEnd, ctx);
+      if (end <= start) end = start + 1;
+      const n = Math.max(1, Math.floor(c.count));
+      const frac = clamp01((rpm - start) / (end - start));
+      const active = rpm < start ? 0 : Math.min(n, Math.floor(frac * n + 0.0001) + (frac < 1 ? 1 : 0));
+      const onLimiter = ctx.values.limiter_on === true || rpm >= end;
+      const blink = onLimiter && c.limiterBlinkHz > 0;
+      const limiterVisible = blink && blinkOn(ctx.t, c.limiterBlinkHz);
+      const ranks = ledRanks(n, c.pattern);
+      const vertical = c.orientation === 'vertical';
+      const len = vertical ? h : w;
+      const size = Math.max(1, (len - c.gap * (n - 1)) / n);
+      const img = c.image ? env.images.get(c.image) : undefined;
+      const hasImg = !!img && img.complete && img.naturalWidth > 0;
+      for (let p = 0; p < n; p++) {
+        const rank = ranks[p];
+        let lit = rank < active;
+        let color: Color;
+        if (blink) {
+          lit = limiterVisible;
+          color = c.limiterColor;
+        } else color = rr.color ?? ledZoneColor(rank, c.zones, c.limiterColor);
+        if (!lit) {
+          if (!c.dimOff) continue;
+          color = c.colorOff;
+        }
+        const off = p * (size + c.gap);
+        // vertical: el primer LED abajo
+        const lx = vertical ? x : x + off;
+        const ly = vertical ? y + h - off - size : y;
+        const lw = vertical ? w : size;
+        const lh = vertical ? size : h;
+        if (hasImg) drawTinted(g, img!, lx, ly, lw, lh, color, B, O);
+        else {
+          g.fillStyle = C(color);
+          if (c.shape === 'circle') {
+            g.beginPath();
+            g.arc(lx + lw / 2, ly + lh / 2, Math.min(lw, lh) / 2, 0, Math.PI * 2);
+            g.fill();
+          } else {
+            roundRect(g, lx, ly, lw, lh, c.radius);
+            g.fill();
+          }
+        }
+      }
+      break;
+    }
+    case 'needle': {
+      const c = el.config;
+      const raw = Number(varValue(ctx, c.variable) ?? 0);
+      const st = env.state.get(el.id) ?? { v: raw };
+      env.state.set(el.id, st);
+      if (c.smoothingMs > 0) st.v = (st.v ?? raw) + (raw - (st.v ?? raw)) * clamp01(env.dt / (c.smoothingMs / 1000));
+      else st.v = raw;
+      const range = c.max - c.min || 1;
+      let frac = (st.v - c.min) / range;
+      if (c.clamp) frac = clamp01(frac);
+      const angle = c.angleMin + (c.angleMax - c.angleMin) * frac + (el.rotation || 0);
+      const px = x + c.pivot.x;
+      const py = y + c.pivot.y;
+      g.save();
+      g.translate(px, py);
+      g.rotate((angle * Math.PI) / 180);
+      g.translate(-px, -py);
+      const color = rr.color ?? c.color;
+      const img = c.image ? env.images.get(c.image) : undefined;
+      if (img && img.complete && img.naturalWidth > 0) {
+        if (color.toUpperCase().startsWith('#FFFFFF')) {
+          g.globalAlpha = O;
+          g.drawImage(img, x, y, w, h);
+        } else drawTinted(g, img, x, y, w, h, color, B, O);
+      } else {
+        g.strokeStyle = C(color);
+        g.lineWidth = c.thickness;
+        g.lineCap = 'round';
+        g.beginPath();
+        g.moveTo(px, py);
+        g.lineTo(x + w / 2, y);
+        g.stroke();
+        if (c.hubRadius > 0) {
+          g.fillStyle = C(c.hubColor);
+          g.beginPath();
+          g.arc(px, py, c.hubRadius, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.restore();
       break;
     }
     case 'shift_light': {
@@ -329,7 +467,11 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
         const active = Math.floor(frac * n + 0.0001);
         segmentedBar(g, x, y, w, h, vertical, c.reverse, n, c.gap, c.radius, active, (_i, isActive) => C(isActive ? fill : c.colorBg));
       } else {
-        continuousBar(g, x, y, w, h, vertical, c.reverse, frac, c.radius, C(c.colorBg), C(fill));
+        const fillImg = c.fillImage ? env.images.get(c.fillImage) : undefined;
+        if (fillImg && fillImg.complete && fillImg.naturalWidth > 0) {
+          const bgImg = c.bgImage ? env.images.get(c.bgImage) : undefined;
+          imageBar(g, fillImg, bgImg && bgImg.complete && bgImg.naturalWidth > 0 ? bgImg : null, x, y, w, h, vertical, c.reverse, frac, c.tintImage ? fill : null, B, O);
+        } else continuousBar(g, x, y, w, h, vertical, c.reverse, frac, c.radius, C(c.colorBg), C(fill));
       }
       break;
     }

@@ -30,7 +30,9 @@ export type ElementType =
   | 'rect'
   | 'line'
   | 'circle'
-  | 'gauge';
+  | 'gauge'
+  | 'shift_lights'
+  | 'needle';
 
 export type RuleOp = '>' | '>=' | '<' | '<=' | '==' | '!=';
 
@@ -115,6 +117,12 @@ export interface RpmBarConfig {
   limiterBlinkHz: number;
   /** colorea cada segmento según su propia zona (true) o toda la barra según el régimen actual (false) */
   perSegmentColors: boolean;
+  /** textura personalizada (estilo continuo): se descubre según el llenado; asset del proyecto */
+  fillImage?: string;
+  /** textura de fondo (parte sin llenar) */
+  bgImage?: string;
+  /** teñir la textura de llenado con el color de la zona actual */
+  tintImage?: boolean;
 }
 
 export interface RpmBarElement extends ElementBase {
@@ -135,6 +143,67 @@ export interface ShiftLightConfig {
 export interface ShiftLightElement extends ElementBase {
   type: 'shift_light';
   config: ShiftLightConfig;
+}
+
+/** Tira de luces de cambio: varios LEDs que se encienden progresivamente entre dos regímenes. */
+export interface ShiftLightsConfig {
+  count: number;
+  orientation: Orientation;
+  shape: 'circle' | 'rect';
+  gap: number;
+  radius: number;
+  /** régimen al que se enciende el primer LED */
+  rpmStart: RpmValue;
+  /** régimen al que están todos encendidos */
+  rpmEnd: RpmValue;
+  /** orden de encendido */
+  pattern: 'left_to_right' | 'edges_to_center' | 'center_to_edges';
+  /** colores por tramos, en orden de encendido (p. ej. 4 verdes, 3 amarillos, 3 rojos) */
+  zones: { count: number; color: Color }[];
+  colorOff: Color;
+  /** los LEDs apagados se dibujan con colorOff (true) o se ocultan */
+  dimOff: boolean;
+  /** al llegar al limitador todos parpadean con limiterColor; 0 = sin parpadeo */
+  limiterBlinkHz: number;
+  limiterColor: Color;
+  /** textura opcional del LED (se tiñe con el color); asset del proyecto */
+  image?: string;
+}
+
+export interface ShiftLightsElement extends ElementBase {
+  type: 'shift_lights';
+  config: ShiftLightsConfig;
+}
+
+/**
+ * Aguja: gira alrededor de un eje (pivot, en píxeles respecto a la esquina superior izquierda del elemento)
+ * entre angleMin y angleMax según la variable. Sin imagen se dibuja una aguja simple desde el eje hasta
+ * el centro del borde superior de la caja.
+ */
+export interface NeedleConfig {
+  variable: string;
+  min: number;
+  max: number;
+  /** ángulo (grados, horario) para min y para max; 0 = la aguja tal y como está dibujada */
+  angleMin: number;
+  angleMax: number;
+  pivot: { x: number; y: number };
+  /** textura de la aguja (asset del proyecto), dibujada sin girar en la caja del elemento */
+  image?: string;
+  /** color de la aguja simple / tinte de la textura */
+  color: Color;
+  thickness: number;
+  hubRadius: number;
+  hubColor: Color;
+  /** suavizado en ms; 0 = instantáneo */
+  smoothingMs: number;
+  /** limitar el valor a [min, max] */
+  clamp: boolean;
+}
+
+export interface NeedleElement extends ElementBase {
+  type: 'needle';
+  config: NeedleConfig;
 }
 
 export interface Threshold {
@@ -159,6 +228,11 @@ export interface BarConfig {
   bipolar: boolean;
   /** suavizado en ms; 0 = instantáneo */
   smoothingMs: number;
+  /** textura personalizada (estilo continuo): se descubre según el llenado */
+  fillImage?: string;
+  bgImage?: string;
+  /** teñir la textura de llenado con el color de la barra/umbral */
+  tintImage?: boolean;
 }
 
 export interface BarElement extends ElementBase {
@@ -246,7 +320,9 @@ export type DisplayElement =
   | RectElement
   | LineElement
   | CircleElement
-  | GaugeElement;
+  | GaugeElement
+  | ShiftLightsElement
+  | NeedleElement;
 
 /** Condición que activa automáticamente una página (p. ej. "Boxes" cuando car.isInPitlane). */
 export interface PageCondition {
@@ -426,6 +502,49 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
       return { ...base(type, 'Línea', x, y, 300, 4), type, config: { color: '#FFFFFF', thickness: 4 } };
     case 'circle':
       return { ...base(type, 'Círculo', x, y, 120, 120), type, config: { fill: '#FFFFFF', stroke: '#FFFFFF00', strokeWidth: 0 } };
+    case 'shift_lights':
+      return {
+        ...base(type, 'Luces de cambio', x, y, 600, 50),
+        type,
+        config: {
+          count: 10,
+          orientation: 'horizontal',
+          shape: 'circle',
+          gap: 10,
+          radius: 6,
+          rpmStart: '70%',
+          rpmEnd: '97%',
+          pattern: 'left_to_right',
+          zones: [
+            { count: 4, color: '#28C840' },
+            { count: 3, color: '#FFB000' },
+            { count: 3, color: '#FF2D2D' },
+          ],
+          colorOff: '#1A1A1A',
+          dimOff: true,
+          limiterBlinkHz: 8,
+          limiterColor: '#2D7BFF',
+        },
+      };
+    case 'needle':
+      return {
+        ...base(type, 'Aguja', x, y, 40, 220),
+        type,
+        config: {
+          variable: 'rpm',
+          min: 0,
+          max: 8000,
+          angleMin: -120,
+          angleMax: 120,
+          pivot: { x: 20, y: 200 },
+          color: '#FF2D2D',
+          thickness: 8,
+          hubRadius: 14,
+          hubColor: '#DDDDDD',
+          smoothingMs: 80,
+          clamp: true,
+        },
+      };
     case 'gauge':
       return {
         ...base(type, 'Indicador circular', x, y, 300, 300),
