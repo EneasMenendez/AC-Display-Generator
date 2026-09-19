@@ -15,6 +15,7 @@ export const api = {
   importLua: (scriptFile: string, width: number, height: number) => invoke('car:importLua', scriptFile, width, height),
   readKn5: (carPath: string, file: string) => invoke('car:kn5', carPath, file),
   meshConflicts: (carPath: string, meshes: string[], displayId: string) => invoke('car:meshConflicts', carPath, meshes, displayId),
+  cleanDisplays: (carPath: string, meshes: string[]) => invoke('car:cleanDisplays', carPath, meshes),
 
   findProfiles: (carPath: string) => invoke('profiles:find', carPath),
   pickProfile: () => invoke('profiles:pick'),

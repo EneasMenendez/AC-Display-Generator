@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { basename, dirname, join } from 'node:path';
 import { app } from 'electron';
 import { resourcesDir } from './resources';
-import luaparse from 'luaparse';
+import { validateLua } from './luaCheck';
 import type { Project } from '@shared/model';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
@@ -22,7 +22,8 @@ import {
 import { session, packProject } from './projectManager';
 import { disableSection, enableAllSections } from '@shared/ini';
 import { encodeDdsBc3, toRgba } from './imageManager';
-import type { BackupEntry, InstallOptions, InstallResult, InstallStep, InstallTarget } from '@shared/types';
+import type { BackupEntry, CleanDisplaysResult, InstallOptions, InstallResult, InstallStep, InstallTarget } from '@shared/types';
+import { scanExtension } from './displayScanner';
 export type { BackupEntry, InstallOptions, InstallResult, InstallStep, InstallTarget };
 
 /**
@@ -43,15 +44,7 @@ export function runtimeSource(): string {
   return readFileSync(f, 'utf8');
 }
 
-export function validateLua(code: string, name: string): string | null {
-  try {
-    luaparse.parse(code, { luaVersion: '5.1', comments: false });
-    return null;
-  } catch (e) {
-    const err = e as { message?: string; line?: number };
-    return `${name}: ${err.message ?? 'error de sintaxis'}${err.line ? ` (línea ${err.line})` : ''}`;
-  }
-}
+export { validateLua };
 
 function baseDir(carPath: string, target: InstallTarget): string {
   return target.kind === 'car' ? join(carPath, 'extension') : join(carPath, 'skins', target.skin);
@@ -438,6 +431,40 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
     }
   }
   return done;
+}
+
+/**
+ * Limpieza al empezar un proyecto: desactiva (comentando con ;ACDG-OFF;) todas las secciones de display
+ * ajenas de extension/ que usen alguna de las mallas del proyecto, para que no se superpongan con lo
+ * que genere la aplicación. Reversible: "Desinstalar" las reactiva. Antes se guarda copia de seguridad.
+ */
+export function cleanDisplays(carPath: string, meshes: string[]): CleanDisplaysResult {
+  const target: InstallTarget = { kind: 'car' };
+  const scan = scanExtension(carPath);
+  const wanted = new Set(meshes.map((m) => m.toLowerCase()));
+  const victims = scan.displays.filter((d) => !d.acdg && d.meshes.some((m) => wanted.has(m.toLowerCase())));
+  const result: CleanDisplaysResult = { disabled: [], backup: null };
+  if (victims.length === 0) return result;
+  const root = backupRoot(carPath, target);
+  const bdir = join(root, timestamp());
+  mkdirSync(bdir, { recursive: true });
+  const touched = new Map<string, string>();
+  for (const v of victims) {
+    if (!existsSync(v.iniFile)) continue;
+    const txt = touched.get(v.iniFile) ?? readFileSync(v.iniFile, 'utf8');
+    const next = disableSection(txt, v.section);
+    if (next === txt) continue;
+    touched.set(v.iniFile, next);
+    result.disabled.push({ iniFile: v.iniFile, iniRelative: v.iniRelative, section: v.section, meshes: v.meshes });
+  }
+  if (result.disabled.length === 0) return result;
+  for (const [file] of touched) cpSync(file, join(bdir, basename(file)));
+  writeFileSync(join(bdir, 'backup.json'), JSON.stringify({ car: carPath, target, displays: [], files: [...touched.keys()].map((f) => basename(f)), reason: 'clean-displays' }, null, 2), 'utf8');
+  writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de desactivar los displays existentes (${result.disabled.map((d) => `[${d.section}] en ${d.iniRelative}`).join(', ')}).\n`, 'utf8');
+  pruneBackups(root, 10);
+  for (const [file, next] of touched) writeFileSync(file, next, 'utf8');
+  result.backup = bdir;
+  return result;
 }
 
 /** Proyecto guardado dentro del coche por una instalación anterior. */

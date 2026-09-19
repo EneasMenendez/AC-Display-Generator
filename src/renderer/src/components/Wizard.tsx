@@ -289,6 +289,17 @@ export function Wizard() {
     loadProject(project, null);
     const warn = inc.flatMap((e) => e.layout?.warnings ?? []);
     if (warn.length) toast(warn[0], 'err');
+    // los displays ya definidos en extension/ sobre estas mallas se desactivan ahora, para que no se
+    // superpongan con lo que genere la aplicación (reversible desde Desinstalar)
+    try {
+      const r = await api.cleanDisplays(car.path, inc.flatMap((e) => e.def.meshes));
+      if (r.disabled.length) {
+        toast(`Desactivad${r.disabled.length === 1 ? 'o el display existente' : `os ${r.disabled.length} displays existentes`} en extension/: ${r.disabled.map((d) => `[${d.section}] de ${d.iniRelative}`).join(', ')}. Copia de seguridad guardada.`);
+        useStore.getState().setCar(await api.scanCar(car.path));
+      }
+    } catch (e) {
+      toast(`No se pudieron desactivar los displays existentes: ${(e as Error).message}`, 'err');
+    }
   }
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
@@ -416,7 +427,7 @@ export function Wizard() {
                     {e.notes.length > 0 && <div className="warn small">{e.notes.join(' ')}</div>}
                     {e.detected && (
                       <div className="small muted">
-                        Al generar se escribirá <code>extension/{e.def.id}.lua</code> y se ofrecerá desactivar la sección original <code>[{e.detected.section}]</code>. El script original no se borra ni se sobrescribe.
+                        Al crear el proyecto se desactivará la sección original <code>[{e.detected.section}]</code> (se comenta en su .ini; el script original no se borra ni se sobrescribe y se reactiva al desinstalar). Al generar se escribirá <code>extension/{e.def.id}.lua</code>.
                       </div>
                     )}
                   </td>

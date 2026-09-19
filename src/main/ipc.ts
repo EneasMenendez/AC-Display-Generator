@@ -65,6 +65,7 @@ export function registerIpc(): void {
   ipcMain.handle('car:importLua', (_e, scriptFile: string, width: number, height: number) => importLuaDisplay(scriptFile, width, height));
   ipcMain.handle('car:kn5', (_e, carPath: string, file: string) => readKn5(join(carPath, file)));
   ipcMain.handle('car:meshConflicts', (_e, carPath: string, meshes: string[], displayId: string) => findMeshConflicts(carPath, meshes, displayId));
+  ipcMain.handle('car:cleanDisplays', (_e, carPath: string, meshes: string[]) => inst.cleanDisplays(carPath, meshes));
 
   // ---------- perfiles ----------
   ipcMain.handle('profiles:find', (_e, carPath: string) => findProfiles(carPath));

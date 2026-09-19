@@ -3,7 +3,7 @@ import { basename, dirname, extname, join, relative } from 'node:path';
 import type { DetectedDisplay, ExtensionScan } from '@shared/types';
 import { parseIni, type IniSection } from '@shared/ini';
 import { PROJECT_FILE, listIncludeBlocks, parseIncludeBlock } from '@shared/generator';
-import { validateLua } from './installer';
+import { validateLua } from './luaCheck';
 
 /**
  * Display Scanner: inspecciona <coche>/extension en busca de todo lo relacionado con displays.

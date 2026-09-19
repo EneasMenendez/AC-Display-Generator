@@ -190,6 +190,13 @@ export interface InstallResult {
   errors: string[];
 }
 
+export interface CleanDisplaysResult {
+  /** secciones de display ajenas desactivadas (comentadas con ;ACDG-OFF;) */
+  disabled: { iniFile: string; iniRelative: string; section: string; meshes: string[] }[];
+  /** carpeta de la copia de seguridad (null si no hubo nada que desactivar) */
+  backup: string | null;
+}
+
 export interface BackupEntry {
   id: string;
   path: string;
@@ -229,6 +236,7 @@ export interface AcdgApi {
   importLua(scriptFile: string, width: number, height: number): Promise<LuaImportResult>;
   readKn5(carPath: string, file: string): Promise<Kn5Info>;
   meshConflicts(carPath: string, meshes: string[], displayId: string): Promise<string[]>;
+  cleanDisplays(carPath: string, meshes: string[]): Promise<CleanDisplaysResult>;
 
   findProfiles(carPath: string): Promise<ProfileSearchResult>;
   pickProfile(): Promise<ProfileHit | { errors: string[] } | null>;
