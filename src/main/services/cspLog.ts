@@ -21,7 +21,11 @@ export function readCspLog(carId: string): CspLogReport {
     const low = l.toLowerCase();
     if (low.includes('[acdg]') || low.includes('acdg/') || low.includes('acdg_')) acdgLines.push(l.trim());
     if (low.includes(id) && (low.includes('loading configs') || low.includes('configs for'))) carLoaded = true;
-    if ((l.includes('🚨') || low.includes('error')) && (low.includes('lua') || low.includes('display') || low.includes('script') || low.includes('acdg'))) errorLines.push(l.trim());
+    // errores reales: fallos del runtime ACDG o errores de Lua en scripts de display del coche
+    // (los avisos 🚨 de CSP sobre sus propias apps —Mumble, navegador…— y la línea "[ACDG] … cargado" no lo son)
+    const isAcdgError = low.includes('[acdg]') && low.includes('error');
+    const isCarDisplayError = (low.includes('car display') || low.includes(id)) && /(error|exception|failed|traceback|attempt to|stack)/.test(low) && !low.includes('cargado');
+    if (isAcdgError || isCarDisplayError) errorLines.push(l.trim());
     if (low.includes('lua') && (low.includes('display') || low.includes(id))) luaLines.push(l.trim());
   }
   const started = /date & time: ([^,]+)/.exec(lines[0] ?? '')?.[1] ?? null;
