@@ -140,13 +140,23 @@ function ACDG.batteryLow()
   return num(car.batteryVoltage) < (cfg.defaults.batteryLow or 12)
 end
 
+local varErrorLogged = {}
+
 local function getVar(id)
   local v = varCache[id]
   if v ~= nil then return v end
   local fn = cfg.vars[id]
   if not fn then return nil end
   local ok, res = pcall(fn)
-  if not ok or res == nil then
+  if not ok then
+    -- un fallo al leer la variable no debe matar el display, pero sí quedar en el log de CSP (una vez)
+    if not varErrorLogged[id] then
+      varErrorLogged[id] = true
+      ac.error('[ACDG] variable "' .. tostring(id) .. '": ' .. tostring(res))
+    end
+    res = nil
+  end
+  if res == nil then
     local meta = cfg.varMeta[id]
     res = meta and meta.fallback or 0
   end
