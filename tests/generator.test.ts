@@ -116,8 +116,21 @@ describe('ext_config.ini', () => {
     expect(a).toContain(original);
     expect(a).toContain('SCRIPT = driver_display.lua');
     expect(a).toContain('; ACDG FILES: driver_display.lua, driver_display_bg.png');
+    // el bloque va al principio del archivo, antes del resto de secciones
+    expect(a.indexOf('; ACDG BEGIN driver_display')).toBe(0);
+    expect(a.indexOf('[LIGHTING]')).toBeGreaterThan(a.indexOf('; ACDG END driver_display'));
     const b = upsertIncludeBlock(a, 'driver_display', body, ['driver_display.lua']);
     expect(b.split('ACDG BEGIN').length).toBe(2);
+    // un segundo display se coloca tras el primero, también antes del resto; un bloque que estaba al final sube
+    const tail = `${original}\n; ACDG BEGIN codriver\n[SCRIPTABLE_DISPLAY_...]\nMESHES = c\nSCRIPT = codriver.lua\n; ACDG END codriver\n`;
+    const d = upsertIncludeBlock(tail, 'driver_display', body);
+    expect(listIncludeBlocks(d)).toEqual(['codriver', 'driver_display']);
+    expect(d.indexOf('[LIGHTING]')).toBeGreaterThan(d.indexOf('; ACDG END driver_display'));
+    expect(d.trimEnd().endsWith('EMISSIVE_MULT=1')).toBe(true);
+    // [HEADER] de CSP se mantiene como primera sección
+    const withHeader = upsertIncludeBlock('[HEADER]\nVERSION=extended-2\n\n[BASIC]\nX=1\n', 'driver_display', body);
+    expect(withHeader.startsWith('[HEADER]\nVERSION=extended-2\n\n; ACDG BEGIN driver_display')).toBe(true);
+    expect(withHeader.indexOf('[BASIC]')).toBeGreaterThan(withHeader.indexOf('; ACDG END driver_display'));
     expect(listIncludeBlocks(b)).toEqual(['driver_display']);
     const info = parseIncludeBlock(b, 'driver_display');
     expect(info?.files).toEqual(['driver_display.lua']);

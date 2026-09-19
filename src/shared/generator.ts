@@ -392,12 +392,29 @@ export function listIncludeBlocks(extConfig: string): string[] {
  * Nunca toca el resto del archivo.
  */
 export function upsertIncludeBlock(extConfig: string, displayId: string, body: string, files: string[] = []): string {
-  const m = includeMarkers(displayId);
   const block = includeBlock(displayId, body, files);
-  const re = new RegExp(`${escapeRe(m.begin)}[\\s\\S]*?${escapeRe(m.end)}\\r?\\n?`);
-  if (re.test(extConfig)) return extConfig.replace(re, block);
-  const sep = extConfig.length === 0 ? '' : extConfig.endsWith('\n') ? '\n' : '\n\n';
-  return `${extConfig}${sep}${block}`;
+  // todos los bloques ACDG van juntos al principio del archivo, en orden de instalación, para que los
+  // displays se carguen antes que el resto de la configuración del coche
+  const blocks: { id: string; text: string }[] = [];
+  let rest = extConfig;
+  for (const id of listIncludeBlocks(extConfig)) {
+    const m = includeMarkers(id);
+    const re = new RegExp(`${escapeRe(m.begin)}[\\s\\S]*?${escapeRe(m.end)}\\r?\\n?`);
+    const hit = re.exec(rest);
+    if (!hit) continue;
+    blocks.push({ id, text: id === displayId ? block : hit[0].trimEnd() + '\n' });
+    rest = rest.replace(re, '');
+  }
+  if (!blocks.some((b) => b.id === displayId)) blocks.push({ id: displayId, text: block });
+  rest = rest.replace(/^\s+/, '');
+  // [HEADER] (metadatos de CSP) se conserva como primera sección si existe
+  let header = '';
+  const h = /^\[HEADER\][^\[]*/i.exec(rest);
+  if (h) {
+    header = h[0].trimEnd() + '\n\n';
+    rest = rest.slice(h[0].length).replace(/^\s+/, '');
+  }
+  return `${header}${blocks.map((b) => b.text).join('\n')}${rest.length ? '\n' + rest : ''}`;
 }
 
 export function removeIncludeBlock(extConfig: string, displayId: string): string {
@@ -450,7 +467,7 @@ export function generateReadme(project: Project, dp: DisplayProject, display: Di
     '',
     'Instalación manual (si has exportado el paquete sin instalar):',
     '  1. Copia estos archivos directamente en content/cars/<coche>/extension/ (o skins/<skin>/), sin subcarpetas.',
-    '  2. Añade al final de ext_config.ini:',
+    '  2. Añade al principio de ext_config.ini (antes de cualquier otra sección):',
     '',
     includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${script}\nRESOLUTION = ${display.texture_size.width}, ${display.texture_size.height}\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`, files).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
     '',
