@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { DisplayElement, DisplayProject, ElementType, Page, Project } from '@shared/model';
 import { createElement, createPage, newId } from '@shared/model';
 import type { DisplayProfile } from '@shared/profile';
+import { uvRegionPx } from '@shared/uv';
 import type { AppInfo, BuiltinIcon, CarInfo } from '@shared/types';
 import { VARIABLES } from '@shared/variables';
 
@@ -229,8 +230,11 @@ export const useStore = create<State>((set, get) => ({
     const d = activeDisplayOf(s);
     const page = activePageOf(s);
     if (!d || !page) return;
-    const cw = d.canvas.width;
-    const ch = d.canvas.height;
+    // los elementos nuevos se colocan dentro del área visible de la malla (si no es toda la textura)
+    const def = s.profile?.displays.find((x) => x.id === d.display_id);
+    const area = def ? uvRegionPx({ uv_region: def.uv_region, texture_size: d.canvas }) : { x: 0, y: 0, width: d.canvas.width, height: d.canvas.height };
+    const cw = area.width;
+    const ch = area.height;
     const el = createElement(type, 0, 0);
     el.x = Math.round(cw / 2 - el.width / 2);
     el.y = Math.round(ch / 2 - el.height / 2);
@@ -239,6 +243,8 @@ export const useStore = create<State>((set, get) => ({
       el.x = Math.round(cw * 0.1);
       el.y = Math.round(ch * 0.05);
     }
+    el.x += area.x;
+    el.y += area.y;
     // nombre único
     const names = new Set(page.elements.map((e) => e.name));
     let n = 2;

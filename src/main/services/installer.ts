@@ -328,9 +328,11 @@ export function install(opts: InstallOptions): InstallResult {
   if (opts.install && opts.writeProfile) {
     step('Guardar perfil en el vehículo', () => {
       const f = join(opts.carPath, 'extension', 'display_profile.json');
-      if (existsSync(f)) return 'ya existía';
-      writeFileSync(f, JSON.stringify(profile, null, 2), 'utf8');
-      return 'display_profile.json creado';
+      const txt = JSON.stringify(profile, null, 2);
+      if (existsSync(f) && readFileSync(f, 'utf8') === txt) return 'sin cambios';
+      const existed = existsSync(f);
+      writeFileSync(f, txt, 'utf8');
+      return existed ? 'display_profile.json actualizado' : 'display_profile.json creado';
     });
   }
 

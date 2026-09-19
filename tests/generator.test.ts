@@ -102,6 +102,7 @@ describe('generador', () => {
     expect(ini).toContain('[SCRIPTABLE_DISPLAY_...]');
     expect(ini).toContain('MESHES = Plano_014_001');
     expect(ini).toContain('SCRIPT = driver_display.lua');
+    expect(ini).toContain('RESOLUTION = 1593, 987');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
     expect(ini).not.toContain('ACTIVE');
   });

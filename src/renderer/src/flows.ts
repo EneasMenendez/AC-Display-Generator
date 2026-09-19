@@ -2,6 +2,7 @@ import { api } from './api';
 import { useStore, toast } from './store';
 import type { Project } from '@shared/model';
 import type { DisplayProfile } from '@shared/profile';
+import { hasUvRegion, regionFromKn5Uv, uvRegionPx } from '@shared/uv';
 
 /**
  * Flujos que combinan varias llamadas IPC (abrir proyecto, guardar, etc.).
@@ -46,6 +47,7 @@ export async function openProjectFlow(file?: string, carPathHint?: string): Prom
     s.setProfile(profile, profileFile);
     s.setAssets(assets);
     s.loadProject(project, r.file);
+    if (carPath && profile) void suggestVisibleArea(carPath, profile);
     return true;
   } catch (e) {
     toast(`No se pudo abrir el proyecto: ${(e as Error).message}`, 'err');
@@ -84,4 +86,28 @@ export function usedAssets(project: Project): string[] {
     }
   }
   return [...used];
+}
+
+/**
+ * Perfiles anteriores a la detección de UV: si alguna malla solo muestra parte de la textura y el perfil
+ * aún dice "toda", avisar para que el usuario pulse Detectar (no se cambia nada sin que lo pida).
+ */
+async function suggestVisibleArea(carPath: string, profile: DisplayProfile): Promise<void> {
+  const pending = profile.displays.filter((d) => !hasUvRegion(d));
+  if (pending.length === 0) return;
+  try {
+    const car = useStore.getState().car;
+    if (!car?.mainKn5) return;
+    const kn5 = await api.readKn5(carPath, car.mainKn5);
+    for (const d of pending) {
+      const mesh = kn5.meshes.find((m) => d.meshes.some((n) => n.toLowerCase() === m.name.toLowerCase()));
+      const region = mesh && regionFromKn5Uv(mesh.uv);
+      if (region && hasUvRegion({ uv_region: region })) {
+        const px = uvRegionPx({ uv_region: region, texture_size: d.texture_size });
+        toast(`${d.name}: la malla ${mesh!.name} solo muestra ${px.width}×${px.height} px de la textura. Pulsa "Detectar" en Área visible para marcarla.`);
+      }
+    }
+  } catch {
+    /* sin kn5 legible: nada que sugerir */
+  }
 }

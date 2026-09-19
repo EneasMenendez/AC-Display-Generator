@@ -43,6 +43,28 @@ class Reader {
   }
 }
 
+/**
+ * Recorre los vértices de una malla (stride en bytes; posición en 0, UV en 24) y devuelve el
+ * rectángulo UV que ocupa y las dimensiones del volumen que envuelve la malla (en metros).
+ */
+function meshBounds(r: Reader, buf: Buffer, vcount: number, stride: number): Pick<Kn5Mesh, 'uv' | 'size'> {
+  let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  let p = r.pos;
+  for (let i = 0; i < vcount; i++, p += stride) {
+    const x = buf.readFloatLE(p), y = buf.readFloatLE(p + 4), z = buf.readFloatLE(p + 8);
+    const u = buf.readFloatLE(p + 24), v = buf.readFloatLE(p + 28);
+    if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+  }
+  r.skip(vcount * stride);
+  if (vcount === 0) return { uv: null, size: null };
+  return {
+    uv: { u0, v0, u1, v1 },
+    size: { x: x1 - x0, y: y1 - y0, z: z1 - z0 },
+  };
+}
+
 export function readKn5(file: string): Kn5Info {
   const buf = readFileSync(file);
   const r = new Reader(buf);
@@ -106,7 +128,7 @@ export function readKn5(file: string): Kn5Info {
       r.u8(); // isVisible
       r.u8(); // isTransparent
       const vcount = r.u32();
-      r.skip(vcount * 44);
+      const b = meshBounds(r, buf, vcount, 44); // posición(12) normal(12) uv(8) tangente(12)
       const icount = r.u32();
       r.skip(icount * 2);
       const matId = r.i32();
@@ -115,7 +137,7 @@ export function readKn5(file: string): Kn5Info {
       r.f32(); // lodOut
       r.skip(16); // bounding sphere
       r.u8(); // isRenderable
-      meshes.push({ name, material: materials[matId]?.name ?? `#${matId}`, vertices: vcount, path: here });
+      meshes.push({ name, material: materials[matId]?.name ?? `#${matId}`, vertices: vcount, path: here, ...b });
     } else if (type === 3) {
       r.u8();
       r.u8();
@@ -126,14 +148,14 @@ export function readKn5(file: string): Kn5Info {
         r.skip(64);
       }
       const vcount = r.u32();
-      r.skip(vcount * 76);
+      const b = meshBounds(r, buf, vcount, 76); // + pesos(16) e índices(16) de huesos
       const icount = r.u32();
       r.skip(icount * 2);
       const matId = r.i32();
       r.i32(); // layer
       r.f32();
       r.f32();
-      meshes.push({ name, material: materials[matId]?.name ?? `#${matId}`, vertices: vcount, path: here });
+      meshes.push({ name, material: materials[matId]?.name ?? `#${matId}`, vertices: vcount, path: here, ...b });
     } else {
       throw new Error(`Tipo de nodo desconocido (${type}) en ${here}`);
     }

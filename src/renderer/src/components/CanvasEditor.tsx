@@ -3,6 +3,7 @@ import type { DisplayElement } from '@shared/model';
 import { useStore, activeDisplayOf, activePageOf } from '../store';
 import { resolveSim } from '../sim';
 import { drawScene, pageMatches, type DrawEnv } from '../render/draw';
+import { hasUvRegion, uvRegionPx } from '@shared/uv';
 
 /**
  * Lienzo WYSIWYG: zoom/pan, selección, arrastre, redimensionado con tiradores, marco de selección,
@@ -52,8 +53,10 @@ export function CanvasEditor() {
     if (s.physicalView && s.profile) {
       const d = s.profile.displays.find((x) => x.id === p.display_id);
       if (d?.physical_size_m) {
+        // la proporción física corresponde al área visible de la malla, no a toda la textura
+        const area = uvRegionPx({ uv_region: d.uv_region, texture_size: p.canvas });
         const physAspect = d.physical_size_m.width / d.physical_size_m.height;
-        ky = p.canvas.width / physAspect / p.canvas.height;
+        ky = area.width / physAspect / area.height;
       }
     }
     return { sx: s.zoom, sy: s.zoom * ky, px: s.pan.x, py: s.pan.y };
@@ -157,6 +160,34 @@ export function CanvasEditor() {
       if (s.previewMode && s.followPageRules) page = p.pages.find((pg) => pageMatches(pg, simCtx)) ?? page;
       drawScene(g, p, page, simCtx, env, bg);
       g.restore();
+
+      // área visible de la malla (UV): fuera de ella lo dibujado no se ve en el coche
+      const area = display && hasUvRegion(display) ? uvRegionPx({ uv_region: display.uv_region, texture_size: p.canvas }) : null;
+      if (area) {
+        const ax = v.px + area.x * v.sx;
+        const ay = v.py + area.y * v.sy;
+        const aw = area.width * v.sx;
+        const ah = area.height * v.sy;
+        g.save();
+        // oscurecer lo que queda fuera (en previsualización se oculta del todo)
+        g.fillStyle = s.previewMode ? '#0f1114' : 'rgba(15,17,20,0.72)';
+        g.beginPath();
+        g.rect(v.px, v.py, W * v.sx, H * v.sy);
+        g.rect(ax, ay, aw, ah);
+        g.fill('evenodd');
+        g.strokeStyle = s.previewMode ? '#4a5160' : '#ffb020';
+        g.lineWidth = 1;
+        g.setLineDash(s.previewMode ? [] : [6, 4]);
+        g.strokeRect(Math.round(ax) + 0.5, Math.round(ay) + 0.5, Math.round(aw), Math.round(ah));
+        g.setLineDash([]);
+        if (!s.previewMode) {
+          g.fillStyle = '#ffb020';
+          g.font = '11px system-ui, sans-serif';
+          g.textBaseline = 'bottom';
+          g.fillText(`área visible ${area.width}×${area.height} px`, ax + 4, ay - 3 > v.py + 12 ? ay - 3 : ay + 14);
+        }
+        g.restore();
+      }
 
       if (s.previewMode) return;
 

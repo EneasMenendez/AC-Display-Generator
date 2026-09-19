@@ -4,6 +4,7 @@ import { ProfileSchema } from '@shared/profile';
 import type { DetectedDisplay, ExtensionScan, ImageInfo, Kn5Info, LuaImportResult, ProfileHit } from '@shared/types';
 import { createEmptyProject } from '@shared/model';
 import { api } from '../api';
+import { hasUvRegion, physicalSizeFromMesh, regionFromKn5Uv, uvRegionPx, type UvRegion } from '@shared/uv';
 import { useStore, toast } from '../store';
 import { openProjectFlow } from '../flows';
 import { Icon } from './icons';
@@ -52,14 +53,21 @@ async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: str
       /* siguiente */
     }
   }
-  if (!size && kn5File && d.meshes[0]) {
+  // del modelo: resolución (si no se conoce), área visible (UV de la malla) y tamaño físico
+  let uvRegion: UvRegion | null = null;
+  let physical: { width: number; height: number } | null = null;
+  if (kn5File && d.meshes[0]) {
     try {
       const kn5 = await api.readKn5(carPath, kn5File);
       const mesh = kn5.meshes.find((m) => m.name.toLowerCase() === d.meshes[0].toLowerCase());
+      if (mesh) {
+        uvRegion = regionFromKn5Uv(mesh.uv);
+        physical = physicalSizeFromMesh(mesh.size);
+      }
       const mat = kn5.materials.find((m) => m.name === mesh?.material);
       const tex = mat?.textures.find((t) => t.slot === 'txDiffuse') ?? mat?.textures[0];
       const ts = tex && kn5.textureSizes[tex.texture];
-      if (ts) {
+      if (!size && ts) {
         size = ts;
         note = `resolución tomada de la textura ${tex!.texture} del modelo`;
       }
@@ -84,9 +92,15 @@ async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: str
     name: `Display (${base})`,
     meshes: d.meshes,
     texture_size: size,
+    uv_region: uvRegion ?? undefined,
+    physical_size_m: physical ?? undefined,
     keep_background: d.keepBackground,
     skip_frames: d.skipFrames,
   });
+  if (uvRegion && hasUvRegion(def)) {
+    const px = uvRegionPx(def);
+    note = `${note ? note + ' · ' : ''}la malla solo muestra ${px.width}×${px.height} px de la textura (área visible)`;
+  }
   return { def, image, note };
 }
 
@@ -691,6 +705,8 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
   const [maxFuel, setMaxFuel] = useState(60);
   const [emissive, setEmissive] = useState(false);
   const [cspBuild, setCspBuild] = useState(2050);
+  const [uvRegion, setUvRegion] = useState<UvRegion | null>(null);
+  const [physical, setPhysical] = useState<{ width: number; height: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -711,6 +727,9 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
 
   function pickMesh(name: string) {
     setMesh(name);
+    const picked = kn5?.meshes.find((x) => x.name === name);
+    setUvRegion(picked ? regionFromKn5Uv(picked.uv) : null);
+    setPhysical(picked ? physicalSizeFromMesh(picked.size) : null);
     // sugerir resolución a partir de la textura difusa del material
     const m = kn5?.meshes.find((x) => x.name === name);
     const mat = kn5?.materials.find((x) => x.name === m?.material);
@@ -737,6 +756,8 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
           name: displayName,
           meshes: [mesh],
           texture_size: { width, height },
+          uv_region: uvRegion ?? undefined,
+          physical_size_m: physical ?? undefined,
           keep_background: keepBg,
           emissive: emissive ? { mode: 'shader_replacement', shader: 'ksPerPixel', ks_emissive: [1, 1, 1], brightness_default: 1 } : { mode: 'none' },
           defaults: { rpm_limiter: limiter, max_fuel_l: maxFuel },
@@ -791,6 +812,11 @@ function CreatorForm({ onCreated }: { onCreated: (h: ProfileHit) => void }) {
         ))}
         {kn5 && meshes.length === 0 && <div className="muted">Sin coincidencias</div>}
       </div>
+      {uvRegion && hasUvRegion({ uv_region: uvRegion }) && (
+        <div className="warn small mt8">
+          La malla <code>{mesh}</code> solo muestra una parte de la textura: {Math.round(uvRegion.width * width)}×{Math.round(uvRegion.height * height)} px desde ({Math.round(uvRegion.x * width)}, {Math.round(uvRegion.y * height)}). El editor marcará esa área visible.
+        </div>
+      )}
       <div className="mt8" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
         <div className="prop">
           <label>Nombre del perfil</label>

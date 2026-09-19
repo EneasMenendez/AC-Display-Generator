@@ -94,6 +94,10 @@ export interface Kn5Mesh {
   material: string;
   vertices: number;
   path: string;
+  /** rectángulo UV que ocupan los vértices (v = 0 arriba, como la textura) */
+  uv: { u0: number; v0: number; u1: number; v1: number } | null;
+  /** dimensiones del volumen envolvente de la malla, en metros (coordenadas locales del modelo) */
+  size: { x: number; y: number; z: number } | null;
 }
 
 export interface Kn5Material {

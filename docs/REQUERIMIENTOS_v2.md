@@ -304,6 +304,7 @@ Requisitos:
 
 - El editor soporta ambas y muestra en el preview una aproximación fiel (renderiza el atlas bitmap real cuando exista).
 - Las fuentes se copian a `extension/` junto al script; nunca se referencian rutas absolutas.
+- [v2.3] Área visible (UV): el lienzo es siempre la textura completa (lo que renderiza CSP), pero la malla puede mostrar solo una parte de ella (su rectángulo UV; p. ej. la franja central en el Porsche 992). La aplicación lee las UV de la malla en el kn5 (la V se guarda negada), guarda la región en el perfil (`uv_region`) junto con el tamaño físico estimado (`physical_size_m`), la marca en el editor (fuera de ella se oscurece; en previsualización se recorta), coloca los elementos nuevos dentro y permite ajustarla a mano o detectarla de nuevo (propiedades del display → Área visible). La sección generada incluye `RESOLUTION = ancho, alto` para que el render target coincida con el lienzo.
 - El perfil puede incluir fuentes; la aplicación incluye un conjunto básico con licencia libre (por ejemplo, familias OFL).
 - Aviso de licencia al importar fuentes propias.
 - Un elemento de texto puede cambiar de fuente sin perder el resto de propiedades.

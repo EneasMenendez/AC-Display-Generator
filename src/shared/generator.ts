@@ -253,6 +253,8 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   lines.push('[SCRIPTABLE_DISPLAY_...]');
   lines.push(`MESHES = ${display.meshes.join(', ')}`);
   lines.push(`SCRIPT = ${opts.script}`);
+  // tamaño del render target = lienzo del proyecto (si no, CSP usa el de la textura original del kn5)
+  lines.push(`RESOLUTION = ${display.texture_size.width}, ${display.texture_size.height}`);
   lines.push(`KEEP_BACKGROUND = ${display.keep_background ? 1 : 0}`);
   lines.push(`SKIP_FRAMES = ${display.skip_frames}`);
   lines.push('');
@@ -433,7 +435,7 @@ export function generateReadme(project: Project, dp: DisplayProject, display: Di
     '  1. Copia estos archivos directamente en content/cars/<coche>/extension/ (o skins/<skin>/), sin subcarpetas.',
     '  2. Añade al final de ext_config.ini:',
     '',
-    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${script}\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`, files).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
+    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${script}\nRESOLUTION = ${display.texture_size.width}, ${display.texture_size.height}\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`, files).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
     '',
     '  3. Reinicia la sesión (o el juego): CSP lee la configuración del coche al cargar la pista.',
     '',

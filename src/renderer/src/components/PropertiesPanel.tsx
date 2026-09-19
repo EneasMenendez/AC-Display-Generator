@@ -2,6 +2,8 @@ import type { DisplayElement, Rule, TextStyle, Threshold, TimeFormat } from '@sh
 import { newId } from '@shared/model';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
+import type { DisplayDef, DisplayProfile } from '@shared/profile';
+import { hasUvRegion, physicalSizeFromMesh, regionFromKn5Uv, regionFromPx, uvRegionPx, type UvRegion } from '@shared/uv';
 import { useStore, toast, activeDisplayOf, activePageOf } from '../store';
 import { Chk, ColorField, FontSelect, Num, Prop, RpmField, Sel, Txt, VarSelect } from './fields';
 import { Icon } from './icons';
@@ -730,6 +732,92 @@ function MultiProps({ els }: { els: DisplayElement[] }) {
   );
 }
 
+/**
+ * Área visible: parte de la textura que la malla muestra realmente (rectángulo UV). Se guarda en el
+ * perfil del display (extension/display_profile.json) y el editor la marca sobre el lienzo.
+ */
+function VisibleAreaProps({ display }: { display: DisplayDef }) {
+  const dp = useStore(activeDisplayOf)!;
+  const profile = useStore((s) => s.profile)!;
+  const car = useStore((s) => s.car);
+  const setProfile = useStore((s) => s.setProfile);
+  const profileFile = useStore((s) => s.profileFile);
+  const tex = dp.canvas;
+  const px = uvRegionPx({ uv_region: display.uv_region, texture_size: tex });
+  const active = hasUvRegion(display);
+
+  async function apply(region: UvRegion | null, physical?: { width: number; height: number } | null) {
+    const next: DisplayProfile = {
+      ...profile,
+      displays: profile.displays.map((d) => (d.id === display.id ? { ...d, uv_region: region ?? { x: 0, y: 0, width: 1, height: 1 }, ...(physical ? { physical_size_m: physical } : {}) } : d)),
+    };
+    let file = profileFile;
+    if (car) {
+      try {
+        file = await api.saveProfileToCar(next, car.path);
+      } catch (e) {
+        toast(`No se pudo guardar el perfil en el vehículo: ${(e as Error).message}`, 'err');
+      }
+    }
+    setProfile(next, file);
+  }
+  const setPx = (patch: Partial<typeof px>) => {
+    const n = { ...px, ...patch };
+    n.x = Math.max(0, Math.min(tex.width - 1, n.x));
+    n.y = Math.max(0, Math.min(tex.height - 1, n.y));
+    n.width = Math.max(1, Math.min(tex.width - n.x, n.width));
+    n.height = Math.max(1, Math.min(tex.height - n.y, n.height));
+    void apply(regionFromPx(n, tex));
+  };
+  async function detect() {
+    if (!car?.mainKn5) return toast('El vehículo no tiene un modelo kn5 legible.', 'err');
+    try {
+      const kn5 = await api.readKn5(car.path, car.mainKn5);
+      const mesh = kn5.meshes.find((m) => display.meshes.some((n) => n.toLowerCase() === m.name.toLowerCase()));
+      if (!mesh) return toast(`La malla ${display.meshes.join(', ')} no está en ${car.mainKn5}.`, 'err');
+      const region = regionFromKn5Uv(mesh.uv);
+      if (!region) return toast('La malla usa coordenadas UV fuera de la textura (repetida o con bisel): ajusta el área a mano.', 'err');
+      await apply(region, physicalSizeFromMesh(mesh.size));
+      const r = uvRegionPx({ uv_region: region, texture_size: tex });
+      toast(hasUvRegion({ uv_region: region }) ? `Área visible: ${r.width}×${r.height} px desde (${r.x}, ${r.y})` : 'La malla muestra toda la textura.');
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    }
+  }
+  return (
+    <div className="prop-group">
+      <h3>
+        <span>Área visible</span>
+        <button className="small ghost" title="Leer el rectángulo UV de la malla en el modelo kn5" onClick={detect}>
+          <Icon name="refresh" size={12} /> Detectar
+        </button>
+      </h3>
+      <div className="muted small mb8">
+        {active
+          ? `La malla muestra ${px.width}×${px.height} px de la textura desde (${px.x}, ${px.y}); lo que quede fuera no se ve en el coche.`
+          : 'La malla muestra toda la textura. Si en el juego el contenido aparece desplazado o recortado, pulsa Detectar.'}
+      </div>
+      <Prop label="Origen X / Y">
+        <div className="pair">
+          <Num value={px.x} onChange={(v) => setPx({ x: Math.round(v) })} min={0} />
+          <Num value={px.y} onChange={(v) => setPx({ y: Math.round(v) })} min={0} />
+        </div>
+      </Prop>
+      <Prop label="Ancho / Alto">
+        <div className="pair">
+          <Num value={px.width} onChange={(v) => setPx({ width: Math.round(v) })} min={1} />
+          <Num value={px.height} onChange={(v) => setPx({ height: Math.round(v) })} min={1} />
+        </div>
+      </Prop>
+      {active && (
+        <button className="small ghost" onClick={() => apply(null)}>
+          Usar toda la textura
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ProjectProps() {
   const project = useStore((s) => s.project)!;
   const dp = useStore(activeDisplayOf)!;
@@ -791,6 +879,7 @@ function ProjectProps() {
           </tbody>
         </table>
       </div>
+      {display && <VisibleAreaProps display={display} />}
       <div className="prop-group">
         <h3>
           <span>Páginas ({dp.pages.length})</span>
