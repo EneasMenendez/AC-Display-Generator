@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import luaparse from 'luaparse';
-import { createElement, createEmptyProject, type Project, type TextElement } from '../src/shared/model';
+import { createElement, createEmptyProject, createPhysicalNeedle, type Project, type TextElement } from '../src/shared/model';
+import { enableSectionsMatching } from '../src/shared/ini';
 import { parseProfile } from '../src/shared/profile';
 import {
   generateConfigLua,
   generateDisplayIni,
   generateDisplayLua,
-  listIncludeBlocks, parseIncludeBlock, upsertIncludeBlock,
+  listIncludeBlocks, parseIncludeBlock, generateNeedlesIni, upsertIncludeBlock,
   removeIncludeBlock,
   findConflictingDisplays,
   toLua,
@@ -105,6 +106,34 @@ describe('generador', () => {
     expect(ini).toContain('RESOLUTION = 1593, 987');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
     expect(ini).not.toContain('ACTIVE');
+  });
+});
+
+describe('agujas físicas', () => {
+  it('genera secciones [ANALOG_INDICATOR_...] con LUT ordenada y omite las agujas sin objeto', () => {
+    const a = createPhysicalNeedle('ARROW_RPM', 'RPM');
+    a.lut = [
+      { value: 8000, angle: 120 },
+      { value: 0, angle: -120 },
+      { value: 4000, angle: 10 },
+    ];
+    a.lagUp = 0.9;
+    a.speedLag = 0.5;
+    const b = createPhysicalNeedle('', 'FUEL');
+    const ini = generateNeedlesIni([a, b]);
+    expect(ini).toContain('[ANALOG_INDICATOR_...]');
+    expect(ini).toContain('INPUT = RPM');
+    expect(ini).toContain('OBJECT_NAME = ARROW_RPM');
+    expect(ini).toContain('LUT = (| 0=-120 | 4000=10 | 8000=120 |)');
+    expect(ini).toContain('INPUT_LAG_UP = 0.9');
+    expect(ini).toContain('SPEED_LAG = 0.5');
+    expect(ini.split('[ANALOG_INDICATOR_...]').length).toBe(2);
+  });
+  it('reactiva solo las secciones de agujas desactivadas', () => {
+    const txt = ';ACDG-OFF; [ANALOG_INDICATOR_0]\n;ACDG-OFF; INPUT=RPM\n\n;ACDG-OFF; [SCRIPTABLE_DISPLAY_...]\n;ACDG-OFF; MESHES=m\n';
+    const out = enableSectionsMatching(txt, /^ANALOG_INDICATOR/i);
+    expect(out).toContain('[ANALOG_INDICATOR_0]\nINPUT=RPM');
+    expect(out).toContain(';ACDG-OFF; [SCRIPTABLE_DISPLAY_...]');
   });
 });
 

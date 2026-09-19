@@ -16,6 +16,7 @@ export const api = {
   readKn5: (carPath: string, file: string) => invoke('car:kn5', carPath, file),
   meshConflicts: (carPath: string, meshes: string[], displayId: string) => invoke('car:meshConflicts', carPath, meshes, displayId),
   cleanDisplays: (carPath: string, meshes: string[]) => invoke('car:cleanDisplays', carPath, meshes),
+  removeNeedles: (carPath: string, target: unknown) => invoke('needles:remove', carPath, target),
 
   findProfiles: (carPath: string) => invoke('profiles:find', carPath),
   pickProfile: () => invoke('profiles:pick'),

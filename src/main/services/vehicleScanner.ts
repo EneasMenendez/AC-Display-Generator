@@ -27,7 +27,7 @@ function decodeHtml(s: string): string {
 function hasAcdgInstall(extDir: string): boolean {
   const ext = join(extDir, 'ext_config.ini');
   try {
-    if (existsSync(ext) && listIncludeBlocks(readFileSync(ext, 'utf8')).length > 0) return true;
+    if (existsSync(ext) && listIncludeBlocks(readFileSync(ext, 'utf8')).some((id) => !id.startsWith('_'))) return true;
   } catch {
     /* ignorar */
   }
@@ -117,7 +117,7 @@ export function scanCar(carPath: string): CarInfo {
   const extIni = join(extDir, 'ext_config.ini');
   if (existsSync(extIni)) {
     try {
-      installedDisplays.push(...listIncludeBlocks(readFileSync(extIni, 'utf8')));
+      installedDisplays.push(...listIncludeBlocks(readFileSync(extIni, 'utf8')).filter((id) => !id.startsWith('_')));
     } catch {
       /* ignorar */
     }

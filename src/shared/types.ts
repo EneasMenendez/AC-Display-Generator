@@ -113,6 +113,8 @@ export interface Kn5Info {
   textureSizes: Record<string, { width: number; height: number }>;
   materials: Kn5Material[];
   meshes: Kn5Mesh[];
+  /** todos los nodos del modelo (dummies y mallas), en orden; las agujas suelen ser dummies */
+  nodes: { name: string; path: string; kind: 'dummy' | 'mesh'; children: number }[];
 }
 
 export interface ProfileHit {
@@ -239,6 +241,7 @@ export interface AcdgApi {
   readKn5(carPath: string, file: string): Promise<Kn5Info>;
   meshConflicts(carPath: string, meshes: string[], displayId: string): Promise<string[]>;
   cleanDisplays(carPath: string, meshes: string[]): Promise<CleanDisplaysResult>;
+  removeNeedles(carPath: string, target: InstallTarget): Promise<string[]>;
 
   findProfiles(carPath: string): Promise<ProfileSearchResult>;
   pickProfile(): Promise<ProfileHit | { errors: string[] } | null>;

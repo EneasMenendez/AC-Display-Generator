@@ -72,6 +72,24 @@ export function enableAllSections(text: string): string {
     .join('\n');
 }
 
+/** Reactiva solo las secciones desactivadas cuyo nombre cumple el patrón. */
+export function enableSectionsMatching(text: string, pattern: RegExp): string {
+  const lines = text.split(/\r?\n/);
+  let inMatch = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.startsWith(DISABLED_PREFIX)) {
+      inMatch = false;
+      continue;
+    }
+    const body = l.slice(DISABLED_PREFIX.length).trim();
+    const header = /^\[(.+?)\]/.exec(body);
+    if (header) inMatch = pattern.test(header[1]);
+    if (inMatch) lines[i] = l.slice(DISABLED_PREFIX.length);
+  }
+  return lines.join('\n');
+}
+
 export function listDisabledSections(text: string): string[] {
   const out: string[] = [];
   for (const l of text.split(/\r?\n/)) {

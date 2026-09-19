@@ -395,6 +395,68 @@ export interface DisplayProject {
   fonts: Record<string, string>;
 }
 
+/**
+ * Aguja física del coche (nodo del kn5 que gira con un valor), configurada con la sección
+ * [ANALOG_INDICATOR_...] de CSP. No forma parte de ningún display.
+ */
+export interface PhysicalNeedle {
+  id: string;
+  name: string;
+  /** nombre del nodo/malla de la aguja en el modelo (OBJECT_NAME) */
+  object: string;
+  /** entrada de CSP (RPM, SPEED, FUEL, WATER_TEMP, OIL_PRESSURE, …) */
+  input: string;
+  /** tabla valor → ángulo (grados); CSP interpola entre puntos */
+  lut: { value: number; angle: number }[];
+  /** límites del valor de entrada (opcional) */
+  lowerBound?: number;
+  upperBound?: number;
+  /** retardo de la aguja al subir/bajar (0–1; 0 = instantáneo, 0,8–0,99 = suave) */
+  lagUp: number;
+  lagDown: number;
+  /** retardo adicional dependiente de la velocidad de cambio (opcional, 0–1) */
+  speedLag?: number;
+  /** bloques ini adicionales que se añaden a la sección tal cual */
+  extra?: string;
+}
+
+export const NEEDLE_INPUTS: { id: string; label: string; unit: string; range: [number, number] }[] = [
+  { id: 'RPM', label: 'Régimen (rpm)', unit: 'rpm', range: [0, 9000] },
+  { id: 'SPEED', label: 'Velocidad (km/h)', unit: 'km/h', range: [0, 300] },
+  { id: 'FUEL', label: 'Combustible (L)', unit: 'L', range: [0, 60] },
+  { id: 'WATER_TEMP', label: 'Temperatura de agua (°C)', unit: '°C', range: [40, 130] },
+  { id: 'OIL_TEMP', label: 'Temperatura de aceite (°C)', unit: '°C', range: [40, 150] },
+  { id: 'OIL_PRESSURE', label: 'Presión de aceite (bar)', unit: 'bar', range: [0, 10] },
+  { id: 'TURBO', label: 'Presión de turbo (bar)', unit: 'bar', range: [-1, 2] },
+  { id: 'BATTERY', label: 'Voltaje de batería (V)', unit: 'V', range: [8, 16] },
+  { id: 'GAS', label: 'Acelerador (0–1)', unit: '', range: [0, 1] },
+  { id: 'BRAKE', label: 'Freno (0–1)', unit: '', range: [0, 1] },
+  { id: 'CLUTCH', label: 'Embrague (0–1)', unit: '', range: [0, 1] },
+  { id: 'HANDBRAKE', label: 'Freno de mano (0–1)', unit: '', range: [0, 1] },
+  { id: 'STEER', label: 'Volante (grados)', unit: '°', range: [-450, 450] },
+  { id: 'G_FORCE', label: 'Fuerza G longitudinal', unit: 'g', range: [-2, 2] },
+  { id: 'G_FORCE_LATERAL', label: 'Fuerza G lateral', unit: 'g', range: [-2, 2] },
+  { id: 'PERF_METER_DIFF', label: 'Delta de vuelta (s)', unit: 's', range: [-5, 5] },
+];
+
+export function createPhysicalNeedle(object = '', input = 'RPM'): PhysicalNeedle {
+  const def = NEEDLE_INPUTS.find((i) => i.id === input) ?? NEEDLE_INPUTS[0];
+  return {
+    id: newId('needle'),
+    name: object || def.label,
+    object,
+    input,
+    lut: [
+      { value: def.range[0], angle: -120 },
+      { value: def.range[1], angle: 120 },
+    ],
+    lowerBound: def.range[0],
+    upperBound: def.range[1],
+    lagUp: 0.8,
+    lagDown: 0.8,
+  };
+}
+
 export interface Project {
   format_version: number;
   app_version: string;
@@ -402,6 +464,8 @@ export interface Project {
   profile: { id: string; version: number };
   car_id: string;
   displays: DisplayProject[];
+  /** agujas físicas del coche ([ANALOG_INDICATOR_...] de CSP) */
+  physicalNeedles: PhysicalNeedle[];
 }
 
 /* ---------- Fábricas ---------- */
@@ -614,6 +678,7 @@ export function createEmptyProject(params: {
     profile: { id: params.profileId, version: params.profileVersion },
     car_id: params.carId,
     displays: params.displays.map(createDisplayProject),
+    physicalNeedles: [],
   };
 }
 
@@ -647,9 +712,11 @@ export function migrateProject(raw: unknown): Project {
       profile: p.profile as Project['profile'],
       car_id: String(p.car_id ?? ''),
       displays: [d],
+      physicalNeedles: [],
     };
   }
   const proj = p as unknown as Project;
+  proj.physicalNeedles = Array.isArray(proj.physicalNeedles) ? proj.physicalNeedles : [];
   for (const d of proj.displays) {
     d.settings = { ...DEFAULT_SETTINGS, ...d.settings, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) } };
     if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];

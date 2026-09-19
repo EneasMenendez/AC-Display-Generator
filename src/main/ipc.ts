@@ -66,6 +66,7 @@ export function registerIpc(): void {
   ipcMain.handle('car:kn5', (_e, carPath: string, file: string) => readKn5(join(carPath, file)));
   ipcMain.handle('car:meshConflicts', (_e, carPath: string, meshes: string[], displayId: string) => findMeshConflicts(carPath, meshes, displayId));
   ipcMain.handle('car:cleanDisplays', (_e, carPath: string, meshes: string[]) => inst.cleanDisplays(carPath, meshes));
+  ipcMain.handle('needles:remove', (_e, carPath: string, target: inst.InstallTarget) => inst.removeNeedles(carPath, target));
 
   // ---------- perfiles ----------
   ipcMain.handle('profiles:find', (_e, carPath: string) => findProfiles(carPath));

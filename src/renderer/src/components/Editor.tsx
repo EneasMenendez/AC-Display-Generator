@@ -8,6 +8,7 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { InstallDialog } from './InstallDialog';
 import { AddDisplayDialog } from './AddDisplayDialog';
+import { NeedlesDialog } from './NeedlesDialog';
 import { Icon } from './icons';
 
 export function Editor() {
@@ -30,6 +31,7 @@ export function Editor() {
   const profile = useStore((s) => s.profile);
   const [install, setInstall] = useState(false);
   const [addDisplay, setAddDisplay] = useState(false);
+  const [needles, setNeedles] = useState(false);
   const [help, setHelp] = useState(false);
 
   // cargar fuentes del proyecto en el documento
@@ -170,6 +172,9 @@ export function Editor() {
         <button className="ghost" onClick={() => setAddDisplay(true)} title="Añadir otro display del coche al proyecto (copiloto, volante…)">
           <Icon name="plus" size={14} /> Display
         </button>
+        <button className="ghost" onClick={() => setNeedles(true)} title="Agujas físicas del modelo 3D (cuentarrevoluciones, presión…), sin display">
+          <Icon name="needle" size={14} /> Agujas{project.physicalNeedles?.length ? ` (${project.physicalNeedles.length})` : ''}
+        </button>
         <div className="pages">
           {dp.pages.map((pg, i) => (
             <button key={pg.id} className={`page-tab ${i === activePage ? 'active' : ''}`} onClick={() => setActivePage(i)} title={pg.when ? 'Página con condición automática' : 'Página'}>
@@ -251,6 +256,7 @@ export function Editor() {
       </div>
       {install && <InstallDialog onClose={() => setInstall(false)} />}
       {addDisplay && <AddDisplayDialog onClose={() => setAddDisplay(false)} />}
+      {needles && <NeedlesDialog onClose={() => setNeedles(false)} />}
       {help && (
         <div className="modal-bg" onClick={() => setHelp(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

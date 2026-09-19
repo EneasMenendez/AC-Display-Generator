@@ -210,7 +210,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         <p className="muted small">
           Se escribirá directamente en <code>{target.kind === 'car' ? 'extension/' : `skins/${target.skin}/`}</code> (sin subcarpetas) el script{' '}
           {chosen.length === 1 ? <code>{chosen[0].def!.id}.lua</code> : <>de cada display (<code>&lt;display&gt;.lua</code>)</>} (o <code>&lt;display&gt;_acdg.lua</code> si ya existe un script ajeno con ese nombre) con las imágenes que use y una copia del proyecto (<code>acdg_project.acdisplay</code>); en{' '}
-          <code>ext_config.ini</code> se añade la sección del display entre marcadores. Antes de tocar nada se guarda una copia de seguridad en los datos de la aplicación.
+          <code>ext_config.ini</code> se añade la sección del display entre marcadores{project.physicalNeedles?.length ? <>, más {project.physicalNeedles.length === 1 ? 'una sección' : `${project.physicalNeedles.length} secciones`} <code>[ANALOG_INDICATOR_...]</code> para las agujas físicas</> : ''}. Antes de tocar nada se guarda una copia de seguridad en los datos de la aplicación.
           {missing.length > 0 && <span className="err"> Los displays sin definición en el perfil no se generan.</span>}
         </p>
         <div className="row mb8">

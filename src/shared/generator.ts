@@ -1,4 +1,4 @@
-import type { DisplayElement, DisplayProject, Project } from './model';
+import type { DisplayElement, DisplayProject, PhysicalNeedle, Project } from './model';
 import type { DisplayDef, DisplayProfile } from './profile';
 import { VARIABLE_MAP, type VariableDef } from './variables';
 
@@ -347,6 +347,37 @@ export function generateDisplayLua(configLua: string, runtimeLua: string, displa
     'end',
     '',
   ].join('\n');
+}
+
+/* ---------- Agujas físicas ([ANALOG_INDICATOR_...]) ---------- */
+
+/** id del bloque de ext_config.ini con las agujas físicas (no es un display) */
+export const NEEDLES_BLOCK_ID = '_needles';
+
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10000) / 10000);
+}
+
+/** Cuerpo del bloque de agujas físicas: una sección [ANALOG_INDICATOR_...] por aguja. */
+export function generateNeedlesIni(needles: PhysicalNeedle[]): string {
+  const out: string[] = [];
+  for (const n of needles) {
+    if (!n.object.trim()) continue;
+    const lut = [...n.lut].sort((a, b) => a.value - b.value);
+    out.push(`; ${n.name}`);
+    out.push('[ANALOG_INDICATOR_...]');
+    out.push(`INPUT = ${n.input.trim().toUpperCase()}`);
+    out.push(`OBJECT_NAME = ${n.object.trim()}`);
+    if (n.lowerBound !== undefined) out.push(`LOWER_BOUND = ${fmtNum(n.lowerBound)}`);
+    if (n.upperBound !== undefined) out.push(`UPPER_BOUND = ${fmtNum(n.upperBound)}`);
+    out.push(`INPUT_LAG_UP = ${fmtNum(n.lagUp)}`);
+    out.push(`INPUT_LAG_DOWN = ${fmtNum(n.lagDown)}`);
+    if (n.speedLag !== undefined && n.speedLag > 0) out.push(`SPEED_LAG = ${fmtNum(n.speedLag)}`);
+    out.push(`LUT = (| ${lut.map((p) => `${fmtNum(p.value)}=${fmtNum(p.angle)}`).join(' | ')} |)`);
+    if (n.extra?.trim()) out.push(n.extra.trim());
+    out.push('');
+  }
+  return out.join('\n').trimEnd();
 }
 
 /* ---------- Bloque ACDG en ext_config.ini ---------- */

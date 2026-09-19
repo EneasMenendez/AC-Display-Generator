@@ -7,7 +7,9 @@ import type { Project } from '@shared/model';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
   ACDG_LUA_HEADER,
+  NEEDLES_BLOCK_ID,
   PROJECT_FILE,
+  generateNeedlesIni,
   generateConfigLua,
   generateDisplayIni,
   generateDisplayLua,
@@ -20,7 +22,7 @@ import {
   findConflictingDisplays,
 } from '@shared/generator';
 import { session, packProject } from './projectManager';
-import { disableSection, enableAllSections } from '@shared/ini';
+import { disableSection, enableAllSections, enableSectionsMatching, parseIni } from '@shared/ini';
 import { encodeDdsBc3, toRgba } from './imageManager';
 import type { BackupEntry, CleanDisplaysResult, InstallOptions, InstallResult, InstallStep, InstallTarget } from '@shared/types';
 import { scanExtension } from './displayScanner';
@@ -318,6 +320,25 @@ export function install(opts: InstallOptions): InstallResult {
       return done.join(', ') || 'nada que desactivar';
     });
   }
+  // --- agujas físicas: bloque [ANALOG_INDICATOR_...] propio, y se desactivan las secciones ajenas del mismo objeto ---
+  if (opts.install) {
+    step('Agujas físicas', () => {
+      const needles = (project.physicalNeedles ?? []).filter((n) => n.object.trim());
+      const current = readExt();
+      if (needles.length === 0) {
+        if (hasIncludeBlock(current, NEEDLES_BLOCK_ID)) {
+          writeFileSync(extConfig, removeIncludeBlock(current, NEEDLES_BLOCK_ID), 'utf8');
+          return 'sin agujas: bloque anterior eliminado';
+        }
+        return 'sin agujas';
+      }
+      const updated = upsertIncludeBlock(current, NEEDLES_BLOCK_ID, generateNeedlesIni(needles));
+      mkdirSync(dirname(extConfig), { recursive: true });
+      writeFileSync(extConfig, updated, 'utf8');
+      const disabled = disableForeignIndicators(base, needles.map((n) => n.object));
+      return `${needles.length} aguja${needles.length === 1 ? '' : 's'} (${needles.map((n) => n.object).join(', ')})${disabled.length ? ` · desactivadas ${disabled.length} secciones ajenas: ${disabled.join(', ')}` : ''}`;
+    });
+  }
   if (opts.install && opts.writeProfile) {
     step('Guardar perfil en el vehículo', () => {
       const f = join(opts.carPath, 'extension', 'display_profile.json');
@@ -412,7 +433,7 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
     writeFileSync(extConfig, next, 'utf8');
     done.push('Eliminada la sección de ext_config.ini');
     // la copia del proyecto se conserva mientras quede algún display instalado
-    if (listIncludeBlocks(next).length === 0 && existsSync(join(base, PROJECT_FILE))) {
+    if (listIncludeBlocks(next).filter((id) => id !== NEEDLES_BLOCK_ID).length === 0 && existsSync(join(base, PROJECT_FILE))) {
       rmSync(join(base, PROJECT_FILE), { force: true });
       done.push(`Eliminado ${PROJECT_FILE}`);
     }
@@ -465,6 +486,64 @@ export function cleanDisplays(carPath: string, meshes: string[]): CleanDisplaysR
   for (const [file, next] of touched) writeFileSync(file, next, 'utf8');
   result.backup = bdir;
   return result;
+}
+
+/**
+ * Desactiva (;ACDG-OFF;) las secciones [ANALOG_INDICATOR...] ajenas de extension/ que muevan alguno de
+ * los objetos dados, para que no compitan con las agujas del proyecto. Devuelve "[sección] en archivo".
+ */
+function disableForeignIndicators(base: string, objects: string[]): string[] {
+  const wanted = new Set(objects.map((o) => o.trim().toLowerCase()).filter(Boolean));
+  const done: string[] = [];
+  if (!existsSync(base)) return done;
+  for (const f of readdirSync(base)) {
+    if (!f.toLowerCase().endsWith('.ini')) continue;
+    const file = join(base, f);
+    let txt = readFileSync(file, 'utf8');
+    // las secciones dentro de bloques ACDG son nuestras
+    const own = txt.replace(/; ACDG BEGIN [\s\S]*?; ACDG END [^\r\n]*/g, (m) => m.replace(/\[ANALOG_INDICATOR/gi, '[ACDG_OWN_INDICATOR'));
+    const secs = parseIni(own).filter((s) => /^ANALOG_INDICATOR/i.test(s.name));
+    let changed = false;
+    for (const sec of secs) {
+      const obj = (sec.values.OBJECT_NAME ?? sec.values.NAME ?? '').trim().toLowerCase();
+      if (!obj || !wanted.has(obj)) continue;
+      const next = disableSection(txt, sec.name);
+      if (next !== txt) {
+        txt = next;
+        changed = true;
+        done.push(`[${sec.name}] en ${f}`);
+      }
+    }
+    if (changed) writeFileSync(file, txt, 'utf8');
+  }
+  return done;
+}
+
+/** Elimina el bloque de agujas físicas y reactiva las secciones [ANALOG_INDICATOR...] desactivadas. */
+export function removeNeedles(carPath: string, target: InstallTarget): string[] {
+  const base = baseDir(carPath, target);
+  const done: string[] = [];
+  const extConfig = join(base, 'ext_config.ini');
+  if (existsSync(extConfig)) {
+    const txt = readFileSync(extConfig, 'utf8');
+    if (hasIncludeBlock(txt, NEEDLES_BLOCK_ID)) {
+      writeFileSync(extConfig, removeIncludeBlock(txt, NEEDLES_BLOCK_ID), 'utf8');
+      done.push('Eliminado el bloque de agujas de ext_config.ini');
+    }
+  }
+  if (existsSync(base)) {
+    for (const f of readdirSync(base)) {
+      if (!f.toLowerCase().endsWith('.ini')) continue;
+      const p = join(base, f);
+      const t = readFileSync(p, 'utf8');
+      const next = enableSectionsMatching(t, /^ANALOG_INDICATOR/i);
+      if (next !== t) {
+        writeFileSync(p, next, 'utf8');
+        done.push(`Reactivadas las agujas originales en ${f}`);
+      }
+    }
+  }
+  return done;
 }
 
 /** Proyecto guardado dentro del coche por una instalación anterior. */

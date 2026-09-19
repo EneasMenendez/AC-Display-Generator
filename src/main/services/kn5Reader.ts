@@ -115,12 +115,14 @@ export function readKn5(file: string): Kn5Info {
   }
 
   const meshes: Kn5Mesh[] = [];
+  const nodes: Kn5Info['nodes'] = [];
   const readNode = (path: string): void => {
     const type = r.i32();
     const name = r.str();
     const children = r.i32();
     r.u8(); // activo
     const here = path ? `${path}/${name}` : name;
+    nodes.push({ name, path: here, kind: type === 1 ? 'dummy' : 'mesh', children });
     if (type === 1) {
       r.skip(64); // matriz 4x4
     } else if (type === 2) {
@@ -162,5 +164,5 @@ export function readKn5(file: string): Kn5Info {
     for (let c = 0; c < children; c++) readNode(here);
   };
   readNode('');
-  return { version, textures, textureSizes, materials, meshes };
+  return { version, textures, textureSizes, materials, meshes, nodes };
 }
