@@ -20,7 +20,7 @@ Los puntos nuevos o modificados están marcados con la etiqueta [v2] a lo largo 
 - `data/` o `data.acd`: ambas estructuras son válidas (sección 4).
 - DDS opcional: CSP carga PNG/JPG directamente; el DDS es una optimización activada por defecto (sección 20).
 - Nueva arquitectura de generación: runtime Lua estable distribuido por la aplicación + configuración de datos generada por proyecto, en lugar de generar código imperativo por elemento (sección 21).
-- Instalación no invasiva mediante `[INCLUDE]` y carpeta propia `extension/acdg/`; nunca se reescribe el `ext_config.ini` existente (sección 20).
+- Instalación no invasiva: los archivos generados se escriben directamente en `extension/` (sin subcarpetas) y en `ext_config.ini` solo se añade la sección del display entre marcadores; nunca se reescribe el resto del archivo (sección 20). [v2.2]
 - Destino de instalación seleccionable: coche o skin (sección 20).
 - Catálogo central de variables (`variables.json`) con marcado de variables físicas no disponibles en replays (secciones 10 y 26).
 - Umbrales de RPM absolutos o relativos al limitador del coche (sección 12).
@@ -89,7 +89,7 @@ Cambio v2.1 (acordado tras la primera versión): al seleccionar el vehículo la 
 - Buscar automáticamente un perfil de display compatible (orden de búsqueda en la sección 25).
 - No asumir que todos los vehículos utilizan la misma estructura, malla o material.
 - Mostrar el nombre del vehículo, perfil encontrado, versión y configuración del display.
-- [v2] Detectar si ya existe un display generado por la aplicación (carpeta `extension/acdg/`) y ofrecer abrir el proyecto guardado en ella.
+- [v2] Detectar si ya existe un display generado por la aplicación (bloque `; ACDG BEGIN <id>` en `ext_config.ini`) y abrir automáticamente el proyecto guardado en `extension/acdg_project.acdisplay`.
 - [v2] Detectar si el `ext_config.ini` ya contiene un `[SCRIPTABLE_DISPLAY_...]` sobre la misma malla que el perfil y avisar del conflicto.
 - Permitir cancelar el proceso si el vehículo no es compatible.
 - [v2] Si no hay perfil, ofrecer dos salidas: abrir el modo creador o usar un "perfil manual mínimo" (solo malla + resolución) sin garantías.
@@ -303,7 +303,7 @@ CSP ofrece dos vías de texto en displays:
 Requisitos:
 
 - El editor soporta ambas y muestra en el preview una aproximación fiel (renderiza el atlas bitmap real cuando exista).
-- Las fuentes se copian al paquete generado (`extension/acdg/<display>/fonts/`); nunca se referencian rutas absolutas.
+- Las fuentes se copian a `extension/` junto al script; nunca se referencian rutas absolutas.
 - El perfil puede incluir fuentes; la aplicación incluye un conjunto básico con licencia libre (por ejemplo, familias OFL).
 - Aviso de licencia al importar fuentes propias.
 - Un elemento de texto puede cambiar de fuente sin perder el resto de propiedades.
@@ -330,11 +330,11 @@ Requisitos:
 - Autoguardado periódico y recuperación tras cierre inesperado.
 - Versionado del formato con migraciones automáticas.
 - Portabilidad total: el archivo se puede abrir en otro equipo.
-- Al generar, se guarda una copia del proyecto dentro del coche (`extension/acdg/<display>/project.acdisplay`) para poder reeditarlo desde el vehículo.
+- Al generar, se guarda una copia del proyecto dentro del coche (`extension/acdg_project.acdisplay`) para poder reeditarlo desde el vehículo.
 
 # 20. Generación e instalación
 
-Estructura generada (Anexo C) [v2]: todo lo que la aplicación crea vive en `extension/acdg/<display_id>/` y solo se añade una línea `[INCLUDE]` al `ext_config.ini` entre marcadores `; ACDG BEGIN <display_id>` / `; ACDG END <display_id>`. Nunca se reescribe el resto del archivo.
+Estructura generada (Anexo C) [v2.2]: todo lo que la aplicación crea se escribe directamente en `extension/` (o `skins/<skin>/`), sin subcarpetas: `<display_id>.lua` (script autocontenido: configuración + runtime), `<display_id>_<recurso>.png/.dds` (imágenes e iconos), fuentes y `acdg_project.acdisplay`. En `ext_config.ini` se añade la sección `[SCRIPTABLE_DISPLAY_...]` entre marcadores `; ACDG BEGIN <display_id>` / `; ACDG END <display_id>`, con una línea `; ACDG FILES:` que lista los archivos escritos (para actualizar y desinstalar sin tocar nada ajeno). Si ya existe un `.lua` ajeno con el nombre del display (p. ej. el `display.lua` original importado) el script se llama `<display_id>_acdg.lua` y el original no se sobrescribe. Nunca se reescribe el resto del archivo.
 
 - Generar `display.ini` con la sección `[SCRIPTABLE_DISPLAY_...]` a partir del perfil.
 - Generar `display_config.lua` (datos del proyecto) y copiar `acdg_runtime.lua` (librería estable, versionada).
@@ -362,10 +362,10 @@ Se sustituye la generación de código por elemento por un enfoque de datos:
 
 # 22. Copia de seguridad, restauración y desinstalación
 
-- Crear backup antes de modificar archivos, con fecha y hora, en `extension/acdg/_backup/<timestamp>/` y en la carpeta de datos de la aplicación.
+- Crear backup antes de modificar archivos, con fecha y hora, en la carpeta de datos de la aplicación (`%APPDATA%/AC Display Generator/backups/<coche>/<timestamp>/`); el coche no recibe ninguna carpeta extra. [v2.2]
 - Conservar los archivos originales modificados (solo `ext_config.ini`, ya que el resto es nuevo).
 - Botón "Restaurar original".
-- [v2] Botón "Desinstalar display": elimina `extension/acdg/<display_id>/` y el bloque INCLUDE, dejando el coche como estaba.
+- [v2] Botón "Desinstalar display": elimina los archivos listados en el bloque, la sección de `ext_config.ini` y reactiva los displays originales desactivados, dejando el coche como estaba.
 - No sobrescribir silenciosamente archivos existentes.
 - Si ya existe un display generado, ofrecer actualizar, crear copia o cancelar.
 
@@ -486,7 +486,7 @@ Supuesto: el creador del Toyota Starlet Millington define en `extension/display_
 - Añade Shift Light al 94 % (7520 rpm).
 - Previsualiza 6500, 7500 y 8000 rpm y el escenario "noche".
 - Guarda el proyecto `ToyotaStarlet_Display.acdisplay`.
-- Pulsa "Generar e instalar" en el coche. La aplicación crea backup, `extension/acdg/driver_display/`, añade el INCLUDE, valida el Lua y muestra el resumen.
+- Pulsa "Generar e instalar" en el coche. La aplicación crea backup, escribe `extension/driver_display.lua` y sus imágenes, añade la sección a `ext_config.ini`, valida el Lua y muestra el resumen.
 - Abre Assetto Corsa (o pulsa "Probar en CM") y comprueba el resultado, también en un replay.
 
 # 33. Requisito de diseño más importante
@@ -578,30 +578,29 @@ La aplicación no debe intentar convertir al usuario en programador. Toda opció
 }
 ```
 
-# Anexo C. Estructura generada en el vehículo
+# Anexo C. Estructura generada en el vehículo [v2.2]
 
 ```
 content/cars/<car_id>/
   extension/
-    ext_config.ini              <- solo se añade el bloque:
-                                   ; ACDG BEGIN driver_display
-                                   [INCLUDE: acdg/driver_display/display.ini]
-                                   ; ACDG END driver_display
-    display_profile.json        <- perfil del creador (no lo toca el usuario final)
-    acdg/
-      driver_display/
-        display.ini             <- [SCRIPTABLE_DISPLAY_...] + extra_ini del perfil
-        display.lua             <- carga runtime + config
-        acdg_runtime.lua        <- librería estable (versionada)
-        display_config.lua      <- datos del proyecto
-        project.acdisplay       <- copia del proyecto para reeditar
-        background.dds / .png
-        icons/ …
-        fonts/ …
-        LEEME.txt
-      _backup/
-        2026-09-14_18-30-00/
-          ext_config.ini
+    ext_config.ini                    <- solo se añade el bloque:
+                                         ; ACDG BEGIN driver_display
+                                         ; ACDG FILES: driver_display.lua, driver_display_bg.dds, driver_display_icon_abs.png
+                                         [SCRIPTABLE_DISPLAY_...]
+                                         MESHES = LCD
+                                         SCRIPT = driver_display.lua
+                                         KEEP_BACKGROUND = 1
+                                         SKIP_FRAMES = 1
+                                         ; ACDG END driver_display
+    display_profile.json              <- perfil del creador (no lo toca el usuario final)
+    driver_display.lua                <- script autocontenido (configuración + runtime ACDG)
+    driver_display_bg.dds / .png      <- fondo e imágenes del display (prefijo = id del display)
+    driver_display_icon_<id>.png      <- iconos integrados usados
+    <fuente>.ttf                      <- fuentes (compartidas entre displays)
+    acdg_project.acdisplay            <- copia del proyecto para reeditar desde el vehículo
+
+%APPDATA%/AC Display Generator/backups/<car_id>/2026-09-14_18-30-00/
+    ext_config.ini, archivos generados anteriores, backup.json
 ```
 
 # Anexo D. Catálogo inicial de variables

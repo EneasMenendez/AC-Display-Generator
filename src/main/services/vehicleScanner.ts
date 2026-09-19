@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { findConflictingDisplays } from '@shared/generator';
+import { findConflictingDisplays, listIncludeBlocks } from '@shared/generator';
 import type { CarInfo, CarSummary } from '@shared/types';
 export type { CarInfo, CarSummary };
 
@@ -23,6 +23,17 @@ function decodeHtml(s: string): string {
   return s.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, '&');
 }
 
+/** true si ext_config.ini tiene algún bloque ACDG (o queda una carpeta acdg/ del formato antiguo). */
+function hasAcdgInstall(extDir: string): boolean {
+  const ext = join(extDir, 'ext_config.ini');
+  try {
+    if (existsSync(ext) && listIncludeBlocks(readFileSync(ext, 'utf8')).length > 0) return true;
+  } catch {
+    /* ignorar */
+  }
+  return existsSync(join(extDir, 'acdg'));
+}
+
 export function summarizeCar(carPath: string): CarSummary {
   const id = basename(carPath);
   const ui = readJsonSafe<{ name?: string; brand?: string }>(join(carPath, 'ui', 'ui_car.json'));
@@ -34,7 +45,7 @@ export function summarizeCar(carPath: string): CarSummary {
     brand: ui?.brand ? decodeHtml(ui.brand) : '',
     badge: existsSync(badge) ? `data:image/png;base64,${readFileSync(badge).toString('base64')}` : null,
     hasProfile: existsSync(join(carPath, 'extension', 'display_profile.json')) || existsSync(join(carPath, 'extension', 'display_profiles')),
-    hasAcdg: existsSync(join(carPath, 'extension', 'acdg')),
+    hasAcdg: hasAcdgInstall(join(carPath, 'extension')),
   };
 }
 
@@ -103,10 +114,19 @@ export function scanCar(carPath: string): CarInfo {
   }
 
   const installedDisplays: string[] = [];
+  const extIni = join(extDir, 'ext_config.ini');
+  if (existsSync(extIni)) {
+    try {
+      installedDisplays.push(...listIncludeBlocks(readFileSync(extIni, 'utf8')));
+    } catch {
+      /* ignorar */
+    }
+  }
+  // formato antiguo: carpetas acdg/<id>/
   const acdgDir = join(extDir, 'acdg');
   if (existsSync(acdgDir)) {
     for (const d of readdirSync(acdgDir)) {
-      if (d.startsWith('_')) continue;
+      if (d.startsWith('_') || installedDisplays.includes(d)) continue;
       if (existsSync(join(acdgDir, d, 'display_config.lua'))) installedDisplays.push(d);
     }
   }

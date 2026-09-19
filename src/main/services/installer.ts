@@ -1,15 +1,20 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { app } from 'electron';
 import { resourcesDir } from './resources';
 import luaparse from 'luaparse';
 import type { Project } from '@shared/model';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
+  ACDG_LUA_HEADER,
+  PROJECT_FILE,
   generateConfigLua,
   generateDisplayIni,
   generateDisplayLua,
   generateReadme,
   hasIncludeBlock,
+  listIncludeBlocks,
+  parseIncludeBlock,
   removeIncludeBlock,
   upsertIncludeBlock,
   findConflictingDisplays,
@@ -22,7 +27,14 @@ export type { BackupEntry, InstallOptions, InstallResult, InstallStep, InstallTa
 
 /**
  * Installer + Backup Manager + Validator (secciones 20, 22 y 23).
- * Todo lo generado vive en <base>/acdg/<display_id>/ ; en ext_config.ini solo se añade el bloque INCLUDE.
+ * Todo lo generado se escribe directamente en <base> (extension/ o skins/<skin>/), sin subcarpetas:
+ *   <display_id>.lua                    script autocontenido (config + runtime)
+ *   <display_id>_<recurso>.png/.dds     imágenes e iconos usados por ese display
+ *   <fuente>.ttf                        fuentes (compartidas entre displays)
+ *   acdg_project.acdisplay              copia del proyecto para reeditar desde el vehículo
+ * En ext_config.ini se añade la sección del display entre marcadores, con la lista de archivos escritos
+ * (`; ACDG FILES:`) para poder actualizar y desinstalar sin tocar nada ajeno.
+ * Las copias de seguridad se guardan en la carpeta de datos de la aplicación, no en el coche.
  */
 
 export function runtimeSource(): string {
@@ -45,6 +57,12 @@ function baseDir(carPath: string, target: InstallTarget): string {
   return target.kind === 'car' ? join(carPath, 'extension') : join(carPath, 'skins', target.skin);
 }
 
+/** Carpeta de copias de seguridad de un vehículo/skin dentro de los datos de la aplicación. */
+function backupRoot(carPath: string, target: InstallTarget): string {
+  const key = `${basename(carPath)}${target.kind === 'skin' ? `__${target.skin}` : ''}`.replace(/[^A-Za-z0-9_.-]+/g, '_');
+  return join(app.getPath('userData'), 'backups', key);
+}
+
 export function displayFor(profile: DisplayProfile, displayId: string): DisplayDef {
   const d = profile.displays.find((x) => x.id === displayId);
   if (!d) throw new Error(`El perfil no contiene el display "${displayId}".`);
@@ -55,6 +73,54 @@ function timestamp(): string {
   const d = new Date();
   const p = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+/** true si el .lua lo generó esta aplicación (cabecera). */
+export function isAcdgScript(file: string): boolean {
+  try {
+    return readFileSync(file, 'utf8').startsWith(ACDG_LUA_HEADER);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Nombre del script del display: <id>.lua, salvo que ya exista un .lua ajeno con ese nombre
+ * (p. ej. el display.lua original importado), en cuyo caso <id>_acdg.lua para no pisarlo.
+ */
+function scriptFileName(base: string, displayId: string): string {
+  const plain = `${displayId}.lua`;
+  const f = join(base, plain);
+  if (existsSync(f) && !isAcdgScript(f)) return `${displayId}_acdg.lua`;
+  return plain;
+}
+
+/** Archivos escritos por una instalación anterior del display (según el bloque de ext_config.ini). */
+function previousFiles(extConfigText: string, displayId: string): string[] {
+  const block = parseIncludeBlock(extConfigText, displayId);
+  return block ? block.files : [];
+}
+
+/** Elimina restos de la instalación anterior: archivos listados en el bloque y la carpeta acdg/<id>/ del formato antiguo. */
+function removePrevious(base: string, extConfigText: string, displayId: string): string[] {
+  const removed: string[] = [];
+  for (const rel of previousFiles(extConfigText, displayId)) {
+    const f = join(base, rel);
+    if (!existsSync(f)) continue;
+    // un .lua solo se borra si es nuestro
+    if (rel.toLowerCase().endsWith('.lua') && !isAcdgScript(f)) continue;
+    rmSync(f, { force: true });
+    removed.push(rel);
+  }
+  const legacy = join(base, 'acdg', displayId);
+  if (existsSync(legacy)) {
+    rmSync(legacy, { recursive: true, force: true });
+    removed.push(`acdg/${displayId}/`);
+    const acdgDir = join(base, 'acdg');
+    const rest = readdirSync(acdgDir).filter((x) => x !== '_backup');
+    if (rest.length === 0) rmSync(acdgDir, { recursive: true, force: true });
+  }
+  return removed;
 }
 
 export function install(opts: InstallOptions): InstallResult {
@@ -77,8 +143,9 @@ export function install(opts: InstallOptions): InstallResult {
   const { project, profile } = opts;
   const base = opts.install ? baseDir(opts.carPath, opts.target) : opts.exportDir!;
   const extConfig = join(base, 'ext_config.ini');
+  const readExt = (): string => (existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '');
   const selected = project.displays.filter((d) => !opts.displayIds || opts.displayIds.includes(d.display_id));
-  const result: InstallResult = { ok: false, steps, folder: join(base, 'acdg'), folders: [], warnings, errors };
+  const result: InstallResult = { ok: false, steps, folder: base, files: [], warnings, errors };
 
   // --- validación previa (todos los displays) ---
   if (!step('Validar proyecto y perfil', () => {
@@ -95,18 +162,29 @@ export function install(opts: InstallOptions): InstallResult {
     return selected.length === 1 ? selected[0].name : `${selected.length} displays`;
   })) return result;
 
-  // --- backup único ---
+  // --- backup único (en los datos de la aplicación) ---
   if (opts.install) {
     step('Copia de seguridad', () => {
-      const bdir = join(base, 'acdg', '_backup', timestamp());
+      const root = backupRoot(opts.carPath, opts.target);
+      const bdir = join(root, timestamp());
       mkdirSync(bdir, { recursive: true });
-      if (existsSync(extConfig)) cpSync(extConfig, join(bdir, 'ext_config.ini'));
+      const ext = readExt();
+      if (ext) cpSync(extConfig, join(bdir, 'ext_config.ini'));
+      const copied = new Set<string>();
       for (const dp of selected) {
-        const folder = join(base, 'acdg', dp.display_id);
-        if (existsSync(folder)) cpSync(folder, join(bdir, dp.display_id), { recursive: true });
+        for (const rel of [...previousFiles(ext, dp.display_id), PROJECT_FILE]) {
+          const f = join(base, rel);
+          if (!existsSync(f) || copied.has(rel)) continue;
+          copied.add(rel);
+          mkdirSync(dirname(join(bdir, rel)), { recursive: true });
+          cpSync(f, join(bdir, rel));
+        }
+        const legacy = join(base, 'acdg', dp.display_id);
+        if (existsSync(legacy)) cpSync(legacy, join(bdir, 'acdg', dp.display_id), { recursive: true });
       }
-      writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de instalar ${selected.map((d) => `"${d.display_id}"`).join(', ')}.\nRestaura desde la aplicación (Restaurar original).\n`, 'utf8');
-      pruneBackups(join(base, 'acdg', '_backup'), 10);
+      writeFileSync(join(bdir, 'backup.json'), JSON.stringify({ car: opts.carPath, target: opts.target, displays: selected.map((d) => d.display_id), files: [...copied] }, null, 2), 'utf8');
+      writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de instalar ${selected.map((d) => `"${d.display_id}"`).join(', ')} en ${base}.\nRestaura desde la aplicación (Restaurar original).\n`, 'utf8');
+      pruneBackups(root, 10);
       return bdir;
     });
   }
@@ -114,13 +192,12 @@ export function install(opts: InstallOptions): InstallResult {
   let luaOk = true;
   const runtime = runtimeSource();
   const many = selected.length > 1;
+  let projectWritten = false;
 
   for (const dp of selected) {
     const display = displayFor(profile, dp.display_id);
-    const folderRel = `acdg/${display.id}`;
-    const folder = join(base, 'acdg', display.id);
     const tag = many ? `[${dp.name}] ` : '';
-    result.folders.push(folder);
+    const scriptName = opts.install ? scriptFileName(base, display.id) : `${display.id}.lua`;
 
     // --- generación en memoria ---
     const files: Record<string, Uint8Array | string> = {};
@@ -130,17 +207,15 @@ export function install(opts: InstallOptions): InstallResult {
       for (const [name, code] of [
         ['display_config.lua', gen.lua],
         ['acdg_runtime.lua', runtime],
-        ['display.lua', displayLua],
+        [scriptName, displayLua],
       ] as const) {
         const err = validateLua(code, name);
         if (err) {
           luaOk = false;
           throw new Error(`Lua inválido — ${err}`);
         }
-        files[name] = code;
       }
-      files['display.ini'] = generateDisplayIni(profile, display, { folder: folderRel });
-      files['LEEME.txt'] = generateReadme(project, dp, display, folderRel);
+      files[scriptName] = displayLua;
       for (const a of gen.assets) {
         if (a.source.startsWith('builtin:')) {
           const bytes = opts.extraFiles[a.target];
@@ -152,28 +227,29 @@ export function install(opts: InstallOptions): InstallResult {
           files[a.target] = bytes;
         }
       }
-      files['project.acdisplay'] = packProject(project);
       return `${gen.variables.length} variables, ${gen.assets.length} recursos, ${dp.pages.length} página${dp.pages.length === 1 ? '' : 's'}`;
     });
     if (!ok) continue;
 
     if (opts.convertToDds && dp.background.file) {
       step(`${tag}Convertir fondo a DDS (DXT5 + mipmaps)`, () => {
-        const target = Object.keys(files).find((k) => k.startsWith('assets/') && files[k] === session.assets.get(dp.background.file!));
+        const target = Object.keys(files).find((k) => k !== scriptName && files[k] === session.assets.get(dp.background.file!));
         if (!target) return 'sin fondo';
         const { rgba, width, height } = toRgba(files[target] as Uint8Array);
         const dds = encodeDdsBc3(rgba, width, height, true);
         const ddsName = target.replace(/\.[^.]+$/, '.dds');
         delete files[target];
         files[ddsName] = new Uint8Array(dds);
-        files['display_config.lua'] = (files['display_config.lua'] as string).replace(target, ddsName);
-        files['display.lua'] = (files['display.lua'] as string).replace(target, ddsName);
+        files[scriptName] = (files[scriptName] as string).replaceAll(target, ddsName);
         return `${width}×${height}, ${Math.round(dds.length / 1024)} KB`;
       });
     }
 
+    const ini = generateDisplayIni(profile, display, { script: scriptName });
+    const readme = generateReadme(project, dp, display, scriptName, Object.keys(files));
+
     if (opts.install && existsSync(extConfig)) {
-      const conflicts = findConflictingDisplays(readFileSync(extConfig, 'utf8'), display.meshes, display.id);
+      const conflicts = findConflictingDisplays(readExt(), display.meshes, display.id);
       const disabled = new Set((opts.disableSections ?? []).map((d) => `[${d.section}]`));
       const remaining = conflicts.filter((c) => !disabled.has(c));
       if (remaining.length) warnings.push(`${tag}ext_config.ini ya define un display sobre la misma malla: ${remaining.join(', ')}. Puede haber conflicto visual.`);
@@ -181,46 +257,56 @@ export function install(opts: InstallOptions): InstallResult {
 
     // --- escritura ---
     ok = step(`${tag}Escribir archivos`, () => {
-      if (existsSync(folder)) rmSync(folder, { recursive: true, force: true });
-      mkdirSync(folder, { recursive: true });
+      mkdirSync(base, { recursive: true });
+      const removed = opts.install ? removePrevious(base, readExt(), display.id) : [];
       for (const [rel, data] of Object.entries(files)) {
-        const abs = join(folder, rel);
-        mkdirSync(dirname(abs), { recursive: true });
+        const abs = join(base, rel);
         if (typeof data === 'string') writeFileSync(abs, data, 'utf8');
         else writeFileSync(abs, data);
+        result.files.push(abs);
       }
-      return `${Object.keys(files).length} archivos en ${folder}`;
+      if (!projectWritten) {
+        writeFileSync(join(base, PROJECT_FILE), packProject(project));
+        result.files.push(join(base, PROJECT_FILE));
+        projectWritten = true;
+      }
+      return `${Object.keys(files).length} archivos en ${base}${removed.length ? ` (limpiados ${removed.length} de la instalación anterior)` : ''}`;
     });
     if (!ok) continue;
 
     if (opts.install) {
       step(`${tag}Añadir sección a ext_config.ini`, () => {
-        const current = existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '';
-        // la sección se escribe directamente (sin INCLUDE) entre marcadores
-        const body = (files['display.ini'] as string)
+        const current = readExt();
+        // la sección se escribe directamente (sin INCLUDE) entre marcadores, con la lista de archivos generados
+        const body = ini
           .split('\n')
           .filter((l) => !l.startsWith(';'))
           .join('\n');
-        const updated = upsertIncludeBlock(current, display.id, body);
+        const updated = upsertIncludeBlock(current, display.id, body, Object.keys(files));
         mkdirSync(dirname(extConfig), { recursive: true });
         writeFileSync(extConfig, updated, 'utf8');
         return current === '' ? 'ext_config.ini creado' : hasIncludeBlock(current, display.id) ? 'actualizado' : 'añadido';
       });
     } else {
       step(`${tag}Escribir instrucciones de instalación`, () => {
-        writeFileSync(join(base, many ? `INSTALAR_${display.id}.txt` : 'INSTALAR.txt'), files['LEEME.txt'] as string, 'utf8');
+        writeFileSync(join(base, many ? `INSTALAR_${display.id}.txt` : 'INSTALAR.txt'), readme, 'utf8');
       });
     }
 
     // --- validación posterior ---
     step(`${tag}Comprobar instalación`, () => {
-      const required = ['display.ini', 'display.lua', 'acdg_runtime.lua', 'display_config.lua'];
-      for (const f of required) if (!existsSync(join(folder, f))) throw new Error(`Falta ${f}`);
-      if (opts.install && !hasIncludeBlock(readFileSync(extConfig, 'utf8'), display.id)) throw new Error('El bloque de ext_config.ini no se escribió.');
-      // el script final no debe depender de require
-      if (/\brequire\(/.test(readFileSync(join(folder, 'display.lua'), 'utf8'))) throw new Error('display.lua contiene require().');
-      const cfg = readFileSync(join(folder, 'display_config.lua'), 'utf8');
-      if (/\{\{[A-Z_]+\}\}/.test(cfg)) throw new Error('Quedan marcadores de plantilla sin resolver.');
+      const script = join(base, scriptName);
+      if (!existsSync(script)) throw new Error(`Falta ${scriptName}`);
+      const code = readFileSync(script, 'utf8');
+      if (opts.install) {
+        const block = parseIncludeBlock(readExt(), display.id);
+        if (!block) throw new Error('El bloque de ext_config.ini no se escribió.');
+        if (block.script?.toLowerCase() !== scriptName.toLowerCase()) throw new Error(`ext_config.ini apunta a ${block.script ?? '?'} en vez de ${scriptName}.`);
+      }
+      // el script final no debe depender de require ni dejar marcadores de plantilla
+      if (/\brequire\(/.test(code)) throw new Error(`${scriptName} contiene require().`);
+      if (/\{\{[A-Z_]+\}\}/.test(code)) throw new Error('Quedan marcadores de plantilla sin resolver.');
+      for (const rel of Object.keys(files)) if (!existsSync(join(base, rel))) throw new Error(`Falta ${rel}`);
     });
   }
 
@@ -249,7 +335,6 @@ export function install(opts: InstallOptions): InstallResult {
   }
 
   result.ok = errors.length === 0 && luaOk;
-  if (result.folders.length === 1) result.folder = result.folders[0];
   return result;
 }
 
@@ -261,70 +346,93 @@ function pruneBackups(dir: string, keep: number): void {
   while (entries.length > keep) rmSync(join(dir, entries.shift()!), { recursive: true, force: true });
 }
 
-export function listBackups(carPath: string, target: InstallTarget): BackupEntry[] {
-  const dir = join(baseDir(carPath, target), 'acdg', '_backup');
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((d) => statSync(join(dir, d)).isDirectory())
-    .sort()
-    .reverse()
-    .map((d) => ({
-      id: d,
-      path: join(dir, d),
-      date: d.replace('_', ' ').replace(/-(\d\d)-(\d\d)$/, ':$1:$2'),
-      hasExtConfig: existsSync(join(dir, d, 'ext_config.ini')),
-      displays: readdirSync(join(dir, d)).filter((x) => statSync(join(dir, d, x)).isDirectory()),
-    }));
+function readBackupMeta(dir: string): { displays: string[]; files: string[] } {
+  try {
+    const m = JSON.parse(readFileSync(join(dir, 'backup.json'), 'utf8')) as { displays?: string[]; files?: string[] };
+    return { displays: m.displays ?? [], files: m.files ?? [] };
+  } catch {
+    // formato antiguo: una carpeta por display
+    return { displays: readdirSync(dir).filter((x) => x !== 'acdg' && statSync(join(dir, x)).isDirectory()), files: [] };
+  }
 }
 
-/** Restaura ext_config.ini y las carpetas de display de una copia de seguridad. */
+export function listBackups(carPath: string, target: InstallTarget): BackupEntry[] {
+  // copias nuevas (datos de la aplicación) + copias del formato antiguo dentro del coche
+  const dirs = [backupRoot(carPath, target), join(baseDir(carPath, target), 'acdg', '_backup')];
+  const out: BackupEntry[] = [];
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const d of readdirSync(dir)) {
+      if (!statSync(join(dir, d)).isDirectory()) continue;
+      out.push({
+        id: d,
+        path: join(dir, d),
+        date: d.replace('_', ' ').replace(/-(\d\d)-(\d\d)$/, ':$1:$2'),
+        hasExtConfig: existsSync(join(dir, d, 'ext_config.ini')),
+        displays: readBackupMeta(join(dir, d)).displays,
+      });
+    }
+  }
+  return out.sort((a, b) => b.id.localeCompare(a.id));
+}
+
+/** Restaura ext_config.ini y los archivos generados de una copia de seguridad. */
 export function restoreBackup(carPath: string, target: InstallTarget, backupId: string): string[] {
   const base = baseDir(carPath, target);
-  const bdir = join(base, 'acdg', '_backup', backupId);
-  if (!existsSync(bdir)) throw new Error('La copia de seguridad no existe.');
+  const bdir = [join(backupRoot(carPath, target), backupId), join(base, 'acdg', '_backup', backupId)].find((d) => existsSync(d));
+  if (!bdir) throw new Error('La copia de seguridad no existe.');
   const restored: string[] = [];
   const ext = join(bdir, 'ext_config.ini');
   if (existsSync(ext)) {
     cpSync(ext, join(base, 'ext_config.ini'));
     restored.push('ext_config.ini');
   }
-  for (const d of readdirSync(bdir)) {
-    const src = join(bdir, d);
-    if (!statSync(src).isDirectory()) continue;
-    const dst = join(base, 'acdg', d);
-    if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
-    cpSync(src, dst, { recursive: true });
-    restored.push(`acdg/${d}`);
+  for (const f of readdirSync(bdir)) {
+    if (['ext_config.ini', 'backup.json', 'BACKUP.txt'].includes(f)) continue;
+    const src = join(bdir, f);
+    if (statSync(src).isDirectory()) {
+      // formato antiguo: carpetas acdg/<id>
+      const dst = f === 'acdg' ? join(base, 'acdg') : join(base, 'acdg', f);
+      if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
+      cpSync(src, dst, { recursive: true });
+      restored.push(f === 'acdg' ? 'acdg/' : `acdg/${f}`);
+    } else {
+      cpSync(src, join(base, f));
+      restored.push(f);
+    }
   }
   return restored;
 }
 
-/** Elimina la carpeta generada y el bloque INCLUDE, dejando el coche como estaba. */
+/** Elimina los archivos generados y la sección de ext_config.ini, dejando el coche como estaba. */
 export function uninstall(carPath: string, target: InstallTarget, displayId: string): string[] {
   const base = baseDir(carPath, target);
   const done: string[] = [];
-  const folder = join(base, 'acdg', displayId);
-  if (existsSync(folder)) {
-    rmSync(folder, { recursive: true, force: true });
-    done.push(`Eliminada carpeta acdg/${displayId}`);
-  }
   const extConfig = join(base, 'ext_config.ini');
-  if (existsSync(extConfig)) {
-    const txt = readFileSync(extConfig, 'utf8');
-    if (hasIncludeBlock(txt, displayId)) {
-      writeFileSync(extConfig, removeIncludeBlock(txt, displayId), 'utf8');
-      done.push('Eliminada la sección de ext_config.ini');
+  const txt = existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '';
+  const removed = removePrevious(base, txt, displayId);
+  if (removed.length) done.push(`Eliminados ${removed.join(', ')}`);
+  if (hasIncludeBlock(txt, displayId)) {
+    const next = removeIncludeBlock(txt, displayId);
+    writeFileSync(extConfig, next, 'utf8');
+    done.push('Eliminada la sección de ext_config.ini');
+    // la copia del proyecto se conserva mientras quede algún display instalado
+    if (listIncludeBlocks(next).length === 0 && existsSync(join(base, PROJECT_FILE))) {
+      rmSync(join(base, PROJECT_FILE), { force: true });
+      done.push(`Eliminado ${PROJECT_FILE}`);
     }
   }
   // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la carpeta)
-  for (const f of readdirSync(base)) {
-    if (!f.toLowerCase().endsWith('.ini')) continue;
-    const p = join(base, f);
-    const txt = readFileSync(p, 'utf8');
-    const next = enableAllSections(txt);
-    if (next !== txt) {
-      writeFileSync(p, next, 'utf8');
-      done.push(`Reactivado display original en ${f}`);
+  if (existsSync(base)) {
+    for (const f of readdirSync(base)) {
+      if (!f.toLowerCase().endsWith('.ini')) continue;
+      const p = join(base, f);
+      const t = readFileSync(p, 'utf8');
+      const next = enableAllSections(t);
+      if (next !== t) {
+        writeFileSync(p, next, 'utf8');
+        done.push(`Reactivado display original en ${f}`);
+      }
     }
   }
   return done;
@@ -332,6 +440,7 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
 
 /** Proyecto guardado dentro del coche por una instalación anterior. */
 export function installedProjectFile(carPath: string, target: InstallTarget, displayId: string): string | null {
-  const f = join(baseDir(carPath, target), 'acdg', displayId, 'project.acdisplay');
-  return existsSync(f) ? f : null;
+  const base = baseDir(carPath, target);
+  const candidates = [join(base, PROJECT_FILE), join(base, 'acdg', displayId, 'project.acdisplay')];
+  return candidates.find((f) => existsSync(f)) ?? null;
 }

@@ -206,8 +206,9 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
         )}
         {!car.valid && <div className="err small mb8">El vehículo tiene problemas: {car.problems.join(' ')}</div>}
         <p className="muted small">
-          Se creará {chosen.length === 1 ? <code>acdg/{chosen[0].def!.id}/</code> : <>una carpeta <code>acdg/&lt;display&gt;/</code> por display</>} con el runtime Lua, la configuración, la imagen y una copia del proyecto; en{' '}
-          <code>ext_config.ini</code> solo se añade una línea <code>[INCLUDE]</code> por display entre marcadores. Antes de tocar nada se hace una copia de seguridad.
+          Se escribirá directamente en <code>{target.kind === 'car' ? 'extension/' : `skins/${target.skin}/`}</code> (sin subcarpetas) el script{' '}
+          {chosen.length === 1 ? <code>{chosen[0].def!.id}.lua</code> : <>de cada display (<code>&lt;display&gt;.lua</code>)</>} (o <code>&lt;display&gt;_acdg.lua</code> si ya existe un script ajeno con ese nombre) con las imágenes que use y una copia del proyecto (<code>acdg_project.acdisplay</code>); en{' '}
+          <code>ext_config.ini</code> se añade la sección del display entre marcadores. Antes de tocar nada se guarda una copia de seguridad en los datos de la aplicación.
           {missing.length > 0 && <span className="err"> Los displays sin definición en el perfil no se generan.</span>}
         </p>
         <div className="row mb8">
@@ -246,7 +247,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
               </div>
             ))}
             <div className="row mt8 wrap">
-              <button className="outline" onClick={() => api.openPath(result.folder)}>Abrir carpeta generada</button>
+              <button className="outline" onClick={() => api.openPath(result.folder)}>Abrir carpeta</button>
               {info?.contentManager && result.ok && <button className="outline" onClick={() => api.launchCM(info.contentManager!)}>Abrir Content Manager</button>}
               {result.ok && (
                 <button
@@ -308,7 +309,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
                 <button
                   className="small outline"
                   onClick={async () => {
-                    const idx = await api.confirm('¿Restaurar esta copia de seguridad?', 'Se sobrescribirán ext_config.ini y las carpetas de display con el contenido de la copia.', ['Restaurar', 'Cancelar']);
+                    const idx = await api.confirm('¿Restaurar esta copia de seguridad?', 'Se sobrescribirán ext_config.ini y los archivos generados con el contenido de la copia.', ['Restaurar', 'Cancelar']);
                     if (idx !== 0) return;
                     try {
                       const done = await api.restoreBackup(car.path, target, b.id);
@@ -329,7 +330,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
                 className="danger small"
                 style={{ marginRight: 4 }}
                 onClick={async () => {
-                  const idx = await api.confirm(`¿Desinstalar el display "${def!.id}" de ${target.kind === 'car' ? 'este coche' : 'la skin ' + target.skin}?`, 'Se eliminará la carpeta generada y el bloque INCLUDE. El resto del coche no se toca.', ['Desinstalar', 'Cancelar']);
+                  const idx = await api.confirm(`¿Desinstalar el display "${def!.id}" de ${target.kind === 'car' ? 'este coche' : 'la skin ' + target.skin}?`, 'Se eliminarán el script y las imágenes generadas y la sección de ext_config.ini; se reactivan los displays originales. El resto del coche no se toca.', ['Desinstalar', 'Cancelar']);
                   if (idx !== 0) return;
                   try {
                     const done = await api.uninstall(car.path, target, def!.id);

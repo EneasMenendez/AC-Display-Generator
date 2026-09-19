@@ -402,7 +402,7 @@ export function Wizard() {
                     {e.notes.length > 0 && <div className="warn small">{e.notes.join(' ')}</div>}
                     {e.detected && (
                       <div className="small muted">
-                        Al generar se creará <code>acdg/{e.def.id}/</code> y se ofrecerá desactivar la sección original <code>[{e.detected.section}]</code>. El script original no se borra.
+                        Al generar se escribirá <code>extension/{e.def.id}.lua</code> y se ofrecerá desactivar la sección original <code>[{e.detected.section}]</code>. El script original no se borra ni se sobrescribe.
                       </div>
                     )}
                   </td>
@@ -572,7 +572,7 @@ function DisplayStep(props: {
                   className="small outline"
                   disabled={!d.acdg.projectFile}
                   onClick={() => d.acdg?.projectFile && openProjectFlow(d.acdg.projectFile, car.path)}
-                  title={d.acdg.projectFile ? 'Abrir el proyecto guardado con este display' : 'No hay project.acdisplay en la carpeta'}
+                  title={d.acdg.projectFile ? 'Abrir el proyecto guardado con este display' : 'No hay acdg_project.acdisplay en extension/'}
                 >
                   Abrir proyecto
                 </button>

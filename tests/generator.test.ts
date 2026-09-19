@@ -7,7 +7,7 @@ import {
   generateConfigLua,
   generateDisplayIni,
   generateDisplayLua,
-  upsertIncludeBlock,
+  listIncludeBlocks, parseIncludeBlock, upsertIncludeBlock,
   removeIncludeBlock,
   findConflictingDisplays,
   toLua,
@@ -77,9 +77,9 @@ describe('generador', () => {
     expect(gen.variables).toEqual(expect.arrayContaining(['speed', 'rpm', 'gear', 'abs_active', 'water_temp']));
     // abs_active es physics_only → función con fallback
     expect(gen.lua).toMatch(/abs_active = function\(\) if car\.physicsAvailable == false then return false end return car\.absInAction end/);
-    // el icono integrado se mapea a icons/abs.png
-    expect(gen.assets).toContainEqual({ source: 'builtin:abs', target: 'icons/abs.png' });
-    expect(gen.lua).toContain("file = 'icons/abs.png'");
+    // el icono integrado se escribe plano en extension/ con el id del display como prefijo
+    expect(gen.assets).toContainEqual({ source: 'builtin:abs', target: 'driver_display_icon_abs.png' });
+    expect(gen.lua).toContain("file = 'driver_display_icon_abs.png'");
     // páginas: condición y botón de cambio
     expect(gen.variables).toContain('in_pitlane');
     expect(gen.lua).toMatch(/when = \{[\s\S]*variable = 'in_pitlane'/);
@@ -98,10 +98,10 @@ describe('generador', () => {
   });
 
   it('genera display.ini con la sección y la condición ACTIVE', () => {
-    const ini = generateDisplayIni(profile, display, { folder: 'acdg/driver_display' });
+    const ini = generateDisplayIni(profile, display, { script: 'driver_display.lua' });
     expect(ini).toContain('[SCRIPTABLE_DISPLAY_...]');
     expect(ini).toContain('MESHES = Plano_014_001');
-    expect(ini).toContain('SCRIPT = acdg/driver_display/display.lua');
+    expect(ini).toContain('SCRIPT = driver_display.lua');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
     expect(ini).not.toContain('ACTIVE');
   });
@@ -110,18 +110,23 @@ describe('generador', () => {
 describe('ext_config.ini', () => {
   const original = '[LIGHTING]\nEMISSIVE_MULT=1\n';
   it('añade, actualiza y elimina el bloque INCLUDE sin tocar el resto', () => {
-    const body = '[SCRIPTABLE_DISPLAY_...]\nMESHES = m\nSCRIPT = acdg/driver_display/display.lua';
-    const a = upsertIncludeBlock(original, 'driver_display', body);
+    const body = '[SCRIPTABLE_DISPLAY_...]\nMESHES = m\nSCRIPT = driver_display.lua';
+    const a = upsertIncludeBlock(original, 'driver_display', body, ['driver_display.lua', 'driver_display_bg.png']);
     expect(a).toContain(original);
-    expect(a).toContain('SCRIPT = acdg/driver_display/display.lua');
-    const b = upsertIncludeBlock(a, 'driver_display', body);
+    expect(a).toContain('SCRIPT = driver_display.lua');
+    expect(a).toContain('; ACDG FILES: driver_display.lua, driver_display_bg.png');
+    const b = upsertIncludeBlock(a, 'driver_display', body, ['driver_display.lua']);
     expect(b.split('ACDG BEGIN').length).toBe(2);
+    expect(listIncludeBlocks(b)).toEqual(['driver_display']);
+    const info = parseIncludeBlock(b, 'driver_display');
+    expect(info?.files).toEqual(['driver_display.lua']);
+    expect(info?.script).toBe('driver_display.lua');
     const c = removeIncludeBlock(b, 'driver_display');
     expect(c).not.toContain('ACDG');
     expect(c).toContain('EMISSIVE_MULT=1');
   });
   it('detecta displays ajenos sobre la misma malla', () => {
-    const cfg = '[SCRIPTABLE_DISPLAY_...]\nMESHES = int_display, Plano_014_001\nSCRIPT = display.lua\n\n[SCRIPTABLE_DISPLAY_...]\nMESHES = Plano_014_001\nSCRIPT = acdg/driver_display/display.lua\n';
+    const cfg = '[SCRIPTABLE_DISPLAY_...]\nMESHES = int_display, Plano_014_001\nSCRIPT = display.lua\n\n; ACDG BEGIN driver_display\n[SCRIPTABLE_DISPLAY_...]\nMESHES = Plano_014_001\nSCRIPT = driver_display.lua\n; ACDG END driver_display\n';
     expect(findConflictingDisplays(cfg, ['plano_014_001'], 'driver_display')).toEqual(['[SCRIPTABLE_DISPLAY_...]']);
   });
 });

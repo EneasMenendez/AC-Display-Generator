@@ -69,7 +69,7 @@ CARV = { rpm = 4500, rpmLimiter = 8000, gear = 3, speedKmh = 128, gas = 0.7, fue
   lapTimeMs = 83452, focused = true, distanceToCamera = 2, physicsAvailable = true, prefersImperialUnits = false, isInPitlane = false, extraA = false, headlightsActive = false, absInAction = false, isEngineLimiterOn = false }
 car = setmetatable({}, { __index = function(_, k) local v = CARV[k] if v ~= nil then return v end return 0 end })
 sim = setmetatable({}, { __index = function(_, k) if k == 'timeHours' then return 14 end return 0 end })
-__dirname = 'C:/fake/extension/acdg/driver_display'
+__dirname = 'C:/fake/extension'
 `;
 
 describe('runtime Lua generado', () => {

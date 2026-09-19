@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative } from 'node:path';
 import type { DetectedDisplay, ExtensionScan } from '@shared/types';
 import { parseIni, type IniSection } from '@shared/ini';
+import { PROJECT_FILE, listIncludeBlocks, parseIncludeBlock } from '@shared/generator';
 import { validateLua } from './installer';
 
 /**
@@ -106,6 +107,16 @@ export function scanExtension(carPath: string): ExtensionScan {
   const hasExtConfig = existsSync(extConfig);
   const displays: DetectedDisplay[] = [];
   const visited = new Set<string>();
+  // displays generados por esta app: bloques ; ACDG BEGIN <id> de ext_config.ini → ruta del script
+  const acdgByScript = new Map<string, string>();
+  if (hasExtConfig) {
+    const txt = readFileSync(extConfig, 'utf8');
+    for (const id of listIncludeBlocks(txt)) {
+      const b = parseIncludeBlock(txt, id);
+      if (b?.script) acdgByScript.set(b.script.replace(/\\/g, '/').toLowerCase(), id);
+    }
+  }
+  const projectFile = [join(extDir, PROJECT_FILE)];
 
   const scanIni = (file: string, includedInExtConfig: boolean, followIncludes: boolean): void => {
     const key = file.toLowerCase();
@@ -134,15 +145,18 @@ export function scanExtension(carPath: string): ExtensionScan {
         scriptValid = !err;
         scriptError = err ?? undefined;
       }
-      // display generado por esta app: sección ACDG antigua o SCRIPT dentro de acdg/<id>/
+      // display generado por esta app: su SCRIPT aparece en un bloque ACDG de ext_config.ini
+      // (o, en instalaciones antiguas, sección ACDG_<id> / script en acdg/<id>/)
+      const normRel = (scriptRel ?? '').replace(/\\/g, '/').toLowerCase();
+      const byBlock = acdgByScript.get(normRel);
       const byName = /^SCRIPTABLE_DISPLAY_ACDG_(.+)$/i.exec(s.name)?.[1]?.toLowerCase();
-      const byPath = /(?:^|[\\/])acdg[\\/]([^\\/]+)[\\/]display\.lua$/i.exec((scriptRel ?? '').replace(/\\/g, '/'))?.[1]?.toLowerCase();
+      const byPath = /(?:^|\/)acdg\/([^/]+)\/display\.lua$/i.exec(normRel)?.[1]?.toLowerCase();
       let acdg: DetectedDisplay['acdg'] = null;
-      const acdgId = byName ?? byPath;
+      const acdgId = byBlock ?? byName ?? byPath;
       if (acdgId && script) {
         const folder = dirname(script);
-        const projectFile = join(folder, 'project.acdisplay');
-        acdg = { displayId: acdgId, projectFile: existsSync(projectFile) ? projectFile : null, folder };
+        const pf = [...projectFile, join(folder, 'project.acdisplay')].find((f) => existsSync(f)) ?? null;
+        acdg = { displayId: acdgId, projectFile: pf, folder };
       }
       const res = s.values.RESOLUTION?.split(',').map((x) => Number(x.trim()));
       displays.push({

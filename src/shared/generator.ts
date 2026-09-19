@@ -111,10 +111,19 @@ export function safeName(s: string): string {
   return s.replace(/[^A-Za-z0-9_.-]+/g, '_');
 }
 
-function assetTarget(source: string): string {
-  if (source.startsWith('builtin:')) return `icons/${safeName(source.slice('builtin:'.length))}.png`;
+/** Cabecera con la que empiezan todos los scripts generados (sirve para reconocerlos). */
+export const ACDG_LUA_HEADER = '-- Generado por AC Display Generator.';
+/** Copia del proyecto que se guarda junto a los scripts en extension/. */
+export const PROJECT_FILE = 'acdg_project.acdisplay';
+
+/**
+ * Todo se escribe plano en extension/ (sin subcarpetas): los recursos de cada display llevan su id
+ * como prefijo para no chocar entre displays ni con archivos del coche.
+ */
+function assetTarget(source: string, displayId: string): string {
+  if (source.startsWith('builtin:')) return `${displayId}_icon_${safeName(source.slice('builtin:'.length))}.png`;
   const base = source.split(/[\\/]/).pop() ?? source;
-  return `assets/${safeName(base)}`;
+  return `${displayId}_${safeName(base)}`;
 }
 
 /* ---------- display_config.lua ---------- */
@@ -128,7 +137,7 @@ export interface GeneratedConfig {
 export function generateConfigLua(project: Project, dp: DisplayProject, display: DisplayDef): GeneratedConfig {
   const assets: AssetRef[] = [];
   const addAsset = (source: string): string => {
-    const target = assetTarget(source);
+    const target = assetTarget(source, display.id);
     if (!assets.some((a) => a.source === source)) assets.push({ source, target });
     return target;
   };
@@ -153,8 +162,9 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
 
   const fonts: Record<string, { name: string; dir?: string }> = {};
   for (const [name, file] of Object.entries(dp.fonts)) {
-    assets.push({ source: file, target: `fonts/${safeName(file.split(/[\\/]/).pop() ?? file)}` });
-    fonts[name] = { name, dir: 'fonts' };
+    // las fuentes conservan su nombre (DWrite las busca por familia dentro de la carpeta) y se comparten entre displays
+    assets.push({ source: file, target: safeName(file.split(/[\\/]/).pop() ?? file) });
+    fonts[name] = { name, dir: '.' };
   }
 
   const config = {
@@ -230,8 +240,8 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
 /* ---------- display.ini ---------- */
 
 export interface IniOptions {
-  /** ruta relativa desde extension/ (o skins/<skin>/) a la carpeta generada, con / */
-  folder: string;
+  /** nombre del script, relativo a extension/ (o skins/<skin>/) */
+  script: string;
 }
 
 export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef, opts: IniOptions): string {
@@ -242,7 +252,7 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   // forma canónica de CSP (misma que usan los coches de referencia); el display se identifica por la ruta de SCRIPT
   lines.push('[SCRIPTABLE_DISPLAY_...]');
   lines.push(`MESHES = ${display.meshes.join(', ')}`);
-  lines.push(`SCRIPT = ${opts.folder}/display.lua`);
+  lines.push(`SCRIPT = ${opts.script}`);
   lines.push(`KEEP_BACKGROUND = ${display.keep_background ? 1 : 0}`);
   lines.push(`SKIP_FRAMES = ${display.skip_frames}`);
   lines.push('');
@@ -276,8 +286,8 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
  */
 export function generateDisplayLua(configLua: string, runtimeLua: string, displayId: string): string {
   return [
-    '-- Generado por AC Display Generator. No editar a mano: abre project.acdisplay en la aplicación y vuelve a generar.',
-    `-- Display: ${displayId}. Este archivo incluye display_config.lua y acdg_runtime.lua (se guardan aparte solo como referencia).`,
+    `${ACDG_LUA_HEADER} No editar a mano: abre ${PROJECT_FILE} en la aplicación y vuelve a generar.`,
+    `-- Display: ${displayId}. Script autocontenido: configuración del display + runtime ACDG.`,
     '-- en los scripts de display `car` es el coche propietario; `sim` no siempre está definido como global',
     'sim = sim or ac.getSim()',
     '',
@@ -320,18 +330,51 @@ export function includeMarkers(displayId: string): { begin: string; end: string 
  * display (el contenido de display.ini), sin [INCLUDE], para no depender de cómo resuelve CSP las rutas
  * de archivos incluidos. SCRIPT queda relativo a extension/, como en los coches de referencia.
  */
-export function includeBlock(displayId: string, body: string): string {
+export function includeBlock(displayId: string, body: string, files: string[] = []): string {
   const m = includeMarkers(displayId);
-  return `${m.begin}\n${body.trim()}\n${m.end}\n`;
+  const list = files.length ? `${FILES_PREFIX}${files.join(', ')}\n` : '';
+  return `${m.begin}\n${list}${body.trim()}\n${m.end}\n`;
+}
+
+const FILES_PREFIX = '; ACDG FILES: ';
+
+export interface IncludeBlockInfo {
+  displayId: string;
+  /** texto entre marcadores */
+  body: string;
+  /** archivos escritos por la instalación (relativos a extension/) */
+  files: string[];
+  /** valor de SCRIPT de la sección */
+  script: string | null;
+}
+
+/** Lee el bloque de un display de ext_config.ini (null si no existe). */
+export function parseIncludeBlock(extConfig: string, displayId: string): IncludeBlockInfo | null {
+  const m = includeMarkers(displayId);
+  const re = new RegExp(`${escapeRe(m.begin)}\\r?\\n([\\s\\S]*?)${escapeRe(m.end)}`);
+  const hit = re.exec(extConfig);
+  if (!hit) return null;
+  const body = hit[1];
+  const files = body
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith(FILES_PREFIX))
+    .flatMap((l) => l.slice(FILES_PREFIX.length).split(',').map((x) => x.trim()).filter(Boolean));
+  const script = /^\s*SCRIPT\s*=\s*([^\r\n;]+)/im.exec(body)?.[1].trim() ?? null;
+  return { displayId, body, files, script };
+}
+
+/** Ids de todos los displays con bloque ACDG en ext_config.ini. */
+export function listIncludeBlocks(extConfig: string): string[] {
+  return [...extConfig.matchAll(/^; ACDG BEGIN (\S+)/gm)].map((m) => m[1]);
 }
 
 /**
  * Inserta o sustituye el bloque del display en el contenido de ext_config.ini.
  * Nunca toca el resto del archivo.
  */
-export function upsertIncludeBlock(extConfig: string, displayId: string, body: string): string {
+export function upsertIncludeBlock(extConfig: string, displayId: string, body: string, files: string[] = []): string {
   const m = includeMarkers(displayId);
-  const block = includeBlock(displayId, body);
+  const block = includeBlock(displayId, body, files);
   const re = new RegExp(`${escapeRe(m.begin)}[\\s\\S]*?${escapeRe(m.end)}\\r?\\n?`);
   if (re.test(extConfig)) return extConfig.replace(re, block);
   const sep = extConfig.length === 0 ? '' : extConfig.endsWith('\n') ? '\n' : '\n\n';
@@ -357,13 +400,12 @@ function escapeRe(s: string): string {
  */
 export function findConflictingDisplays(extConfig: string, meshes: string[], ownDisplayId?: string): string[] {
   const conflicts: string[] = [];
-  const sections = extConfig.split(/^\s*\[/m);
+  // el bloque propio (entre marcadores) no cuenta como conflicto
+  const others = ownDisplayId ? removeIncludeBlock(extConfig, ownDisplayId) : extConfig;
+  const sections = others.split(/^\s*\[/m);
   for (const sec of sections) {
     const header = sec.split(']')[0]?.trim() ?? '';
     if (!/^SCRIPTABLE_DISPLAY/i.test(header)) continue;
-    if (ownDisplayId && header.toUpperCase() === `SCRIPTABLE_DISPLAY_ACDG_${ownDisplayId.toUpperCase()}`) continue;
-    const scriptM = /SCRIPT\s*=\s*([^\r\n;]+)/i.exec(sec);
-    if (ownDisplayId && scriptM && scriptM[1].trim().replace(/\\/g, '/').toLowerCase() === `acdg/${ownDisplayId.toLowerCase()}/display.lua`) continue;
     const m = /MESHES\s*=\s*([^\r\n;]+)/i.exec(sec);
     if (!m) continue;
     const secMeshes = m[1].split(',').map((s) => s.trim().toLowerCase());
@@ -374,7 +416,7 @@ export function findConflictingDisplays(extConfig: string, meshes: string[], own
 
 /* ---------- LEEME ---------- */
 
-export function generateReadme(project: Project, dp: DisplayProject, display: DisplayDef, folder: string): string {
+export function generateReadme(project: Project, dp: DisplayProject, display: DisplayDef, script: string, files: string[]): string {
   return [
     'AC Display Generator — display generado',
     '========================================',
@@ -384,17 +426,18 @@ export function generateReadme(project: Project, dp: DisplayProject, display: Di
     `Mallas   : ${display.meshes.join(', ')}`,
     `Textura  : ${dp.canvas.width} x ${dp.canvas.height} px`,
     `Páginas  : ${dp.pages.map((p) => p.name).join(', ')}${dp.settings.pageSwitch.input !== 'none' ? ` (cambio con ${dp.settings.pageSwitch.input})` : ''}`,
-    `Runtime  : acdg_runtime.lua v${RUNTIME_VERSION}`,
+    `Runtime  : ACDG v${RUNTIME_VERSION} (incluido en ${script})`,
+    `Archivos : ${files.join(', ')}`,
     '',
     'Instalación manual (si has exportado el paquete sin instalar):',
-    `  1. Copia la carpeta "${folder}" dentro de content/cars/<coche>/extension/ (o skins/<skin>/).`,
+    '  1. Copia estos archivos directamente en content/cars/<coche>/extension/ (o skins/<skin>/), sin subcarpetas.',
     '  2. Añade al final de ext_config.ini:',
     '',
-    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${folder}/display.lua\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
+    includeBlock(display.id, `[SCRIPTABLE_DISPLAY_...]\nMESHES = ${display.meshes.join(', ')}\nSCRIPT = ${script}\nKEEP_BACKGROUND = ${display.keep_background ? 1 : 0}\nSKIP_FRAMES = ${display.skip_frames}`, files).trimEnd().split('\n').map((l) => '       ' + l).join('\n'),
     '',
     '  3. Reinicia la sesión (o el juego): CSP lee la configuración del coche al cargar la pista.',
     '',
-    'Para modificar el diseño abre project.acdisplay con AC Display Generator y vuelve a generar.',
+    `Para modificar el diseño abre ${PROJECT_FILE} con AC Display Generator y vuelve a generar.`,
     '',
   ].join('\n');
 }

@@ -178,10 +178,10 @@ export interface InstallStep {
 export interface InstallResult {
   ok: boolean;
   steps: InstallStep[];
-  /** carpeta generada (si hay un solo display) o carpeta acdg/ */
+  /** carpeta donde se escribió todo (extension/, skins/<skin>/ o la de exportación) */
   folder: string;
-  /** carpetas generadas, una por display */
-  folders: string[];
+  /** archivos escritos (rutas absolutas) */
+  files: string[];
   warnings: string[];
   errors: string[];
 }
