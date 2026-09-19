@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, shell } from 'electron';
 import { join } from 'node:path';
 import { registerIpc } from './ipc';
+import { resourcesDir } from './services/resources';
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -11,6 +12,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#15171b',
     title: 'AC Display Generator',
+    icon: join(resourcesDir(), 'icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
