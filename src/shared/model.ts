@@ -100,6 +100,14 @@ export interface TextElement extends ElementBase {
   style: TextStyle;
 }
 
+/** Destello (halo luminoso) de una luz encendida: tamaño en px e intensidad 0–1. */
+export interface Glow {
+  size: number;
+  intensity: number;
+}
+
+export const DEFAULT_GLOW: Glow = { size: 0, intensity: 0.6 };
+
 export interface RpmBarConfig {
   orientation: Orientation;
   /** sentido de llenado: false = izquierda→derecha / abajo→arriba */
@@ -115,6 +123,10 @@ export interface RpmBarConfig {
   colors: { normal: Color; warning: Color; redline: Color; limiter: Color; off: Color };
   /** parpadeo cuando el coche toca el limitador; 0 = sin parpadeo */
   limiterBlinkHz: number;
+  /** fracción del ciclo de parpadeo que está encendido (0,1–0,9); por defecto 0,5 */
+  blinkDuty?: number;
+  /** destello de los segmentos encendidos (estilo segmentos) */
+  glow?: Glow;
   /** colorea cada segmento según su propia zona (true) o toda la barra según el régimen actual (false) */
   perSegmentColors: boolean;
   /** textura personalizada (estilo continuo): se descubre según el llenado; asset del proyecto */
@@ -137,7 +149,9 @@ export interface ShiftLightConfig {
   colorOn: Color;
   colorOff: Color;
   blinkHz: number;
+  blinkDuty?: number;
   radius: number;
+  glow?: Glow;
 }
 
 export interface ShiftLightElement extends ElementBase {
@@ -166,6 +180,9 @@ export interface ShiftLightsConfig {
   /** al llegar al limitador todos parpadean con limiterColor; 0 = sin parpadeo */
   limiterBlinkHz: number;
   limiterColor: Color;
+  blinkDuty?: number;
+  /** destello de los LEDs encendidos */
+  glow?: Glow;
   /** textura opcional del LED (se tiñe con el color); asset del proyecto */
   image?: string;
 }
@@ -455,7 +472,7 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
       return {
         ...base(type, 'Shift light', x, y, 70, 70),
         type,
-        config: { rpmOn: '94%', rpmOff: '90%', shape: 'circle', colorOn: '#2D7BFF', colorOff: '#1A1A1A', blinkHz: 0, radius: 8 },
+        config: { rpmOn: '94%', rpmOff: '90%', shape: 'circle', colorOn: '#2D7BFF', colorOff: '#1A1A1A', blinkHz: 0, blinkDuty: 0.5, radius: 8, glow: { size: 12, intensity: 0.6 } },
       };
     case 'bar':
       return {
@@ -524,6 +541,8 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
           dimOff: true,
           limiterBlinkHz: 8,
           limiterColor: '#2D7BFF',
+          blinkDuty: 0.5,
+          glow: { size: 12, intensity: 0.6 },
         },
       };
     case 'needle':

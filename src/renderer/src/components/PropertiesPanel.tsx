@@ -1,5 +1,5 @@
-import type { DisplayElement, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
-import { newId } from '@shared/model';
+import type { DisplayElement, Glow, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
+import { DEFAULT_GLOW, newId } from '@shared/model';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
@@ -131,6 +131,15 @@ export function PropertiesPanel() {
               <Chk value={el.config.reverse} label="Invertir sentido" onChange={(v) => update((e) => e.type === 'rpm_bar' && (e.config.reverse = v))} />
             </div>
           </Prop>
+          {el.config.style === 'segments' && (
+            <GlowProps
+              glow={el.config.glow}
+              blinkDuty={el.config.blinkDuty}
+              hasBlink={el.config.limiterBlinkHz > 0}
+              onGlow={(g) => update((e) => e.type === 'rpm_bar' && (e.config.glow = g))}
+              onDuty={(d) => update((e) => e.type === 'rpm_bar' && (e.config.blinkDuty = d))}
+            />
+          )}
           {el.config.style === 'continuous' && (
             <>
               <h3>Textura personalizada</h3>
@@ -218,6 +227,13 @@ export function PropertiesPanel() {
           <Prop label="Opciones">
             <Chk value={el.config.dimOff} label="Mostrar los LEDs apagados" onChange={(v) => update((e) => e.type === 'shift_lights' && (e.config.dimOff = v))} />
           </Prop>
+          <GlowProps
+            glow={el.config.glow}
+            blinkDuty={el.config.blinkDuty}
+            hasBlink={el.config.limiterBlinkHz > 0}
+            onGlow={(g) => update((e) => e.type === 'shift_lights' && (e.config.glow = g))}
+            onDuty={(d) => update((e) => e.type === 'shift_lights' && (e.config.blinkDuty = d))}
+          />
         </div>
       )}
       {el.type === 'needle' && (
@@ -301,6 +317,13 @@ export function PropertiesPanel() {
           <Prop label="Parpadeo (Hz)">
             <Num value={el.config.blinkHz} onChange={(v) => update((e) => e.type === 'shift_light' && (e.config.blinkHz = v))} min={0} max={30} step={0.5} />
           </Prop>
+          <GlowProps
+            glow={el.config.glow}
+            blinkDuty={el.config.blinkDuty}
+            hasBlink={el.config.blinkHz > 0}
+            onGlow={(g) => update((e) => e.type === 'shift_light' && (e.config.glow = g))}
+            onDuty={(d) => update((e) => e.type === 'shift_light' && (e.config.blinkDuty = d))}
+          />
         </div>
       )}
       {el.type === 'bar' && (
@@ -493,6 +516,27 @@ export function PropertiesPanel() {
 
       <RulesEditor el={el} update={update} limiter={limiter} />
     </div>
+  );
+}
+
+/** Destello y ciclo de parpadeo de una luz. */
+function GlowProps({ glow, blinkDuty, hasBlink, onGlow, onDuty }: { glow: Glow | undefined; blinkDuty: number | undefined; hasBlink: boolean; onGlow: (g: Glow) => void; onDuty: (d: number) => void }) {
+  const g = glow ?? DEFAULT_GLOW;
+  return (
+    <>
+      <h3>Destello</h3>
+      <Prop label="Halo (px)" title="Tamaño del resplandor alrededor de la luz encendida; 0 = sin destello">
+        <Num value={g.size} onChange={(v) => onGlow({ ...g, size: Math.max(0, v) })} min={0} max={200} />
+      </Prop>
+      <Prop label="Intensidad" title="Opacidad del destello (0–1)">
+        <Num value={g.intensity} onChange={(v) => onGlow({ ...g, intensity: Math.max(0, Math.min(1, v)) })} min={0} max={1} step={0.1} />
+      </Prop>
+      {hasBlink && (
+        <Prop label="Parpadeo: % encendido" title="Parte del ciclo de parpadeo en que la luz está encendida (50 = simétrico; menos = destellos cortos)">
+          <Num value={Math.round((blinkDuty ?? 0.5) * 100)} onChange={(v) => onDuty(Math.max(5, Math.min(95, v)) / 100)} min={5} max={95} step={5} />
+        </Prop>
+      )}
+    </>
   );
 }
 

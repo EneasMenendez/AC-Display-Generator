@@ -1,4 +1,4 @@
-import type { Color, DisplayElement, DisplayProject, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
+import type { Color, DisplayElement, DisplayProject, Glow, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
 import { resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
 import { formatBinding } from '@shared/format';
@@ -34,9 +34,28 @@ function css(c: Color | undefined, brightness: number, opacity: number): string 
   return `rgba(${Math.min(255, Math.round(r * k))},${Math.min(255, Math.round(g * k))},${Math.min(255, Math.round(b * k))},${(a * opacity).toFixed(3)})`;
 }
 
-function blinkOn(t: number, hz: number | undefined): boolean {
+function blinkOn(t: number, hz: number | undefined, duty = 0.5): boolean {
   if (!hz || hz <= 0) return true;
-  return (t * hz) % 1 < 0.5;
+  return (t * hz) % 1 < Math.max(0.05, Math.min(0.95, duty || 0.5));
+}
+
+/**
+ * Destello: dibuja la forma con sombra difuminada del mismo color (halo) y después la forma limpia.
+ * La intensidad regula la opacidad del halo (con ≥ 0,7 se aplica una segunda pasada).
+ */
+function withGlow(g: CanvasRenderingContext2D, glow: Glow | undefined, color: string, shape: () => void): void {
+  if (glow && glow.size > 0 && glow.intensity > 0) {
+    const passes = glow.intensity >= 0.7 ? 2 : 1;
+    for (let i = 0; i < passes; i++) {
+      g.save();
+      g.shadowColor = color;
+      g.shadowBlur = glow.size;
+      g.globalAlpha *= Math.min(1, glow.intensity);
+      shape();
+      g.restore();
+    }
+  }
+  shape();
 }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -191,6 +210,7 @@ function segmentedBar(
   radius: number,
   active: number,
   colorFn: (i: number, isActive: boolean) => string | null,
+  glow?: Glow,
 ): void {
   const len = vertical ? h : w;
   const segLen = Math.max(1, (len - gap * (n - 1)) / n);
@@ -200,9 +220,14 @@ function segmentedBar(
     const c = colorFn(idx, idx <= active);
     if (!c) continue;
     g.fillStyle = c;
-    if (vertical) roundRect(g, x, y + h - off - segLen, w, segLen, radius);
-    else roundRect(g, x + off, y, segLen, h, radius);
-    g.fill();
+    const shape = () => {
+      g.fillStyle = c;
+      if (vertical) roundRect(g, x, y + h - off - segLen, w, segLen, radius);
+      else roundRect(g, x + off, y, segLen, h, radius);
+      g.fill();
+    };
+    if (idx <= active && glow) withGlow(g, glow, c, shape);
+    else shape();
   }
 }
 
@@ -295,17 +320,17 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
       const redR = rpmOf(c.redline, ctx);
       const frac = clamp01((rpm - minR) / (maxR - minR));
       const onLimiter = ctx.values.limiter_on === true || rpm >= maxR - 1;
-      const limiterVisible = onLimiter && blinkOn(ctx.t, c.limiterBlinkHz);
+      const limiterVisible = onLimiter && blinkOn(ctx.t, c.limiterBlinkHz, c.blinkDuty);
       const zone = (r: number): Color => (r >= redR ? c.colors.redline : r >= warnR ? c.colors.warning : c.colors.normal);
       const vertical = c.orientation === 'vertical';
       if (c.style === 'segments') {
         const n = Math.max(1, Math.floor(c.segments));
-        const active = Math.floor(frac * n + 0.0001);
+        const active = onLimiter ? (limiterVisible ? n : 0) : Math.floor(frac * n + 0.0001);
         segmentedBar(g, x, y, w, h, vertical, c.reverse, n, c.gap, c.radius, active, (i, isActive) => {
           if (onLimiter) return C(limiterVisible ? c.colors.limiter : c.colors.off);
           if (!isActive) return C(c.colors.off);
           return C(c.perSegmentColors ? zone(minR + ((i - 0.5) / n) * (maxR - minR)) : zone(rpm));
-        });
+        }, c.glow);
       } else {
         let fill = zone(rpm);
         if (onLimiter) fill = limiterVisible ? c.colors.limiter : c.colors.off;
@@ -328,7 +353,7 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
       const active = rpm < start ? 0 : Math.min(n, Math.floor(frac * n + 0.0001) + (frac < 1 ? 1 : 0));
       const onLimiter = ctx.values.limiter_on === true || rpm >= end;
       const blink = onLimiter && c.limiterBlinkHz > 0;
-      const limiterVisible = blink && blinkOn(ctx.t, c.limiterBlinkHz);
+      const limiterVisible = blink && blinkOn(ctx.t, c.limiterBlinkHz, c.blinkDuty);
       const ranks = ledRanks(n, c.pattern);
       const vertical = c.orientation === 'vertical';
       const len = vertical ? h : w;
@@ -353,8 +378,11 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
         const ly = vertical ? y + h - off - size : y;
         const lw = vertical ? w : size;
         const lh = vertical ? size : h;
-        if (hasImg) drawTinted(g, img!, lx, ly, lw, lh, color, B, O);
-        else {
+        const shape = () => {
+          if (hasImg) {
+            drawTinted(g, img!, lx, ly, lw, lh, color, B, O);
+            return;
+          }
           g.fillStyle = C(color);
           if (c.shape === 'circle') {
             g.beginPath();
@@ -364,7 +392,9 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
             roundRect(g, lx, ly, lw, lh, c.radius);
             g.fill();
           }
-        }
+        };
+        if (lit) withGlow(g, c.glow, C(color), shape);
+        else shape();
       }
       break;
     }
@@ -418,16 +448,21 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
       if (st.on) {
         if (rpm < rpmOf(c.rpmOff, ctx)) st.on = false;
       } else if (rpm >= rpmOf(c.rpmOn, ctx)) st.on = true;
-      const lit = st.on && blinkOn(ctx.t, c.blinkHz);
-      g.fillStyle = C(lit ? rr.color ?? c.colorOn : c.colorOff);
-      if (c.shape === 'circle') {
-        g.beginPath();
-        g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
-        g.fill();
-      } else {
-        roundRect(g, x, y, w, h, c.radius);
-        g.fill();
-      }
+      const lit = st.on && blinkOn(ctx.t, c.blinkHz, c.blinkDuty);
+      const color = C(lit ? rr.color ?? c.colorOn : c.colorOff);
+      const shape = () => {
+        g.fillStyle = color;
+        if (c.shape === 'circle') {
+          g.beginPath();
+          g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+          g.fill();
+        } else {
+          roundRect(g, x, y, w, h, c.radius);
+          g.fill();
+        }
+      };
+      if (lit) withGlow(g, c.glow, color, shape);
+      else shape();
       break;
     }
     case 'bar': {

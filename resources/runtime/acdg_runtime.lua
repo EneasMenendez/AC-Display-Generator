@@ -86,9 +86,46 @@ local function rpmValue(v)
   return 0
 end
 
-local function blinkOn(hz)
+local function blinkOn(hz, duty)
   if not hz or hz <= 0 then return true end
-  return (t * hz) % 1 < 0.5
+  duty = duty or 0.5
+  if duty < 0.05 then duty = 0.05 elseif duty > 0.95 then duty = 0.95 end
+  return (t * hz) % 1 < duty
+end
+
+-- ------------------------------------------------------------
+-- Destello (halo): capas concéntricas con alfa decreciente
+-- ------------------------------------------------------------
+
+local GLOW_LAYERS = 4
+local glowColor = rgbm(1, 1, 1, 1)
+
+local function glowAlpha(glow, k, opacity)
+  return (glow.intensity or 0.6) * 0.32 * (1 - (k - 1) / GLOW_LAYERS) * (opacity or 1)
+end
+
+local function glowCircle(cx, cy, r, color, glow, opacity)
+  if not glow or (glow.size or 0) <= 0 or (glow.intensity or 0) <= 0 then return end
+  local base = col(color, 1)
+  glowColor.r, glowColor.g, glowColor.b = base.r, base.g, base.b
+  p1.x, p1.y = cx, cy
+  for k = GLOW_LAYERS, 1, -1 do
+    glowColor.mult = glowAlpha(glow, k, opacity)
+    ui.drawCircleFilled(p1, r + glow.size * k / GLOW_LAYERS, glowColor, 32)
+  end
+end
+
+local function glowRect(x, y, w, h, radius, color, glow, opacity)
+  if not glow or (glow.size or 0) <= 0 or (glow.intensity or 0) <= 0 then return end
+  local base = col(color, 1)
+  glowColor.r, glowColor.g, glowColor.b = base.r, base.g, base.b
+  for k = GLOW_LAYERS, 1, -1 do
+    local e = glow.size * k / GLOW_LAYERS
+    glowColor.mult = glowAlpha(glow, k, opacity)
+    p1.x, p1.y = x - e, y - e
+    p2.x, p2.y = x + w + e, y + h + e
+    ui.drawRectFilled(p1, p2, glowColor, (radius or 0) + e)
+  end
 end
 
 local function clamp01(x)
@@ -364,7 +401,7 @@ end
 
 local draw = {}
 
-local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, active, colorFn, opacity)
+local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, active, colorFn, opacity, glow)
   -- colorFn(i, isActive) -> rgbm
   local horizontal = orientation ~= 'vertical'
   local len = horizontal and w or h
@@ -382,7 +419,14 @@ local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, ac
       p2.x, p2.y = x + w, y + h - off
     end
     local c = colorFn(idx, idx <= active)
-    if c then ui.drawRectFilled(p1, p2, col(c, opacity), radius or 0) end
+    if c then
+      if glow and idx <= active then
+        local gx, gy, gw, gh = p1.x, p1.y, p2.x - p1.x, p2.y - p1.y
+        glowRect(gx, gy, gw, gh, radius, c, glow, opacity)
+        p1.x, p1.y, p2.x, p2.y = gx, gy, gx + gw, gy + gh
+      end
+      ui.drawRectFilled(p1, p2, col(c, opacity), radius or 0)
+    end
   end
 end
 
@@ -458,7 +502,7 @@ function draw.rpm_bar(el, opacity)
   if maxR <= minR then maxR = minR + 1 end
   local frac = clamp01((rpm - minR) / (maxR - minR))
   local onLimiter = car.isEngineLimiterOn or rpm >= maxR - 1
-  local limiterVisible = onLimiter and blinkOn(c.limiterBlinkHz)
+  local limiterVisible = onLimiter and blinkOn(c.limiterBlinkHz, c.blinkDuty)
   local colors = c.colors
   local function zoneColor(r)
     if r >= redR then return colors.redline end
@@ -468,6 +512,7 @@ function draw.rpm_bar(el, opacity)
   if c.style == 'segments' then
     local n = math.max(1, math.floor(c.segments or 10))
     local active = math.floor(frac * n + 0.0001)
+    if onLimiter then active = limiterVisible and n or 0 end
     segmentedBar(el.x, el.y, el.width, el.height, c.orientation, c.reverse, n, c.gap or 0, c.radius, active,
       function(i, isActive)
         if onLimiter then
@@ -479,7 +524,7 @@ function draw.rpm_bar(el, opacity)
           return zoneColor(minR + (i - 0.5) / n * (maxR - minR))
         end
         return zoneColor(rpm)
-      end, opacity)
+      end, opacity, c.glow)
   else
     local fill = zoneColor(rpm)
     if onLimiter then
@@ -550,7 +595,7 @@ function draw.shift_lights(el, opacity, colorOverride, imageOverride)
   end
   local onLimiter = car.isEngineLimiterOn or rpm >= endR
   local blink = onLimiter and (c.limiterBlinkHz or 0) > 0
-  local limiterVisible = blink and blinkOn(c.limiterBlinkHz)
+  local limiterVisible = blink and blinkOn(c.limiterBlinkHz, c.blinkDuty)
   local st = state[el.id]
   if not st or st.n ~= n or st.pattern ~= c.pattern then
     st = { n = n, pattern = c.pattern, ranks = ledRanks(n, c.pattern) }
@@ -582,6 +627,10 @@ function draw.shift_lights(el, opacity, colorOverride, imageOverride)
       local ly = vertical and (el.y + el.height - off - size) or el.y
       local lw = vertical and el.width or size
       local lh = vertical and size or el.height
+      if lit and c.glow then
+        if c.shape == 'circle' or file then glowCircle(lx + lw / 2, ly + lh / 2, math.min(lw, lh) / 2, color, c.glow, opacity)
+        else glowRect(lx, ly, lw, lh, c.radius, color, c.glow, opacity) end
+      end
       if file then
         p1.x, p1.y = lx, ly
         p2.x, p2.y = lx + lw, ly + lh
@@ -650,12 +699,14 @@ function draw.shift_light(el, opacity, colorOverride)
   else
     if rpm >= onR then st.on = true end
   end
-  local lit = st.on and blinkOn(c.blinkHz)
+  local lit = st.on and blinkOn(c.blinkHz, c.blinkDuty)
   local color = lit and (colorOverride or c.colorOn) or c.colorOff
   if c.shape == 'circle' then
+    if lit then glowCircle(el.x + el.width / 2, el.y + el.height / 2, math.min(el.width, el.height) / 2, color, c.glow, opacity) end
     p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
     ui.drawCircleFilled(p1, math.min(el.width, el.height) / 2, col(color, opacity), 32)
   else
+    if lit then glowRect(el.x, el.y, el.width, el.height, c.radius, color, c.glow, opacity) end
     p1.x, p1.y = el.x, el.y
     p2.x, p2.y = el.x + el.width, el.y + el.height
     ui.drawRectFilled(p1, p2, col(color, opacity), c.radius or 0)
