@@ -46,22 +46,31 @@ export function regionFromPx(px: { x: number; y: number; width: number; height: 
 }
 
 /**
- * Región a partir del rectángulo UV de la malla del kn5. En kn5 la V se guarda negada
- * (v = -fila/alto, 0 arriba), así que la fila de la textura es -v. Si la malla usa coordenadas
- * fuera de [0,1] (texturas repetidas, mallas con bisel) no es fiable y se devuelve null.
+ * Región a partir del rectángulo UV de la malla del kn5. La GPU muestrea la textura con
+ * coordenadas envueltas (v mod 1, 0 = fila superior), así que las filas visibles son {v mod 1}:
+ * vale tanto para mallas con V negativa (exportadas desde FBX, v ∈ [-1, 0]) como positiva.
+ * Si el rectángulo cubre más de una repetición o cruza un borde de la textura (texturas
+ * repetidas, mallas con bisel) no es fiable y se devuelve null.
  */
 export function regionFromKn5Uv(uv: Kn5Mesh['uv']): UvRegion | null {
   if (!uv) return null;
   const eps = 0.02;
-  const x0 = uv.u0;
-  const x1 = uv.u1;
-  const y0 = -uv.v1;
-  const y1 = -uv.v0;
-  if (![x0, x1, y0, y1].every((n) => Number.isFinite(n))) return null;
-  if (x0 < -eps || x1 > 1 + eps || y0 < -eps || y1 > 1 + eps) return null;
-  const c = (n: number) => Math.min(1, Math.max(0, n));
+  const vals = [uv.u0, uv.u1, uv.v0, uv.v1];
+  if (!vals.every((n) => Number.isFinite(n))) return null;
+  if (uv.u1 - uv.u0 > 1 + eps || uv.v1 - uv.v0 > 1 + eps) return null;
+  const wrap = (a: number, b: number): [number, number] | null => {
+    const base = Math.floor(a + eps);
+    const x0 = a - base;
+    const x1 = b - base;
+    if (x1 > 1 + eps) return null; // cruza el borde de la textura
+    const c = (n: number) => Math.min(1, Math.max(0, n));
+    return [c(x0), c(x1)];
+  };
+  const xs = wrap(uv.u0, uv.u1);
+  const ys = wrap(uv.v0, uv.v1);
+  if (!xs || !ys) return null;
   const r4 = (n: number) => Math.round(n * 10000) / 10000;
-  const region = { x: r4(c(x0)), y: r4(c(y0)), width: r4(c(x1) - c(x0)), height: r4(c(y1) - c(y0)) };
+  const region = { x: r4(xs[0]), y: r4(ys[0]), width: r4(xs[1] - xs[0]), height: r4(ys[1] - ys[0]) };
   if (region.width < 0.01 || region.height < 0.01) return null;
   return region;
 }
