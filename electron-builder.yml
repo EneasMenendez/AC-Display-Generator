@@ -11,9 +11,19 @@ extraResources:
   - from: resources
     to: resources
 win:
+  icon: build/icon.ico
   target:
     - nsis
     - portable
+  artifactName: ACDisplayGenerator-${version}-${os}-${arch}.${ext}
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AC Display Generator
+  artifactName: ACDisplayGenerator-Setup-${version}.${ext}
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: ACDisplayGenerator-Portable-${version}.${ext}
