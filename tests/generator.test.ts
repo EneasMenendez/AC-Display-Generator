@@ -104,6 +104,9 @@ describe('generador', () => {
     expect(ini).toContain('MESHES = Plano_014_001');
     expect(ini).toContain('SCRIPT = driver_display.lua');
     expect(ini).toContain('RESOLUTION = 1593, 987');
+    const propsOnly = generateDisplayIni(profile, { ...display, emissive: { ...display.emissive, mode: 'props', ks_emissive: [3, 3, 3] } }, { script: 'driver_display.lua' });
+    expect(propsOnly).toContain('PROP_0 = ksEmissive, 3, 3, 3');
+    expect(propsOnly).not.toContain('SHADER =');
     expect(ini).toContain('KEEP_BACKGROUND = 1');
     expect(ini).not.toContain('ACTIVE');
   });

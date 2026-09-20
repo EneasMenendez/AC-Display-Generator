@@ -296,6 +296,12 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
     lines.push('PROP_1 = ksAmbient, 0');
     lines.push('PROP_2 = ksDiffuse, 0');
     lines.push('');
+  } else if (em.mode === 'props') {
+    // solo la emisión: el shader del coche (p. ej. DigitalScreen) se conserva
+    lines.push('[SHADER_REPLACEMENT_...]');
+    lines.push(`MESHES = ${display.meshes.join(', ')}`);
+    lines.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
+    lines.push('');
   } else if (em.mode === 'custom' && em.ini) {
     lines.push(em.ini.trim());
     lines.push('');

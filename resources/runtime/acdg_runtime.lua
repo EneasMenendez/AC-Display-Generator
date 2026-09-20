@@ -97,35 +97,81 @@ end
 -- Destello (halo): capas concéntricas con alfa decreciente
 -- ------------------------------------------------------------
 
-local GLOW_LAYERS = 4
+local GLOW_LAYERS = 6
 local glowColor = rgbm(1, 1, 1, 1)
+local litTmp = rgbm(1, 1, 1, 1)
 
-local function glowAlpha(glow, k, opacity)
-  return (glow.intensity or 0.6) * 0.32 * (1 - (k - 1) / GLOW_LAYERS) * (opacity or 1)
+-- luminancia (1 = color tal cual) y fuerza del núcleo caliente (0–1)
+local function lightLevels(glow)
+  local lum = glow and glow.luminance or 1
+  if lum < 0.2 then lum = 0.2 end
+  local core = clamp01(((glow and glow.core) or 0.5)) * clamp01((lum - 0.8) / 1.2)
+  return lum, core
+end
+
+-- color de una luz encendida: rgb × luminancia (en pantallas HDR sobreexpone; en LDR satura hacia
+-- blanco de forma parecida al editor)
+local function litCol(color, lum, opacity)
+  local base = col(color, opacity)
+  if lum <= 1 then return base end
+  local k = clamp01((lum - 1) * 0.3)
+  local m = math.min(lum, 1.6)
+  litTmp.r = base.r * m + (1 - base.r) * k
+  litTmp.g = base.g * m + (1 - base.g) * k
+  litTmp.b = base.b * m + (1 - base.b) * k
+  litTmp.mult = base.mult
+  return litTmp
+end
+
+local function glowAlpha(glow, k, opacity, lum)
+  local f = 1 - (k - 1) / GLOW_LAYERS
+  return (glow.intensity or 0.6) * 0.30 * f * f * math.sqrt(f) * math.min(lum, 2) * (opacity or 1)
 end
 
 local function glowCircle(cx, cy, r, color, glow, opacity)
   if not glow or (glow.size or 0) <= 0 or (glow.intensity or 0) <= 0 then return end
-  local base = col(color, 1)
+  local lum = lightLevels(glow)
+  local base = litCol(color, lum, 1)
   glowColor.r, glowColor.g, glowColor.b = base.r, base.g, base.b
   p1.x, p1.y = cx, cy
   for k = GLOW_LAYERS, 1, -1 do
-    glowColor.mult = glowAlpha(glow, k, opacity)
+    glowColor.mult = glowAlpha(glow, k, opacity, lum)
     ui.drawCircleFilled(p1, r + glow.size * k / GLOW_LAYERS, glowColor, 32)
   end
 end
 
 local function glowRect(x, y, w, h, radius, color, glow, opacity)
   if not glow or (glow.size or 0) <= 0 or (glow.intensity or 0) <= 0 then return end
-  local base = col(color, 1)
+  local lum = lightLevels(glow)
+  local base = litCol(color, lum, 1)
   glowColor.r, glowColor.g, glowColor.b = base.r, base.g, base.b
   for k = GLOW_LAYERS, 1, -1 do
     local e = glow.size * k / GLOW_LAYERS
-    glowColor.mult = glowAlpha(glow, k, opacity)
+    glowColor.mult = glowAlpha(glow, k, opacity, lum)
     p1.x, p1.y = x - e, y - e
     p2.x, p2.y = x + w + e, y + h + e
     ui.drawRectFilled(p1, p2, glowColor, (radius or 0) + e)
   end
+end
+
+-- núcleo caliente: forma reducida blanquecina en el centro de la luz
+local function coreCircle(cx, cy, r, glow, opacity)
+  local _, core = lightLevels(glow)
+  if core <= 0 then return end
+  glowColor.r, glowColor.g, glowColor.b = 1, 1, 1
+  glowColor.mult = core * (opacity or 1)
+  p1.x, p1.y = cx, cy
+  ui.drawCircleFilled(p1, r * 0.5, glowColor, 24)
+end
+
+local function coreRect(x, y, w, h, radius, glow, opacity)
+  local _, core = lightLevels(glow)
+  if core <= 0 then return end
+  glowColor.r, glowColor.g, glowColor.b = 1, 1, 1
+  glowColor.mult = core * (opacity or 1)
+  p1.x, p1.y = x + w * 0.25, y + h * 0.25
+  p2.x, p2.y = x + w * 0.75, y + h * 0.75
+  ui.drawRectFilled(p1, p2, glowColor, radius or 0)
 end
 
 local function clamp01(x)
@@ -424,8 +470,12 @@ local function segmentedBar(x, y, w, h, orientation, reverse, n, gap, radius, ac
         local gx, gy, gw, gh = p1.x, p1.y, p2.x - p1.x, p2.y - p1.y
         glowRect(gx, gy, gw, gh, radius, c, glow, opacity)
         p1.x, p1.y, p2.x, p2.y = gx, gy, gx + gw, gy + gh
+        local lum = lightLevels(glow)
+        ui.drawRectFilled(p1, p2, litCol(c, lum, opacity), radius or 0)
+        coreRect(gx, gy, gw, gh, radius, glow, opacity)
+      else
+        ui.drawRectFilled(p1, p2, col(c, opacity), radius or 0)
       end
-      ui.drawRectFilled(p1, p2, col(c, opacity), radius or 0)
     end
   end
 end
@@ -627,21 +677,28 @@ function draw.shift_lights(el, opacity, colorOverride, imageOverride)
       local ly = vertical and (el.y + el.height - off - size) or el.y
       local lw = vertical and el.width or size
       local lh = vertical and size or el.height
+      local lum = 1
       if lit and c.glow then
+        lum = lightLevels(c.glow)
         if c.shape == 'circle' or file then glowCircle(lx + lw / 2, ly + lh / 2, math.min(lw, lh) / 2, color, c.glow, opacity)
         else glowRect(lx, ly, lw, lh, c.radius, color, c.glow, opacity) end
       end
+      local fill = lit and litCol(color, lum, opacity) or col(color, opacity)
       if file then
         p1.x, p1.y = lx, ly
         p2.x, p2.y = lx + lw, ly + lh
-        ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(color, opacity))
+        ui.drawImage(scriptDir .. '/' .. file, p1, p2, fill)
       elseif c.shape == 'circle' then
         p1.x, p1.y = lx + lw / 2, ly + lh / 2
-        ui.drawCircleFilled(p1, math.min(lw, lh) / 2, col(color, opacity), 24)
+        ui.drawCircleFilled(p1, math.min(lw, lh) / 2, fill, 24)
       else
         p1.x, p1.y = lx, ly
         p2.x, p2.y = lx + lw, ly + lh
-        ui.drawRectFilled(p1, p2, col(color, opacity), c.radius or 0)
+        ui.drawRectFilled(p1, p2, fill, c.radius or 0)
+      end
+      if lit and c.glow then
+        if c.shape == 'circle' or file then coreCircle(lx + lw / 2, ly + lh / 2, math.min(lw, lh) / 2, c.glow, opacity)
+        else coreRect(lx, ly, lw, lh, c.radius, c.glow, opacity) end
       end
     end
   end
@@ -701,15 +758,20 @@ function draw.shift_light(el, opacity, colorOverride)
   end
   local lit = st.on and blinkOn(c.blinkHz, c.blinkDuty)
   local color = lit and (colorOverride or c.colorOn) or c.colorOff
+  local lum = lit and lightLevels(c.glow) or 1
+  local fill = lit and litCol(color, lum, opacity) or col(color, opacity)
+  local cx, cy, r = el.x + el.width / 2, el.y + el.height / 2, math.min(el.width, el.height) / 2
   if c.shape == 'circle' then
-    if lit then glowCircle(el.x + el.width / 2, el.y + el.height / 2, math.min(el.width, el.height) / 2, color, c.glow, opacity) end
-    p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
-    ui.drawCircleFilled(p1, math.min(el.width, el.height) / 2, col(color, opacity), 32)
+    if lit then glowCircle(cx, cy, r, color, c.glow, opacity) end
+    p1.x, p1.y = cx, cy
+    ui.drawCircleFilled(p1, r, fill, 32)
+    if lit then coreCircle(cx, cy, r, c.glow, opacity) end
   else
     if lit then glowRect(el.x, el.y, el.width, el.height, c.radius, color, c.glow, opacity) end
     p1.x, p1.y = el.x, el.y
     p2.x, p2.y = el.x + el.width, el.y + el.height
-    ui.drawRectFilled(p1, p2, col(color, opacity), c.radius or 0)
+    ui.drawRectFilled(p1, p2, fill, c.radius or 0)
+    if lit then coreRect(el.x, el.y, el.width, el.height, c.radius, c.glow, opacity) end
   end
 end
 

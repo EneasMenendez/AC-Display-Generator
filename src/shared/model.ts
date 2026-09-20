@@ -100,13 +100,20 @@ export interface TextElement extends ElementBase {
   style: TextStyle;
 }
 
-/** Destello (halo luminoso) de una luz encendida: tamaño en px e intensidad 0–1. */
+/**
+ * Luminancia y destello de una luz encendida.
+ * - size: radio del halo en px (0 = sin halo); intensity: opacidad del halo (0–1)
+ * - luminance: brillo de la luz (1 = color tal cual; >1 satura hacia blanco y, en pantallas HDR/emisivas, sobreexpone para que CSP la haga florecer)
+ * - core: núcleo caliente (0–1): centro blanquecino de la luz, proporcional a la luminancia
+ */
 export interface Glow {
   size: number;
   intensity: number;
+  luminance?: number;
+  core?: number;
 }
 
-export const DEFAULT_GLOW: Glow = { size: 0, intensity: 0.6 };
+export const DEFAULT_GLOW: Glow = { size: 0, intensity: 0.6, luminance: 1, core: 0.5 };
 
 export interface RpmBarConfig {
   orientation: Orientation;
@@ -536,7 +543,7 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
       return {
         ...base(type, 'Shift light', x, y, 70, 70),
         type,
-        config: { rpmOn: '94%', rpmOff: '90%', shape: 'circle', colorOn: '#2D7BFF', colorOff: '#1A1A1A', blinkHz: 0, blinkDuty: 0.5, radius: 8, glow: { size: 12, intensity: 0.6 } },
+        config: { rpmOn: '94%', rpmOff: '90%', shape: 'circle', colorOn: '#2D7BFF', colorOff: '#1A1A1A', blinkHz: 0, blinkDuty: 0.5, radius: 8, glow: { size: 16, intensity: 0.7, luminance: 1.5, core: 0.5 } },
       };
     case 'bar':
       return {
@@ -606,7 +613,7 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
           limiterBlinkHz: 8,
           limiterColor: '#2D7BFF',
           blinkDuty: 0.5,
-          glow: { size: 12, intensity: 0.6 },
+          glow: { size: 14, intensity: 0.7, luminance: 1.5, core: 0.5 },
         },
       };
     case 'needle':

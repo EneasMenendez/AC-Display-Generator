@@ -6,7 +6,8 @@ import { z } from 'zod';
  */
 
 export const EmissiveSchema = z.object({
-  mode: z.enum(['none', 'shader_replacement', 'custom']).default('none'),
+  /** none = como el coche; props = solo cambia ksEmissive (conserva el shader); shader_replacement = shader + ksEmissive */
+  mode: z.enum(['none', 'props', 'shader_replacement', 'custom']).default('none'),
   shader: z.string().default('ksPerPixel'),
   ks_emissive: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
   brightness_default: z.number().min(0).max(10).default(1),

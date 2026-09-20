@@ -524,11 +524,17 @@ function GlowProps({ glow, blinkDuty, hasBlink, onGlow, onDuty }: { glow: Glow |
   const g = glow ?? DEFAULT_GLOW;
   return (
     <>
-      <h3>Destello</h3>
-      <Prop label="Halo (px)" title="Tamaño del resplandor alrededor de la luz encendida; 0 = sin destello">
+      <h3>Luminancia y destello</h3>
+      <Prop label="Luminancia" title="Brillo de la luz encendida: 1 = el color tal cual; 1,5–3 la satura hacia blanco y refuerza el halo (en el juego, con la pantalla emisiva, hace que CSP la haga florecer)">
+        <Num value={g.luminance ?? 1} onChange={(v) => onGlow({ ...g, luminance: Math.max(0.2, Math.min(4, v)) })} min={0.2} max={4} step={0.1} />
+      </Prop>
+      <Prop label="Núcleo" title="Punto caliente blanquecino en el centro de la luz (0 = ninguno, 1 = máximo); depende también de la luminancia">
+        <Num value={g.core ?? 0.5} onChange={(v) => onGlow({ ...g, core: Math.max(0, Math.min(1, v)) })} min={0} max={1} step={0.1} />
+      </Prop>
+      <Prop label="Halo (px)" title="Tamaño del resplandor alrededor de la luz encendida; 0 = sin halo">
         <Num value={g.size} onChange={(v) => onGlow({ ...g, size: Math.max(0, v) })} min={0} max={200} />
       </Prop>
-      <Prop label="Intensidad" title="Opacidad del destello (0–1)">
+      <Prop label="Intensidad halo" title="Opacidad del halo (0–1)">
         <Num value={g.intensity} onChange={(v) => onGlow({ ...g, intensity: Math.max(0, Math.min(1, v)) })} min={0} max={1} step={0.1} />
       </Prop>
       {hasBlink && (
@@ -1068,6 +1074,59 @@ function VisibleAreaProps({ display }: { display: DisplayDef }) {
   );
 }
 
+/**
+ * Emisión de la pantalla en el juego: cuánta luz emite el material del display. Es lo que decide si
+ * las luces con luminancia alta "florecen" (bloom) en CSP. Se guarda en el perfil del vehículo.
+ */
+function ScreenEmissionProps({ display }: { display: DisplayDef }) {
+  const profile = useStore((s) => s.profile)!;
+  const car = useStore((s) => s.car);
+  const setProfile = useStore((s) => s.setProfile);
+  const profileFile = useStore((s) => s.profileFile);
+  const em = display.emissive;
+  const level = em.ks_emissive[0];
+  async function apply(patch: Partial<DisplayDef['emissive']>) {
+    const next: DisplayProfile = {
+      ...profile,
+      displays: profile.displays.map((d) => (d.id === display.id ? { ...d, emissive: { ...d.emissive, ...patch } } : d)),
+    };
+    let file = profileFile;
+    if (car) {
+      try {
+        file = await api.saveProfileToCar(next, car.path);
+      } catch (e) {
+        toast(`No se pudo guardar el perfil en el vehículo: ${(e as Error).message}`, 'err');
+      }
+    }
+    setProfile(next, file);
+  }
+  return (
+    <div className="prop-group">
+      <h3>Emisión en el juego</h3>
+      <Prop label="Material" title="none: se deja como está en el coche. Solo emisión: añade ksEmissive a la malla conservando su shader (p. ej. DigitalScreen). Shader ksPerPixel: reemplaza el shader y fija la emisión.">
+        <Sel
+          value={em.mode === 'custom' ? 'custom' : em.mode}
+          onChange={(v) => v !== 'custom' && apply({ mode: v as DisplayDef['emissive']['mode'] })}
+          options={[
+            { value: 'none', label: 'Como el coche' },
+            { value: 'props', label: 'Solo emisión (conserva shader)' },
+            { value: 'shader_replacement', label: 'Shader ksPerPixel + emisión' },
+            ...(em.mode === 'custom' ? [{ value: 'custom', label: 'Personalizado (ini)' }] : []),
+          ]}
+        />
+      </Prop>
+      {(em.mode === 'props' || em.mode === 'shader_replacement') && (
+        <Prop label="Emisión (ksEmissive)" title="1 = brillo normal; 2–4 hace que los píxeles blancos/saturados florezcan con el bloom de CSP. Sube la luminancia de las luces y baja el brillo global del display para que solo destaquen ellas.">
+          <Num value={level} onChange={(v) => apply({ ks_emissive: [v, v, v] })} min={0} max={20} step={0.5} />
+        </Prop>
+      )}
+      <div className="muted small">
+        Para que las luces destellen en el juego hace falta que la pantalla emita más de lo normal: sube aquí la emisión (2–4) y usa luminancia &gt; 1 en las luces. En coches con <code>[Material_DigitalScreen]</code> en su ext_config.ini, su <code>Emissive</code> puede prevalecer: ajústalo también allí.
+      </div>
+    </div>
+  );
+}
+
 function ProjectProps() {
   const project = useStore((s) => s.project)!;
   const dp = useStore(activeDisplayOf)!;
@@ -1143,6 +1202,7 @@ function ProjectProps() {
         </div>
       )}
       {display && <VisibleAreaProps display={display} />}
+      {display && <ScreenEmissionProps display={display} />}
       <div className="prop-group">
         <h3>
           <span>Páginas ({dp.pages.length})</span>

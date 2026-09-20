@@ -31,7 +31,7 @@ function project(): Project {
   needle.config.image = 'assets/needle.png';
   const lights = createElement('shift_lights') as ShiftLightsElement;
   lights.config.pattern = 'edges_to_center';
-  lights.config.glow = { size: 10, intensity: 0.8 };
+  lights.config.glow = { size: 10, intensity: 0.8, luminance: 2, core: 0.8 };
   lights.config.blinkDuty = 0.3;
   const texBar = createElement('rpm_bar') as RpmBarElement;
   texBar.config.style = 'continuous';
