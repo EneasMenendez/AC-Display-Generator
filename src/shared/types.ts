@@ -251,7 +251,7 @@ export interface AcdgApi {
 
   pickImage(): Promise<ImageInfo | null>;
   imageInfo(file: string): Promise<ImageInfo>;
-  pickAsset(kind: 'icon' | 'font' | 'image'): Promise<AddedAsset | null>;
+  pickAsset(kind: 'icon' | 'font' | 'image' | 'video' | 'audio'): Promise<AddedAsset | null>;
   addAssetFile(file: string, folder: string): Promise<AddedAsset>;
   addAssetBytes(path: string, bytes: Uint8Array): Promise<void>;
   allAssets(): Promise<Record<string, string>>;

@@ -64,6 +64,10 @@ export function collectVariables(display: DisplayProject): string[] {
   const add = (id?: string) => id && ids.add(id);
   for (const page of display.pages) {
     if (page.when) add(page.when.variable);
+    if (page.trigger) {
+      add(page.trigger.input);
+      for (const c of [...page.trigger.enter, ...page.trigger.exit]) add(c.variable);
+    }
     for (const el of page.elements) {
       for (const r of el.rules) add(r.when.variable);
       switch (el.type) {
@@ -82,10 +86,21 @@ export function collectVariables(display: DisplayProject): string[] {
           break;
         case 'rpm_bar':
         case 'shift_light':
+        case 'shift_lights':
           add('rpm');
+          break;
+        case 'needle':
+          add(el.config.variable);
           break;
       }
     }
+  }
+  const b = display.settings.boot;
+  if (b) {
+    if (b.replayButton && b.replayButton !== 'none') add(b.replayButton);
+    if (b.skipButton && b.skipButton !== 'none') add(b.skipButton);
+    if (b.skipSpeedKmh > 0 || display.pages.some((p) => p.trigger)) add('speed');
+    if (b.engineStart) add('rpm');
   }
   return [...ids].filter((id) => VARIABLE_MAP[id]);
 }
@@ -170,8 +185,12 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
     id: p.id,
     name: p.name,
     when: p.when,
+    kind: p.kind ?? 'normal',
+    duration: p.duration,
+    trigger: p.trigger,
     elements: p.elements.filter((e) => e.visible || e.rules.some((r) => r.set.visible)).map((el) => serializeElement(el, addAsset)),
   }));
+  const boot = { ...(dp.settings.boot ?? {}), sound: dp.settings.boot?.sound ? addAsset(dp.settings.boot.sound) : undefined };
 
   const background = dp.background.file ? { file: addAsset(dp.background.file), color: dp.background.color } : { color: dp.background.color };
 
@@ -200,6 +219,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
       nightBrightness: dp.settings.nightBrightness,
       nightMode: dp.settings.nightMode,
       refreshHz: dp.settings.refreshHz || 0,
+      boot,
       pageSwitch: dp.settings.pageSwitch,
     },
     defaults: {
@@ -237,6 +257,7 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
     rotation: el.rotation,
     visible: el.visible,
     opacity: el.opacity,
+    anim: el.anim && (el.anim.delay > 0 || el.anim.fadeIn > 0 || el.anim.fadeOut > 0) ? el.anim : undefined,
     rules: el.rules.map((r) => ({
       when: r.when,
       set: { ...r.set, image: r.set.image ? addAsset(r.set.image) : undefined },
@@ -260,6 +281,8 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
     case 'shift_lights':
     case 'needle':
       return { ...base, config: el.config, file: el.config.image ? addAsset(el.config.image) : undefined };
+    case 'video':
+      return { ...base, config: el.config, file: el.config.file ? addAsset(el.config.file) : undefined };
     default:
       return { ...base, config: (el as { config: unknown }).config };
   }

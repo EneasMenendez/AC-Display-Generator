@@ -26,7 +26,7 @@ export const api = {
 
   pickImage: () => invoke('image:pick'),
   imageInfo: (file: string) => invoke('image:info', file),
-  pickAsset: (kind: 'icon' | 'font' | 'image') => invoke('asset:pick', kind),
+  pickAsset: (kind: 'icon' | 'font' | 'image' | 'video' | 'audio') => invoke('asset:pick', kind),
   addAssetFile: (file: string, folder: string) => invoke('asset:addFile', file, folder),
   addAssetBytes: (path: string, bytes: Uint8Array) => invoke('asset:addBytes', path, bytes),
   allAssets: () => invoke('asset:all'),

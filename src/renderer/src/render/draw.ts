@@ -1,6 +1,7 @@
 import type { Color, DisplayElement, DisplayProject, Glow, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
 import { resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
+import { compare } from './compare';
 import { formatBinding } from '@shared/format';
 import { VARIABLE_MAP } from '@shared/variables';
 import type { SimContext } from '../sim';
@@ -12,6 +13,14 @@ import type { SimContext } from '../sim';
 
 export interface DrawEnv {
   images: Map<string, HTMLImageElement>;
+  /** vídeos del proyecto (HTML5) */
+  videos?: Map<string, HTMLVideoElement>;
+  /** segundos desde que se mostró la página (animaciones); undefined = sin animar (modo edición) */
+  pageTime?: number;
+  /** duración de la página de arranque (para fundidos de salida) */
+  pageDuration?: number;
+  /** opacidad global de la página (transiciones) */
+  pageAlpha?: number;
   /** brillo global (proyecto × ambiente) */
   brightness: number;
   /** estado persistente entre frames (histéresis, suavizado) */
@@ -87,29 +96,6 @@ const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 function rpmOf(v: RpmValue, ctx: SimContext): number {
   return resolveRpm(v, ctx.limiter);
-}
-
-function compare(a: unknown, op: Rule['when']['op'], b: unknown, ctx: SimContext): boolean {
-  let x = typeof a === 'boolean' ? (a ? 1 : 0) : Number(a);
-  let y: number;
-  if (typeof b === 'boolean') y = b ? 1 : 0;
-  else if (typeof b === 'string') y = rpmOf(b as RpmValue, ctx);
-  else y = Number(b);
-  if (!Number.isFinite(x)) x = 0;
-  switch (op) {
-    case '>':
-      return x > y;
-    case '>=':
-      return x >= y;
-    case '<':
-      return x < y;
-    case '<=':
-      return x <= y;
-    case '==':
-      return x === y;
-    case '!=':
-      return x !== y;
-  }
 }
 
 export interface RuleResult {
@@ -310,9 +296,32 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
   const rr = applyRules(el, ctx);
   if (!rr.visible || rr.opacity <= 0) return;
   const B = env.brightness;
-  const O = rr.opacity;
+  let O = rr.opacity * (env.pageAlpha ?? 1);
+  // animación de entrada/salida (solo cuando se conoce el tiempo en la página: previsualización)
+  let adx = 0;
+  let ady = 0;
+  if (el.anim && env.pageTime !== undefined) {
+    const a = el.anim;
+    const pt = env.pageTime;
+    if (pt < a.delay) return;
+    let k = 1;
+    if (a.fadeIn > 0) k = clamp01((pt - a.delay) / a.fadeIn);
+    if (a.fadeOut > 0 && env.pageDuration !== undefined) {
+      const rem = env.pageDuration - pt;
+      if (rem < a.fadeOut) k = Math.min(k, clamp01(rem / a.fadeOut));
+    }
+    if (k <= 0) return;
+    O *= k;
+    const d = a.distance * (1 - k);
+    if (a.from === 'up') ady = -d;
+    else if (a.from === 'down') ady = d;
+    else if (a.from === 'left') adx = -d;
+    else if (a.from === 'right') adx = d;
+  }
+  if (O <= 0) return;
   const C = (c: Color | undefined): string => css(c, B, O);
   g.save();
+  if (adx || ady) g.translate(adx, ady);
   // la aguja aplica su rotación alrededor de su propio eje
   if (el.rotation && el.type !== 'needle') {
     g.translate(el.x + el.width / 2, el.y + el.height / 2);
@@ -448,6 +457,51 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
         };
         if (lit) withGlow(g, c.glow, C(drawColor), shape, coreShape);
         else shape();
+      }
+      break;
+    }
+    case 'video': {
+      const vid = el.config.file ? env.videos?.get(el.config.file) : undefined;
+      if (vid && vid.readyState >= 2 && vid.videoWidth > 0) {
+        if (el.config.onEnd === 'hide' && !el.config.loop && vid.ended) break;
+        g.globalAlpha = O;
+        let dx = x;
+        let dy = y;
+        let dw = w;
+        let dh = h;
+        if (el.config.fit !== 'stretch') {
+          const sc = el.config.fit === 'fit' ? Math.min(w / vid.videoWidth, h / vid.videoHeight) : Math.max(w / vid.videoWidth, h / vid.videoHeight);
+          dw = vid.videoWidth * sc;
+          dh = vid.videoHeight * sc;
+          dx = x + (w - dw) / 2;
+          dy = y + (h - dh) / 2;
+        }
+        g.save();
+        g.beginPath();
+        g.rect(x, y, w, h);
+        g.clip();
+        g.drawImage(vid, dx, dy, dw, dh);
+        const tint = el.config.tint;
+        if (tint && !tint.toUpperCase().startsWith('#FFFFFF')) {
+          g.globalCompositeOperation = 'multiply';
+          g.fillStyle = C(tint);
+          g.fillRect(dx, dy, dw, dh);
+        }
+        if (B < 1) {
+          g.fillStyle = `rgba(0,0,0,${1 - clamp01(B)})`;
+          g.fillRect(dx, dy, dw, dh);
+        }
+        g.restore();
+      } else {
+        g.strokeStyle = C('#888888');
+        g.setLineDash([6, 4]);
+        g.strokeRect(x, y, w, h);
+        g.setLineDash([]);
+        g.fillStyle = C('#888888');
+        g.font = `${Math.max(12, Math.min(w, h) * 0.12)}px system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(el.config.file ? '▶ vídeo' : 'Vídeo: elige un archivo', x + w / 2, y + h / 2);
       }
       break;
     }
@@ -737,15 +791,17 @@ function drawTinted(g: CanvasRenderingContext2D, img: HTMLImageElement, x: numbe
 
 /* ---------- escena completa ---------- */
 
-export function drawScene(g: CanvasRenderingContext2D, project: DisplayProject, page: Page, ctx: SimContext, env: DrawEnv, bgImage: HTMLImageElement | null): void {
+export function drawScene(g: CanvasRenderingContext2D, project: DisplayProject, page: Page, ctx: SimContext, env: DrawEnv, bgImage: HTMLImageElement | null, skipBackground = false): void {
   const { width, height } = project.canvas;
   g.save();
   g.beginPath();
   g.rect(0, 0, width, height);
   g.clip();
-  g.fillStyle = css(project.background.color, env.brightness, 1);
-  g.fillRect(0, 0, width, height);
-  if (bgImage && bgImage.complete && bgImage.naturalWidth > 0) {
+  if (!skipBackground) {
+    g.fillStyle = css(project.background.color, env.brightness, 1);
+    g.fillRect(0, 0, width, height);
+  }
+  if (!skipBackground && bgImage && bgImage.complete && bgImage.naturalWidth > 0) {
     if (env.brightness !== 1) {
       g.drawImage(bgImage, 0, 0, width, height);
       g.fillStyle = `rgba(0,0,0,${1 - clamp01(env.brightness)})`;

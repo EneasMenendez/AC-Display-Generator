@@ -96,9 +96,17 @@ export function registerIpc(): void {
     return readImageInfo(r.filePaths[0]);
   });
   ipcMain.handle('image:info', (_e, file: string) => readImageInfo(file));
-  ipcMain.handle('asset:pick', async (_e, kind: 'icon' | 'font' | 'image') => {
-    const filters = kind === 'font' ? [{ name: 'Fuentes', extensions: ['ttf', 'otf'] }] : [{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'dds'] }];
-    const r = await dialog.showOpenDialog(win(), { title: kind === 'font' ? 'Importar fuente' : 'Importar imagen', filters, properties: ['openFile'] });
+  ipcMain.handle('asset:pick', async (_e, kind: 'icon' | 'font' | 'image' | 'video' | 'audio') => {
+    const filters =
+      kind === 'font'
+        ? [{ name: 'Fuentes', extensions: ['ttf', 'otf'] }]
+        : kind === 'video'
+          ? [{ name: 'Vídeo (códecs de Windows)', extensions: ['mp4', 'webm', 'wmv', 'mov', 'avi'] }]
+          : kind === 'audio'
+            ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }]
+            : [{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'dds'] }];
+    const titles = { font: 'Importar fuente', video: 'Importar vídeo', audio: 'Importar sonido', image: 'Importar imagen', icon: 'Importar icono' };
+    const r = await dialog.showOpenDialog(win(), { title: titles[kind], filters, properties: ['openFile'] });
     if (r.canceled) return null;
     const folder = kind === 'font' ? 'assets/fonts' : kind === 'icon' ? 'assets/icons' : 'assets';
     const added = pm.addAsset(r.filePaths[0], folder);

@@ -69,6 +69,12 @@ ui = setmetatable({
   dwriteDrawTextClipped = function(text, size, a, b, ah, av) CALLS[#CALLS + 1] = 'dwriteDrawTextClipped'; TEXTS[#TEXTS + 1] = { text = text, size = size, y1 = a.y, y2 = b.y, x1 = a.x, x2 = b.x, av = av } return 0 end, measureDWriteText = function(t, s) return vec2(#t * s * 0.6, s * 1.33) end, pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
   pathClear = rec('pathClear'), pathArcTo = rec('pathArcTo'), pathStroke = rec('pathStroke'),
   beginRotation = rec('beginRotation'), endPivotRotation = rec('endPivotRotation'),
+  MediaPlayer = setmetatable({ supported = function() return true end }, { __call = function(_, src)
+    local pl = { src = src, playing = false, pos = 0 }
+    function pl:setAutoPlay() end function pl:setLooping() end function pl:setMuted() end function pl:setVolume() end function pl:setPlaybackRate() end
+    function pl:setCurrentTime(v) self.pos = v end function pl:play() self.playing = true; PLAYED = (PLAYED or 0) + 1 end function pl:pause() self.playing = false end function pl:ended() return false end
+    return pl
+  end }),
 }, { __index = function(_, k) return rec(k) end })
 STORAGE = { page = 1 }
 ac = setmetatable({
@@ -80,7 +86,7 @@ ac = setmetatable({
   error = function(...) ERRORED = table.concat({ ... }, ' ') end,
 }, { __index = function(_, k) return rec(k) end })
 CARV = { rpm = 4500, rpmLimiter = 8000, gear = 3, speedKmh = 128, gas = 0.7, fuel = 30, maxFuel = 60, waterTemperature = 90,
-  lapTimeMs = 83452, focused = true, distanceToCamera = 2, physicsAvailable = true, prefersImperialUnits = false, isInPitlane = false, extraA = false, headlightsActive = false, absInAction = false, isEngineLimiterOn = false }
+  lapTimeMs = 83452, focused = true, distanceToCamera = 2, physicsAvailable = true, prefersImperialUnits = false, isInPitlane = false, extraA = false, extraB = false, headlightsActive = false, absInAction = false, isEngineLimiterOn = false, kersButtonPressed = false }
 car = setmetatable({}, { __index = function(_, k) local v = CARV[k] if v ~= nil then return v end return 0 end })
 sim = setmetatable({}, { __index = function(_, k) if k == 'timeHours' then return 14 end return 0 end })
 __dirname = 'C:/fake/extension'

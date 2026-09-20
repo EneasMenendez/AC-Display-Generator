@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { DisplayElement, DisplayProject, ElementType, Page, Project } from '@shared/model';
-import { createElement, createPage, newId } from '@shared/model';
+import { createElement, createPage, type PageKind, newId } from '@shared/model';
 import type { DisplayProfile } from '@shared/profile';
 import { uvRegionPx } from '@shared/uv';
 import type { AppInfo, BuiltinIcon, CarInfo } from '@shared/types';
@@ -41,6 +41,8 @@ interface State {
   physicalView: boolean;
   /** en previsualización, seguir las condiciones automáticas de página (como en el juego) */
   followPageRules: boolean;
+  /** contador: cada incremento reproduce la secuencia de arranque en la previsualización */
+  bootRequest: number;
   toast: Toast | null;
   zoom: number;
   pan: { x: number; y: number };
@@ -75,7 +77,8 @@ interface State {
   moveSelected(dx: number, dy: number): void;
   setActiveDisplay(i: number): void;
   setActivePage(i: number): void;
-  addPage(name?: string): void;
+  addPage(name?: string, kind?: PageKind): void;
+  addPageObject(page: Page): void;
   removePage(i: number): void;
   movePage(from: number, to: number): void;
   addDisplay(d: DisplayProject): void;
@@ -88,6 +91,7 @@ interface State {
   setPreviewMode(v: boolean): void;
   setPhysicalView(v: boolean): void;
   setFollowPageRules(v: boolean): void;
+  playBoot(): void;
   setToast(t: Toast | null): void;
   setZoom(z: number): void;
   setPan(p: { x: number; y: number }): void;
@@ -141,6 +145,7 @@ export const useStore = create<State>((set, get) => ({
   previewMode: false,
   physicalView: false,
   followPageRules: false,
+  bootRequest: 0,
   toast: null,
   zoom: 0.5,
   pan: { x: 0, y: 0 },
@@ -313,11 +318,18 @@ export const useStore = create<State>((set, get) => ({
 
   setActiveDisplay: (i) => set({ activeDisplay: i, activePage: 0, selection: [] }),
   setActivePage: (i) => set({ activePage: i, selection: [] }),
-  addPage: (name) => {
+  addPage: (name, kind) => {
     const s = get();
     const d = activeDisplayOf(s);
     if (!d) return;
-    const page = createPage(name ?? `Página ${d.pages.length + 1}`);
+    const page = createPage(name ?? (kind === 'boot' ? 'Arranque' : kind === 'function' ? 'Funcionalidad' : `Página ${d.pages.length + 1}`), kind);
+    s.patchDisplay((disp) => disp.pages.push(page));
+    set({ activePage: d.pages.length, selection: [] });
+  },
+  addPageObject: (page) => {
+    const s = get();
+    const d = activeDisplayOf(s);
+    if (!d) return;
     s.patchDisplay((disp) => disp.pages.push(page));
     set({ activePage: d.pages.length, selection: [] });
   },
@@ -358,6 +370,7 @@ export const useStore = create<State>((set, get) => ({
   setPreviewMode: (previewMode) => set({ previewMode, selection: previewMode ? [] : get().selection }),
   setPhysicalView: (physicalView) => set({ physicalView }),
   setFollowPageRules: (followPageRules) => set({ followPageRules }),
+  playBoot: () => set((s) => ({ previewMode: true, followPageRules: true, selection: [], bootRequest: s.bootRequest + 1 })),
   setToast: (toast) => set({ toast }),
   setZoom: (zoom) => set({ zoom }),
   setPan: (pan) => set({ pan }),

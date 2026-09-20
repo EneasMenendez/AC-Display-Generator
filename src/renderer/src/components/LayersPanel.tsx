@@ -15,6 +15,7 @@ const ADD: { type: ElementType; label: string; icon: string }[] = [
   { type: 'gauge', label: 'Indicador', icon: 'gauge' },
   { type: 'icon', label: 'Icono', icon: 'icon' },
   { type: 'image', label: 'Imagen', icon: 'image' },
+  { type: 'video', label: 'Vídeo', icon: 'play' },
   { type: 'rect', label: 'Rectángulo', icon: 'rect' },
   { type: 'circle', label: 'Círculo', icon: 'circle' },
   { type: 'line', label: 'Línea', icon: 'line' },

@@ -58,13 +58,15 @@ end
 
 local tmpColor = rgbm(1, 1, 1, 1)
 -- Devuelve un color aplicando brillo global y opacidad (reutiliza un rgbm temporal).
+local pageAlpha = 1 -- opacidad global de la página que se está dibujando (transiciones)
+
 local function col(c, opacity)
   if c == nil then return WHITE end
   local b = brightness * nightCurrent
   tmpColor.r = c.r * b
   tmpColor.g = c.g * b
   tmpColor.b = c.b * b
-  tmpColor.mult = c.mult * (opacity or 1)
+  tmpColor.mult = c.mult * (opacity or 1) * pageAlpha
   return tmpColor
 end
 
@@ -225,9 +227,22 @@ end
 
 local varErrorLogged = {}
 
+-- variables que calcula el propio runtime (máquina de páginas)
+local pageEnteredAt, pageEntrySpeed = 0, 0
+local BUILTIN_VARS = {
+  page_time = function() return t - pageEnteredAt end,
+  page_entry_speed = function() return pageEntrySpeed end,
+}
+
 local function getVar(id)
   local v = varCache[id]
   if v ~= nil then return v end
+  local bi = BUILTIN_VARS[id]
+  if bi then
+    v = bi()
+    varCache[id] = v
+    return v
+  end
   local fn = cfg.vars[id]
   if not fn then return nil end
   local ok, res = pcall(fn)
@@ -856,6 +871,81 @@ end
 
 local FIT = { stretch = 0, fill = 1, fit = 2 }
 
+-- ------------------------------------------------------------
+-- Vídeo y audio (ui.MediaPlayer): un reproductor por archivo, reiniciado al entrar en la página
+-- ------------------------------------------------------------
+
+local players = {}
+local mediaSupported = nil
+
+local function mediaOk()
+  if mediaSupported == nil then
+    local ok, sup = pcall(function() return ui.MediaPlayer and ui.MediaPlayer.supported() end)
+    mediaSupported = ok and sup == true
+    if not mediaSupported then ac.warn('[ACDG] vídeo/audio no disponibles (Media Foundation)') end
+  end
+  return mediaSupported
+end
+
+local function getPlayer(file, cfgv)
+  local pl = players[file]
+  if pl ~= nil then return pl or nil end
+  if not mediaOk() then players[file] = false return nil end
+  local ok, p = pcall(function()
+    local m = ui.MediaPlayer(scriptDir .. '/' .. file)
+    m:setAutoPlay(false)
+    if cfgv then
+      m:setLooping(cfgv.loop == true)
+      m:setMuted(cfgv.muted ~= false)
+      m:setVolume(cfgv.volume or 1)
+      if cfgv.rate and cfgv.rate > 0 then m:setPlaybackRate(cfgv.rate) end
+    end
+    return m
+  end)
+  if not ok or not p then
+    ac.error('[ACDG] no se pudo cargar ' .. tostring(file) .. ': ' .. tostring(p))
+    players[file] = false
+    return nil
+  end
+  players[file] = p
+  return p
+end
+
+local function restartVideos(page)
+  if not page then return end
+  for i = 1, #page.elements do
+    local el = page.elements[i]
+    if el.type == 'video' and el.file then
+      local pl = getPlayer(el.file, el.config)
+      if pl then pcall(function() pl:setCurrentTime(0); pl:play() end) end
+    end
+  end
+end
+
+local function pauseVideos(page)
+  if not page then return end
+  for i = 1, #page.elements do
+    local el = page.elements[i]
+    if el.type == 'video' and el.file then
+      local pl = players[el.file]
+      if pl then pcall(function() pl:pause() end) end
+    end
+  end
+end
+
+function draw.video(el, opacity, colorOverride)
+  if not el.file then return end
+  local pl = getPlayer(el.file, el.config)
+  if not pl then return end
+  if el.config.onEnd == 'hide' and not el.config.loop then
+    local ok, ended = pcall(function() return pl:ended() end)
+    if ok and ended then return end
+  end
+  p1.x, p1.y = el.x, el.y
+  p2.x, p2.y = el.x + el.width, el.y + el.height
+  ui.drawImage(pl, p1, p2, col(colorOverride or el.config.tint, opacity), VEC0, VEC1, FIT[el.config.fit or 'fit'] or 2)
+end
+
 function draw.image(el, opacity, colorOverride, imageOverride)
   local file = imageOverride or el.file
   if not file or file == '' then return end
@@ -929,11 +1019,32 @@ function draw.gauge(el, opacity, colorOverride)
   end
 end
 
+local currentPageDuration = nil
+
 local function drawElement(el)
   local visible, opacity, colorOverride, imageOverride = applyRules(el)
   if not visible or opacity <= 0 then return end
   local fn = draw[el.type]
   if not fn then return end
+  -- animación de entrada/salida respecto al tiempo en la página
+  local a = el.anim
+  local dx, dy = 0, 0
+  if a then
+    local pt = t - pageEnteredAt
+    if pt < (a.delay or 0) then return end
+    local k = 1
+    if (a.fadeIn or 0) > 0 then k = clamp01((pt - (a.delay or 0)) / a.fadeIn) end
+    if (a.fadeOut or 0) > 0 and currentPageDuration then
+      local rem = currentPageDuration - pt
+      if rem < a.fadeOut then k = math.min(k, clamp01(rem / a.fadeOut)) end
+    end
+    if k <= 0 then return end
+    opacity = opacity * k
+    local d = (a.distance or 60) * (1 - k)
+    if a.from == 'up' then dy = -d elseif a.from == 'down' then dy = d elseif a.from == 'left' then dx = -d elseif a.from == 'right' then dx = d end
+  end
+  local ox, oy = el.x, el.y
+  el.x, el.y = ox + dx, oy + dy
   local rot = el.rotation or 0
   if el.type == 'needle' then rot = 0 end -- la aguja gira sobre su propio eje
   if rot ~= 0 then ui.beginRotation() end
@@ -942,53 +1053,218 @@ local function drawElement(el)
     p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
     ui.endPivotRotation(rot, p1)
   end
+  el.x, el.y = ox, oy
 end
 
 -- ------------------------------------------------------------
--- Páginas: condición automática (page.when) > botón (settings.pageSwitch.input) > primera
+-- Páginas: arranque (secuencia) > funcionalidad (activador, prioridad) > condición automática > botón
 -- ------------------------------------------------------------
 
 local manualPage = 1
 local lastButton = false
 local pageStorage = nil
+local normalPages = {}   -- índices de páginas normales (botón/condición)
+local bootPages = {}     -- índices de pantallas de arranque, en orden
+local funcPages = {}     -- índices de pantallas de funcionalidad, por prioridad descendente
+local boot = { active = false, idx = 0, startedAt = 0 }
+local edges = {}         -- último estado de cada entrada (para detectar pulsaciones)
+local toggles = {}       -- estado de las pantallas conmutables/enclavadas por id de página
+local lastRpm = 0
+local currentPageRef = nil
+local previousPageRef = nil
+local trans = { from = nil, startedAt = -1e9 }
+local bootSound = nil
 
 local function initPages()
   manualPage = 1
+  normalPages, bootPages, funcPages = {}, {}, {}
+  for i = 1, #cfg.pages do
+    local p = cfg.pages[i]
+    if p.kind == 'boot' then bootPages[#bootPages + 1] = i
+    elseif p.kind == 'function' and p.trigger then funcPages[#funcPages + 1] = i
+    else normalPages[#normalPages + 1] = i end
+  end
+  table.sort(funcPages, function(a, b)
+    local pa, pb = cfg.pages[a].trigger.priority or 0, cfg.pages[b].trigger.priority or 0
+    if pa == pb then return a < b end
+    return pa > pb
+  end)
   local ps = cfg.settings.pageSwitch
   if ps and ps.remember and ps.input ~= 'none' and ac.storage then
     local ok, st = pcall(ac.storage, { page = 1 })
     if ok and st then
       pageStorage = st
-      manualPage = math.max(1, math.min(#cfg.pages, tonumber(st.page) or 1))
+      manualPage = math.max(1, math.min(math.max(1, #normalPages), tonumber(st.page) or 1))
     end
+  end
+  toggles = {}
+  edges = {}
+  boot.active = false
+end
+
+-- flanco de subida de una entrada booleana (una consulta por frame y clave)
+local function pressed(key, value)
+  local was = edges[key] == true
+  edges[key] = value == true
+  return value == true and not was
+end
+
+local function condsAll(list)
+  if not list then return true end
+  for i = 1, #list do
+    local c = list[i]
+    if not compare(getVar(c.variable), c.op, c.value) then return false end
+  end
+  return true
+end
+
+local function condsAny(list)
+  if not list then return false end
+  for i = 1, #list do
+    local c = list[i]
+    if compare(getVar(c.variable), c.op, c.value) then return true end
+  end
+  return false
+end
+
+local function bootSettings()
+  return cfg.settings.boot or {}
+end
+
+local function startBoot()
+  if #bootPages == 0 then return end
+  local bs = bootSettings()
+  if bs.skipInReplay ~= false and sim and sim.isReplayActive == true then return end
+  boot.active = true
+  boot.idx = 1
+  boot.startedAt = t
+  if bs.sound and mediaOk() then
+    if not bootSound then
+      local ok, p = pcall(function()
+        local m = ui.MediaPlayer(scriptDir .. '/' .. bs.sound)
+        m:setAutoPlay(false)
+        m:setVolume(bs.soundVolume or 1)
+        return m
+      end)
+      if ok then bootSound = p end
+    end
+    if bootSound then pcall(function() bootSound:setCurrentTime(0); bootSound:play() end) end
   end
 end
 
-local function currentPage()
-  local pages = cfg.pages
-  local n = #pages
+function ACDG.startBoot()
+  startBoot()
+end
+
+local function resolveBoot()
+  local bs = bootSettings()
+  if boot.active then
+    local pg = cfg.pages[bootPages[boot.idx]]
+    local skip = false
+    if bs.skipButton and bs.skipButton ~= 'none' and pressed('boot:skip', getVar(bs.skipButton)) then skip = true end
+    if (bs.skipSpeedKmh or 0) > 0 and num(car.speedKmh) > bs.skipSpeedKmh then skip = true end
+    if skip then
+      boot.active = false
+    elseif t - boot.startedAt >= (pg.duration or 3) then
+      boot.idx = boot.idx + 1
+      boot.startedAt = t
+      if boot.idx > #bootPages then boot.active = false end
+    end
+    if boot.active then return cfg.pages[bootPages[boot.idx]] end
+    return nil
+  end
+  if bs.replayButton and bs.replayButton ~= 'none' and pressed('boot:replay', getVar(bs.replayButton)) then
+    startBoot()
+    if boot.active then return cfg.pages[bootPages[1]] end
+  end
+  if bs.engineStart then
+    local rpm = num(car.rpm)
+    if lastRpm < 100 and rpm > 300 then
+      startBoot()
+      lastRpm = rpm
+      if boot.active then return cfg.pages[bootPages[1]] end
+    end
+    lastRpm = rpm
+  end
+  return nil
+end
+
+local function resolveFunction()
+  for i = 1, #funcPages do
+    local pg = cfg.pages[funcPages[i]]
+    local tr = pg.trigger
+    local input = getVar(tr.input) == true
+    local active
+    if tr.mode == 'hold' or tr.mode == nil then
+      active = input and condsAll(tr.enter)
+    else
+      local st = toggles[pg.id]
+      if not st then st = { on = false, since = 0 }; toggles[pg.id] = st end
+      local edge = pressed('fn:' .. pg.id, input)
+      if st.on then
+        if condsAny(tr.exit) or ((tr.exitAfterS or 0) > 0 and t - st.since > tr.exitAfterS) or (tr.mode == 'toggle' and edge) then
+          st.on = false
+        end
+      elseif edge and condsAll(tr.enter) then
+        st.on = true
+        st.since = t
+      end
+      active = st.on
+    end
+    if active then return pg end
+  end
+  return nil
+end
+
+local function resolveNormal()
+  local n = #normalPages
   if n == 0 then return nil end
-  -- condiciones automáticas por orden
   for i = 1, n do
-    local w = pages[i].when
-    if w and compare(getVar(w.variable), w.op, w.value) then return pages[i] end
+    local pg = cfg.pages[normalPages[i]]
+    local w = pg.when
+    if w and compare(getVar(w.variable), w.op, w.value) then return pg end
   end
   local ps = cfg.settings.pageSwitch
   if ps and ps.input and ps.input ~= 'none' then
-    local pressed = car[ps.input] == true
-    if pressed and not lastButton then
+    local pr = car[ps.input] == true
+    if pr and not lastButton then
       manualPage = manualPage + 1
       if manualPage > n then manualPage = ps.wrap == false and n or 1 end
       if pageStorage then pageStorage.page = manualPage end
     end
-    lastButton = pressed
+    lastButton = pr
   end
   if manualPage > n then manualPage = 1 end
-  return pages[manualPage]
+  return cfg.pages[normalPages[manualPage]]
+end
+
+local function currentPage()
+  if #cfg.pages == 0 then return nil end
+  local page = resolveBoot() or resolveFunction() or resolveNormal() or cfg.pages[1]
+  if page ~= currentPageRef then
+    -- cambio de página: tiempos, velocidad de entrada, vídeos y transición
+    pauseVideos(currentPageRef)
+    local returnPrev = currentPageRef and currentPageRef.trigger and currentPageRef.trigger.returnTo == 'previous' and previousPageRef
+    if returnPrev and page ~= previousPageRef and page.kind ~= 'boot' and not page.trigger then
+      -- al salir de una pantalla de funcionalidad se vuelve a la anterior (si sigue disponible)
+      if previousPageRef.kind ~= 'function' then page = previousPageRef end
+    end
+    previousPageRef = currentPageRef
+    trans.from = currentPageRef
+    trans.startedAt = t
+    currentPageRef = page
+    pageEnteredAt = t
+    pageEntrySpeed = num(car.speedKmh)
+    currentPageDuration = page.kind == 'boot' and (page.duration or 3) or nil
+    restartVideos(page)
+    varCache.page_time = nil
+    varCache.page_entry_speed = nil
+  end
+  return page
 end
 
 function ACDG.setPage(i)
-  manualPage = math.max(1, math.min(#cfg.pages, i))
+  manualPage = math.max(1, math.min(math.max(1, #normalPages), i))
 end
 
 -- ------------------------------------------------------------
@@ -1009,6 +1285,10 @@ function ACDG.init(config, dir)
   state = {}
   fonts = {}
   initPages()
+  currentPageRef = nil
+  previousPageRef = nil
+  pageEnteredAt = t
+  startBoot()
 end
 
 function ACDG.setBrightness(b)
@@ -1073,10 +1353,24 @@ function ACDG.update(dt)
 
   local page = currentPage()
   if not page then return end
+  local bs = bootSettings()
+  local fadeS = bs.transition == 'fade' and (bs.transitionS or 0) or 0
+  local k = 1
+  if fadeS > 0 and trans.from and t - trans.startedAt < fadeS then
+    k = clamp01((t - trans.startedAt) / fadeS)
+    -- la página anterior se desvanece debajo (sus tiempos siguen congelados en el último estado)
+    pageAlpha = 1 - k
+    local prev = trans.from.elements
+    for i = 1, #prev do
+      if prev[i].type ~= 'video' then drawElement(prev[i]) end
+    end
+  end
+  pageAlpha = k
   local els = page.elements
   for i = 1, #els do
     drawElement(els[i])
   end
+  pageAlpha = 1
 end
 
 return ACDG

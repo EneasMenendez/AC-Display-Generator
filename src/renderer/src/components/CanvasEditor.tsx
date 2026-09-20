@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { DisplayElement } from '@shared/model';
 import { useStore, activeDisplayOf, activePageOf } from '../store';
 import { resolveSim } from '../sim';
-import { drawScene, pageMatches, type DrawEnv } from '../render/draw';
+import { drawScene, type DrawEnv } from '../render/draw';
+import { PageEngine } from '../render/pageEngine';
 import { hasUvRegion, uvRegionPx } from '@shared/uv';
 
 /**
@@ -38,6 +39,10 @@ export function CanvasEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const images = useRef(new Map<string, HTMLImageElement>());
   const imageKeys = useRef(new Set<string>());
+  const videos = useRef(new Map<string, HTMLVideoElement>());
+  const engine = useRef(new PageEngine());
+  const lastBootReq = useRef(0);
+  const lastEnginePage = useRef<string | null>(null);
   const drawState = useRef(new Map<string, { on?: boolean; v?: number }>());
   const drag = useRef<Drag | null>(null);
   const guides = useRef<Guide[]>([]);
@@ -90,9 +95,39 @@ export function CanvasEditor() {
     for (const [k, url] of want) {
       if (imageKeys.current.has(k)) continue;
       imageKeys.current.add(k);
+      if (url.startsWith('data:video/')) {
+        const vid = document.createElement('video');
+        vid.src = url;
+        vid.muted = true;
+        vid.preload = 'auto';
+        vid.playsInline = true;
+        vid.load();
+        videos.current.set(k, vid);
+        continue;
+      }
       const img = new Image();
       img.src = url;
       images.current.set(k, img);
+    }
+  }
+
+  /** al entrar en una página en previsualización: reiniciar sus vídeos y pausar el resto */
+  function syncVideos(page: { id: string; elements: { type: string; config?: unknown }[] } | null, animate: boolean) {
+    const inPage = new Set<string>();
+    if (page) for (const el of page.elements) if (el.type === 'video') inPage.add((el.config as { file?: string }).file ?? '');
+    for (const [k, vid] of videos.current) {
+      const cfg = page?.elements.find((e) => e.type === 'video' && (e.config as { file?: string }).file === k)?.config as { loop?: boolean; muted?: boolean; volume?: number; rate?: number } | undefined;
+      if (animate && inPage.has(k)) {
+        vid.loop = !!cfg?.loop;
+        vid.muted = cfg?.muted !== false;
+        vid.volume = Math.max(0, Math.min(1, cfg?.volume ?? 1));
+        vid.playbackRate = cfg?.rate && cfg.rate > 0 ? cfg.rate : 1;
+        vid.currentTime = 0;
+        void vid.play().catch(() => undefined);
+      } else {
+        vid.pause();
+        if (!animate) vid.currentTime = 0;
+      }
     }
   }
 
@@ -142,7 +177,7 @@ export function CanvasEditor() {
         if (held && held.display === p.display_id && t - held.at < 1 / hz && t >= held.at) simCtx = held.ctx;
         else heldCtx.current = { display: p.display_id, at: t, ctx: simCtx };
       } else heldCtx.current = null;
-      const env: DrawEnv = { images: images.current, brightness: p.settings.brightness * s.ambient, state: drawState.current, dt };
+      const env: DrawEnv = { images: images.current, videos: videos.current, brightness: p.settings.brightness * s.ambient, state: drawState.current, dt };
 
       const g = canvas.getContext('2d')!;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -164,10 +199,44 @@ export function CanvasEditor() {
       g.imageSmoothingEnabled = true;
       g.imageSmoothingQuality = 'high';
       const bg = p.background.file ? images.current.get(p.background.file) ?? null : null;
-      // en previsualización se puede seguir la lógica de páginas del juego (condiciones automáticas)
+      // en previsualización se puede seguir la máquina de páginas del juego (arranque, funcionalidad, condiciones)
       let page = activePageOf(s)!;
-      if (s.previewMode && s.followPageRules) page = p.pages.find((pg) => pageMatches(pg, simCtx)) ?? page;
-      drawScene(g, p, page, simCtx, env, bg);
+      const live = s.previewMode && s.followPageRules;
+      if (s.bootRequest !== lastBootReq.current) {
+        lastBootReq.current = s.bootRequest;
+        engine.current.requestBoot();
+      }
+      if (live) {
+        const r = engine.current.step(p, simCtx, t);
+        if (r) {
+          page = r.page;
+          simCtx.values.page_time = r.pageTime;
+          simCtx.values.page_entry_speed = r.entrySpeed;
+          env.pageTime = r.pageTime;
+          env.pageDuration = page.kind === 'boot' ? page.duration ?? 3 : undefined;
+          if (r.changed || lastEnginePage.current !== page.id) {
+            lastEnginePage.current = page.id;
+            syncVideos(page, true);
+          }
+          if (r.from && r.k < 1) {
+            // fundido: la página anterior debajo, la nueva encima
+            env.pageAlpha = 1 - r.k;
+            drawScene(g, p, r.from, simCtx, env, bg);
+            env.pageAlpha = r.k;
+            drawScene(g, p, page, simCtx, env, bg, true);
+            env.pageAlpha = 1;
+          } else drawScene(g, p, page, simCtx, env, bg);
+        } else drawScene(g, p, page, simCtx, env, bg);
+      } else {
+        if (lastEnginePage.current !== null) {
+          lastEnginePage.current = null;
+          engine.current.reset();
+          syncVideos(null, false);
+        }
+        simCtx.values.page_time = 1.5;
+        simCtx.values.page_entry_speed = 0;
+        drawScene(g, p, page, simCtx, env, bg);
+      }
       g.restore();
 
       // área visible de la malla (UV): fuera de ella lo dibujado no se ve en el coche

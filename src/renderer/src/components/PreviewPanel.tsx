@@ -67,15 +67,21 @@ export function PreviewPanel() {
             <span className="muted small">Página:</span>
             {dp.pages.map((pg, i) => (
               <button key={pg.id} className={`scenario ${i === activePage && !followPageRules ? 'active' : ''}`} onClick={() => (setFollowPageRules(false), setActivePage(i))}>
+                {pg.kind === 'boot' ? '▶ ' : pg.kind === 'function' ? '⚡ ' : ''}
                 {pg.name}
               </button>
             ))}
-            {dp.pages.some((pg) => pg.when) && (
-              <button className={`scenario ${followPageRules ? 'active' : ''}`} onClick={() => setFollowPageRules(!followPageRules)} title="En modo previsualización, cambiar de página según las condiciones (como en el juego)">
+            {dp.pages.some((pg) => pg.when || pg.kind) && (
+              <button className={`scenario ${followPageRules ? 'active' : ''}`} onClick={() => setFollowPageRules(!followPageRules)} title="En modo previsualización, cambiar de página como en el juego (arranque, botones, condiciones)">
                 Automático
               </button>
             )}
           </span>
+        )}
+        {dp && dp.pages.some((pg) => pg.kind === 'boot') && (
+          <button className="scenario" onClick={() => useStore.getState().playBoot()} title="Reproduce la secuencia de arranque completa con su temporización, vídeos y fundidos, y pasa a la página principal">
+            ▶ Reproducir arranque
+          </button>
         )}
         <span className="grow" />
         <label className="row small muted">

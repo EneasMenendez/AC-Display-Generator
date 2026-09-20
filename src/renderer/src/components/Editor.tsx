@@ -177,9 +177,15 @@ export function Editor() {
         </button>
         <div className="pages">
           {dp.pages.map((pg, i) => (
-            <button key={pg.id} className={`page-tab ${i === activePage ? 'active' : ''}`} onClick={() => setActivePage(i)} title={pg.when ? 'Página con condición automática' : 'Página'}>
+            <button
+              key={pg.id}
+              className={`page-tab ${i === activePage ? 'active' : ''}`}
+              onClick={() => setActivePage(i)}
+              title={pg.kind === 'boot' ? `Pantalla de arranque (${pg.duration ?? 3} s)` : pg.kind === 'function' ? `Pantalla de funcionalidad (${pg.trigger?.input ?? ''})` : pg.when ? 'Página con condición automática' : 'Página'}
+            >
+              {pg.kind === 'boot' ? '▶ ' : pg.kind === 'function' ? '⚡ ' : ''}
               {pg.name}
-              {pg.when && <span className="dot">•</span>}
+              {pg.when && !pg.kind && <span className="dot">•</span>}
             </button>
           ))}
           <button className="icon" title="Añadir página" onClick={() => useStore.getState().addPage()}>

@@ -1,5 +1,6 @@
-import type { DisplayElement, Glow, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
-import { DEFAULT_GLOW, newId } from '@shared/model';
+import type { DisplayElement, ElementAnim, Glow, PageCondition, PageTrigger, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
+import { DEFAULT_ANIM, DEFAULT_GLOW, createTrigger, newId } from '@shared/model';
+import { TEMPLATES, createTemplatePage, type TemplateId } from '@shared/templates';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
@@ -234,6 +235,52 @@ export function PropertiesPanel() {
             onGlow={(g) => update((e) => e.type === 'shift_lights' && (e.config.glow = g))}
             onDuty={(d) => update((e) => e.type === 'shift_lights' && (e.config.blinkDuty = d))}
           />
+        </div>
+      )}
+      {el.type === 'video' && (
+        <div className="prop-group">
+          <h3>Vídeo</h3>
+          <Prop label="Archivo" title="MP4 (H.264), WMV, WebM… (códecs de Windows / Media Foundation). Se copia al coche: vigila el tamaño.">
+            <div className="row gap4">
+              <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={el.config.file}>
+                {el.config.file ? el.config.file.split('/').pop() : '—'}
+              </span>
+              <button
+                className="small outline"
+                onClick={async () => {
+                  const a = await api.pickAsset('video');
+                  if (!a) return;
+                  if (a.error) toast(a.error, 'err');
+                  useStore.getState().addAssetUrl(a.path, a.dataUrl);
+                  update((e) => e.type === 'video' && (e.config.file = a.path));
+                }}
+              >
+                Elegir…
+              </button>
+            </div>
+          </Prop>
+          <Prop label="Ajuste">
+            <Sel value={el.config.fit} onChange={(v) => update((e) => e.type === 'video' && (e.config.fit = v))} options={[{ value: 'stretch', label: 'Estirar' }, { value: 'fit', label: 'Encajar (bandas)' }, { value: 'fill', label: 'Rellenar (recorta)' }]} />
+          </Prop>
+          <Prop label="Velocidad / Volumen">
+            <div className="pair">
+              <Num value={el.config.rate} onChange={(v) => update((e) => e.type === 'video' && (e.config.rate = Math.max(0.1, v)))} min={0.1} max={4} step={0.1} />
+              <Num value={el.config.volume} onChange={(v) => update((e) => e.type === 'video' && (e.config.volume = Math.max(0, Math.min(1, v))))} min={0} max={1} step={0.1} />
+            </div>
+          </Prop>
+          <Prop label="Tinte">
+            <ColorField value={el.config.tint} onChange={(v) => update((e) => e.type === 'video' && (e.config.tint = v))} />
+          </Prop>
+          <Prop label="Al terminar">
+            <Sel value={el.config.onEnd} onChange={(v) => update((e) => e.type === 'video' && (e.config.onEnd = v))} options={[{ value: 'hold', label: 'Mantener el último frame' }, { value: 'hide', label: 'Ocultar' }]} />
+          </Prop>
+          <Prop label="Opciones">
+            <div className="col gap4">
+              <Chk value={el.config.loop} label="Bucle" onChange={(v) => update((e) => e.type === 'video' && (e.config.loop = v))} />
+              <Chk value={el.config.muted} label="Silenciar" onChange={(v) => update((e) => e.type === 'video' && (e.config.muted = v))} />
+            </div>
+          </Prop>
+          <div className="muted small">Se reinicia al entrar en la página y se detiene al salir. En el editor se reproduce en previsualización.</div>
         </div>
       )}
       {el.type === 'needle' && (
@@ -514,6 +561,7 @@ export function PropertiesPanel() {
         </div>
       )}
 
+      <AnimProps el={el} update={update} />
       <RulesEditor el={el} update={update} limiter={limiter} />
     </div>
   );
@@ -606,6 +654,7 @@ export function typeLabel(t: DisplayElement['type']): string {
     gauge: 'Indicador circular',
     shift_lights: 'Luces de cambio',
     needle: 'Aguja',
+    video: 'Vídeo',
   }[t];
 }
 
@@ -838,6 +887,127 @@ function ThresholdsEditor({ thresholds, onChange }: { thresholds: Threshold[]; o
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Animación de entrada/salida del elemento respecto al momento en que se muestra su página. */
+function AnimProps({ el, update }: { el: DisplayElement; update: (fn: (e: DisplayElement) => void) => void }) {
+  const a: ElementAnim = { ...DEFAULT_ANIM, ...(el.anim ?? {}) };
+  const set = (patch: Partial<ElementAnim>) => update((e) => (e.anim = { ...DEFAULT_ANIM, ...(e.anim ?? {}), ...patch }));
+  const active = a.delay > 0 || a.fadeIn > 0 || a.fadeOut > 0;
+  return (
+    <div className="prop-group">
+      <h3>
+        <span>Animación</span>
+        {active && (
+          <button className="small ghost" onClick={() => update((e) => (e.anim = undefined))}>
+            Quitar
+          </button>
+        )}
+      </h3>
+      <Prop label="Retardo / Entrada (s)" title="Segundos hasta aparecer y duración del fundido de entrada, contados desde que se muestra la página">
+        <div className="pair">
+          <Num value={a.delay} onChange={(v) => set({ delay: Math.max(0, v) })} min={0} step={0.1} />
+          <Num value={a.fadeIn} onChange={(v) => set({ fadeIn: Math.max(0, v) })} min={0} step={0.1} />
+        </div>
+      </Prop>
+      <Prop label="Salida (s)" title="Fundido de salida antes de que termine la pantalla de arranque (solo páginas de arranque)">
+        <Num value={a.fadeOut} onChange={(v) => set({ fadeOut: Math.max(0, v) })} min={0} step={0.1} />
+      </Prop>
+      <Prop label="Desde / Distancia" title="Desplazamiento de entrada (se combina con el fundido)">
+        <div className="pair">
+          <Sel value={a.from} onChange={(v) => set({ from: v })} options={[{ value: 'none', label: 'Sin desplazar' }, { value: 'up', label: 'Arriba' }, { value: 'down', label: 'Abajo' }, { value: 'left', label: 'Izquierda' }, { value: 'right', label: 'Derecha' }]} />
+          <Num value={a.distance} onChange={(v) => set({ distance: v })} min={0} />
+        </div>
+      </Prop>
+      <div className="muted small">Se ve en previsualización con "Automático" o "Reproducir arranque"; en edición los elementos se muestran en su estado final.</div>
+    </div>
+  );
+}
+
+/** Editor de una lista de condiciones (variable / operador / valor). */
+function CondList({ list, onChange, limiter, emptyLabel }: { list: PageCondition[]; onChange: (l: PageCondition[]) => void; limiter: number; emptyLabel: string }) {
+  const setAt = (i: number, patch: Partial<PageCondition>) => onChange(list.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  return (
+    <div className="col gap4">
+      {list.length === 0 && <div className="muted small">{emptyLabel}</div>}
+      {list.map((c, i) => (
+        <div key={i} className="row gap4">
+          <VarSelect value={c.variable} onChange={(v) => v && setAt(i, { variable: v, value: VARIABLE_MAP[v]?.type === 'boolean' ? true : 0, op: VARIABLE_MAP[v]?.type === 'boolean' ? '==' : c.op })} />
+          {VARIABLE_MAP[c.variable]?.type === 'boolean' ? (
+            <Sel value={c.value === true ? 'true' : 'false'} onChange={(v) => setAt(i, { op: '==', value: v === 'true' })} options={[{ value: 'true', label: 'activo' }, { value: 'false', label: 'inactivo' }]} />
+          ) : (
+            <>
+              <select value={c.op} onChange={(e) => setAt(i, { op: e.target.value as PageCondition['op'] })} style={{ width: 56 }}>
+                {['>', '>=', '<', '<=', '==', '!='].map((o) => (
+                  <option key={o}>{o}</option>
+                ))}
+              </select>
+              {c.variable === 'rpm' ? (
+                <RpmField value={typeof c.value === 'boolean' ? 0 : c.value} limiter={limiter} onChange={(v) => setAt(i, { value: v })} />
+              ) : (
+                <Num value={Number(c.value)} onChange={(v) => setAt(i, { value: v })} />
+              )}
+            </>
+          )}
+          <button className="icon" title="Quitar condición" onClick={() => onChange(list.filter((_, j) => j !== i))}>
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      ))}
+      <button className="small ghost" style={{ alignSelf: 'flex-start' }} onClick={() => onChange([...list, { variable: 'speed', op: '<', value: 5 }])}>
+        <Icon name="plus" size={12} /> Condición
+      </button>
+    </div>
+  );
+}
+
+const BUTTON_OPTIONS = [
+  { value: 'kers_button', label: 'Botón KERS' },
+  ...(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const).map((l) => ({ value: `extra_${l}`, label: `Extra ${l.toUpperCase()}` })),
+  { value: 'drs_active', label: 'DRS' },
+  { value: 'handbrake_on', label: 'Freno de mano' },
+  { value: 'clutch_full', label: 'Embrague a fondo' },
+  { value: 'pit_limiter', label: 'Limitador de boxes' },
+  { value: 'headlights', label: 'Luces' },
+  { value: 'high_beams', label: 'Luces largas' },
+];
+
+/** Activador de una pantalla de funcionalidad. */
+function TriggerProps({ tr, onChange, limiter }: { tr: PageTrigger; onChange: (t: PageTrigger) => void; limiter: number }) {
+  const set = (patch: Partial<PageTrigger>) => onChange({ ...tr, ...patch });
+  const known = BUTTON_OPTIONS.some((o) => o.value === tr.input);
+  return (
+    <div className="col gap4 mt8">
+      <Prop label="Activador" title="Botón o estado que muestra esta pantalla">
+        <Sel value={known ? tr.input : '__other'} onChange={(v) => v !== '__other' && set({ input: v })} options={[...BUTTON_OPTIONS, { value: '__other', label: 'Otra variable…' }]} />
+      </Prop>
+      {!known && (
+        <Prop label="Variable">
+          <VarSelect value={tr.input} onlyBoolean onChange={(v) => v && set({ input: v })} />
+        </Prop>
+      )}
+      <Prop label="Modo">
+        <Sel value={tr.mode} onChange={(v) => set({ mode: v })} options={[{ value: 'hold', label: 'Mientras se mantiene' }, { value: 'toggle', label: 'Conmutar (pulsar entra / pulsar sale)' }, { value: 'latch', label: 'Enclavar (entra con el botón, sale por condición)' }]} />
+      </Prop>
+      <Prop label="Prioridad / Salir a" title="Si varias pantallas se activan a la vez gana la de mayor prioridad">
+        <div className="pair">
+          <Num value={tr.priority} onChange={(v) => set({ priority: Math.round(v) })} />
+          <Sel value={tr.returnTo} onChange={(v) => set({ returnTo: v })} options={[{ value: 'previous', label: 'Página anterior' }, { value: 'main', label: 'Principal' }]} />
+        </div>
+      </Prop>
+      <div className="small muted">Entrar solo si (todas):</div>
+      <CondList list={tr.enter} onChange={(l) => set({ enter: l })} limiter={limiter} emptyLabel="Sin condiciones de entrada." />
+      {tr.mode !== 'hold' && (
+        <>
+          <div className="small muted">Salir cuando (cualquiera):</div>
+          <CondList list={tr.exit} onChange={(l) => set({ exit: l })} limiter={limiter} emptyLabel="Sin condiciones de salida." />
+          <Prop label="Salir tras (s)" title="0 = no se cierra sola">
+            <Num value={tr.exitAfterS} onChange={(v) => set({ exitAfterS: Math.max(0, v) })} min={0} step={0.5} />
+          </Prop>
+        </>
+      )}
     </div>
   );
 }
@@ -1210,6 +1380,32 @@ function ProjectProps() {
             <Icon name="plus" size={12} /> Añadir
           </button>
         </h3>
+        <div className="row gap4 mb8 wrap">
+          <button className="small outline" onClick={() => addPage(undefined, 'boot')} title="Pantalla de arranque: se muestra durante unos segundos al cargar el coche">
+            ▶ Arranque
+          </button>
+          <button className="small outline" onClick={() => addPage(undefined, 'function')} title="Pantalla de funcionalidad: se activa con un botón (KERS, Extra…)">
+            ⚡ Funcionalidad
+          </button>
+          <select
+            value=""
+            onChange={(e) => {
+              const id = e.target.value as TemplateId | '';
+              if (!id) return;
+              useStore.getState().addPageObject(createTemplatePage(id, dp.canvas, limiter));
+              toast(`Plantilla "${TEMPLATES.find((t) => t.id === id)?.label}" añadida: edítala como cualquier página.`);
+            }}
+            style={{ width: 'auto' }}
+            title="Páginas prehechas que se añaden y luego se editan libremente"
+          >
+            <option value="">Plantilla…</option>
+            {TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id} title={t.description}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
         {dp.pages.map((pg, i) => (
           <div key={pg.id} className={`rule ${i === activePage ? 'selected' : ''}`} style={i === activePage ? { outline: '1px solid var(--accent)' } : undefined}>
             <div className="row gap4">
@@ -1227,14 +1423,44 @@ function ProjectProps() {
                 <Icon name="close" size={12} />
               </button>
             </div>
-            <div className="row gap4 wrap">
-              <Chk
-                value={!!pg.when}
-                label="Mostrar automáticamente si"
-                onChange={(v) => patchDisplay((d) => (d.pages[i].when = v ? { variable: 'in_pitlane', op: '==', value: true } : undefined))}
+            <div className="row gap4 mt8">
+              <span className="muted small">Tipo</span>
+              <Sel
+                value={pg.kind ?? 'normal'}
+                onChange={(v) =>
+                  patchDisplay((d) => {
+                    const p = d.pages[i];
+                    p.kind = v === 'normal' ? undefined : v;
+                    if (v === 'boot') {
+                      p.duration = p.duration ?? 3;
+                      p.trigger = undefined;
+                      p.when = undefined;
+                    } else if (v === 'function') {
+                      p.trigger = p.trigger ?? createTrigger();
+                      p.when = undefined;
+                    } else p.trigger = undefined;
+                  })
+                }
+                options={[{ value: 'normal', label: 'Datos (normal)' }, { value: 'boot', label: '▶ Arranque' }, { value: 'function', label: '⚡ Funcionalidad' }]}
               />
+              {pg.kind === 'boot' && (
+                <>
+                  <span className="muted small">Duración (s)</span>
+                  <Num value={pg.duration ?? 3} onChange={(v) => patchDisplay((d) => (d.pages[i].duration = Math.max(0.1, v)))} min={0.1} step={0.5} />
+                </>
+              )}
             </div>
-            {pg.when && (
+            {pg.kind === 'function' && pg.trigger && <TriggerProps tr={pg.trigger} onChange={(t) => patchDisplay((d) => (d.pages[i].trigger = t))} limiter={limiter} />}
+            {!pg.kind && (
+              <div className="row gap4 wrap">
+                <Chk
+                  value={!!pg.when}
+                  label="Mostrar automáticamente si"
+                  onChange={(v) => patchDisplay((d) => (d.pages[i].when = v ? { variable: 'in_pitlane', op: '==', value: true } : undefined))}
+                />
+              </div>
+            )}
+            {!pg.kind && pg.when && (
               <div className="row gap4">
                 <VarSelect value={pg.when.variable} onChange={(v) => v && patchDisplay((d) => ((d.pages[i].when!.variable = v), (d.pages[i].when!.value = VARIABLE_MAP[v]?.type === 'boolean' ? true : 0)))} />
                 {VARIABLE_MAP[pg.when.variable]?.type === 'boolean' ? (
@@ -1324,6 +1550,63 @@ function ProjectProps() {
           </Prop>
         )}
       </div>
+      {dp.pages.some((p) => p.kind === 'boot') && (
+        <div className="prop-group">
+          <h3>Arranque</h3>
+          <div className="muted small mb8">
+            Secuencia: {dp.pages.filter((p) => p.kind === 'boot').map((p) => `${p.name} (${p.duration ?? 3} s)`).join(' → ')}. Se reproduce al cargar la sesión.
+          </div>
+          <Prop label="Repetir con" title="Botón que vuelve a reproducir la secuencia">
+            <Sel value={s.boot.replayButton} onChange={(v) => set({ boot: { ...s.boot, replayButton: v } })} options={[{ value: 'none', label: 'Sin botón' }, ...BUTTON_OPTIONS]} />
+          </Prop>
+          <Prop label="Saltar con" title="Botón que salta la secuencia">
+            <Sel value={s.boot.skipButton} onChange={(v) => set({ boot: { ...s.boot, skipButton: v } })} options={[{ value: 'none', label: 'Sin botón' }, ...BUTTON_OPTIONS]} />
+          </Prop>
+          <Prop label="Saltar a más de (km/h)" title="0 = no saltar por velocidad">
+            <Num value={s.boot.skipSpeedKmh} onChange={(v) => set({ boot: { ...s.boot, skipSpeedKmh: Math.max(0, v) } })} min={0} />
+          </Prop>
+          <Prop label="Transición">
+            <div className="pair">
+              <Sel value={s.boot.transition} onChange={(v) => set({ boot: { ...s.boot, transition: v } })} options={[{ value: 'cut', label: 'Corte' }, { value: 'fade', label: 'Fundido' }]} />
+              <Num value={s.boot.transitionS} disabled={s.boot.transition !== 'fade'} onChange={(v) => set({ boot: { ...s.boot, transitionS: Math.max(0, v) } })} min={0} step={0.1} />
+            </div>
+          </Prop>
+          <Prop label="Sonido" title="Audio que suena al empezar la secuencia (MP3/WAV/OGG)">
+            <div className="row gap4">
+              <span className="small mono grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.boot.sound}>
+                {s.boot.sound ? s.boot.sound.split('/').pop() : '—'}
+              </span>
+              <button
+                className="small outline"
+                onClick={async () => {
+                  const a = await api.pickAsset('audio');
+                  if (!a) return;
+                  useStore.getState().addAssetUrl(a.path, a.dataUrl);
+                  set({ boot: { ...s.boot, sound: a.path } });
+                }}
+              >
+                Elegir…
+              </button>
+              {s.boot.sound && (
+                <button className="icon" title="Quitar sonido" onClick={() => set({ boot: { ...s.boot, sound: undefined } })}>
+                  <Icon name="close" size={12} />
+                </button>
+              )}
+            </div>
+          </Prop>
+          {s.boot.sound && (
+            <Prop label="Volumen">
+              <Num value={s.boot.soundVolume} onChange={(v) => set({ boot: { ...s.boot, soundVolume: Math.max(0, Math.min(1, v)) } })} min={0} max={1} step={0.1} />
+            </Prop>
+          )}
+          <Prop label="Opciones">
+            <div className="col gap4">
+              <Chk value={s.boot.engineStart} label="Repetir al arrancar el motor" onChange={(v) => set({ boot: { ...s.boot, engineStart: v } })} />
+              <Chk value={s.boot.skipInReplay} label="Omitir en replays" onChange={(v) => set({ boot: { ...s.boot, skipInReplay: v } })} />
+            </div>
+          </Prop>
+        </div>
+      )}
       <div className="prop-group">
         <h3>Refresco</h3>
         <Prop label="Frecuencia" title="Cuántas veces por segundo se redibuja el display en el juego. Los displays reales suelen ir a 10–30 Hz; con menos frecuencia los valores rápidos (milésimas) se leen mejor y se ahorra rendimiento.">

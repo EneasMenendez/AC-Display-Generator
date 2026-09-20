@@ -32,7 +32,8 @@ export type ElementType =
   | 'circle'
   | 'gauge'
   | 'shift_lights'
-  | 'needle';
+  | 'needle'
+  | 'video';
 
 export type RuleOp = '>' | '>=' | '<' | '<=' | '==' | '!=';
 
@@ -50,6 +51,8 @@ export interface Rule {
 }
 
 export interface ElementBase {
+  /** animación de entrada/salida (opcional) */
+  anim?: ElementAnim;
   id: string;
   type: ElementType;
   name: string;
@@ -230,6 +233,24 @@ export interface NeedleElement extends ElementBase {
   config: NeedleConfig;
 }
 
+/** Vídeo (ui.MediaPlayer de CSP): se reinicia al entrar en la página; en el editor se previsualiza con HTML5. */
+export interface VideoElement extends ElementBase {
+  type: 'video';
+  config: {
+    /** asset del proyecto (mp4/webm/wmv…) */
+    file: string;
+    fit: 'stretch' | 'fit' | 'fill';
+    loop: boolean;
+    muted: boolean;
+    volume: number;
+    /** velocidad de reproducción (1 = normal) */
+    rate: number;
+    tint: Color;
+    /** al terminar (sin bucle): mantener el último frame u ocultarse */
+    onEnd: 'hold' | 'hide';
+  };
+}
+
 export interface Threshold {
   value: number;
   color: Color;
@@ -346,13 +367,35 @@ export type DisplayElement =
   | CircleElement
   | GaugeElement
   | ShiftLightsElement
-  | NeedleElement;
+  | NeedleElement
+  | VideoElement;
 
 /** Condición que activa automáticamente una página (p. ej. "Boxes" cuando car.isInPitlane). */
 export interface PageCondition {
   variable: string;
   op: RuleOp;
   value: number | boolean | RpmValue;
+}
+
+/** normal = página de datos; boot = pantalla de arranque (secuencia temporizada); function = pantalla de funcionalidad (activada por botón) */
+export type PageKind = 'normal' | 'boot' | 'function';
+
+/** Activador de una pantalla de funcionalidad (launch control, ajustes, estrategia…). */
+export interface PageTrigger {
+  /** variable booleana del catálogo que la activa: kers_button, extra_a…h, drs_active, handbrake_on, clutch_full, pit_limiter… */
+  input: string;
+  /** hold = mientras se mantiene; toggle = una pulsación entra y otra sale; latch = entra con el botón y sale por condición */
+  mode: 'hold' | 'toggle' | 'latch';
+  /** condiciones que deben cumplirse para entrar (todas) */
+  enter: PageCondition[];
+  /** condiciones que la cierran (cualquiera) — modos toggle y latch */
+  exit: PageCondition[];
+  /** se cierra sola pasados estos segundos; 0 = nunca */
+  exitAfterS: number;
+  /** si varias están activas gana la de mayor prioridad */
+  priority: number;
+  /** al salir: volver a la página anterior o a la principal */
+  returnTo: 'previous' | 'main';
 }
 
 export interface Page {
@@ -362,6 +405,50 @@ export interface Page {
   elements: DisplayElement[];
   /** si se cumple, esta página se muestra automáticamente (prioridad por orden); si no, se usa la seleccionada por botón */
   when?: PageCondition;
+  kind?: PageKind;
+  /** duración en segundos (pantallas de arranque) */
+  duration?: number;
+  trigger?: PageTrigger;
+}
+
+/** Animación de entrada/salida de un elemento respecto al momento en que se muestra su página. */
+export interface ElementAnim {
+  /** segundos hasta aparecer */
+  delay: number;
+  /** duración del fundido de entrada */
+  fadeIn: number;
+  /** fundido de salida antes de acabar la página (solo pantallas de arranque) */
+  fadeOut: number;
+  /** desplazamiento de entrada */
+  from: 'none' | 'up' | 'down' | 'left' | 'right';
+  distance: number;
+}
+
+/** Secuencia de arranque de un display. */
+export interface BootSettings {
+  /** botón que vuelve a reproducirla ('none' o variable booleana) */
+  replayButton: string;
+  /** reproducirla también al arrancar el motor (rpm de 0 a >300) */
+  engineStart: boolean;
+  /** botón para saltarla */
+  skipButton: string;
+  /** saltarla si el coche supera esta velocidad (km/h); 0 = no */
+  skipSpeedKmh: number;
+  /** omitirla en replays */
+  skipInReplay: boolean;
+  /** transición al terminar (y entre pantallas de funcionalidad) */
+  transition: 'cut' | 'fade';
+  transitionS: number;
+  /** sonido de arranque (asset del proyecto) */
+  sound?: string;
+  soundVolume: number;
+}
+
+export const DEFAULT_BOOT: BootSettings = { replayButton: 'none', engineStart: false, skipButton: 'none', skipSpeedKmh: 0, skipInReplay: true, transition: 'fade', transitionS: 0.5, soundVolume: 1 };
+export const DEFAULT_ANIM: ElementAnim = { delay: 0, fadeIn: 0, fadeOut: 0, from: 'none', distance: 60 };
+
+export function createTrigger(input = 'kers_button'): PageTrigger {
+  return { input, mode: 'hold', enter: [], exit: [], exitAfterS: 0, priority: 1, returnTo: 'previous' };
 }
 
 /** Entrada de CSP (botón del volante / tecla extra) que pasa a la siguiente página. */
@@ -387,6 +474,7 @@ export interface ProjectSettings {
   pageSwitch: PageSwitch;
   /** frecuencia de refresco del display en el juego (Hz); 0 = cada frame */
   refreshHz: number;
+  boot: BootSettings;
 }
 
 /** Un display (una malla del coche) con sus páginas. Un proyecto puede tener varios (dash, volante, navegador…). */
@@ -504,6 +592,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   showCoordinates: true,
   pageSwitch: { input: 'none', wrap: true, remember: true },
   refreshHz: 0,
+  boot: { ...DEFAULT_BOOT },
 };
 
 function base(type: ElementType, name: string, x: number, y: number, w: number, h: number): ElementBase {
@@ -616,6 +705,8 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
           glow: { size: 14, intensity: 0.7, luminance: 1.5, core: 0.5 },
         },
       };
+    case 'video':
+      return { ...base(type, 'Vídeo', x, y, 640, 360), type, config: { file: '', fit: 'fit', loop: false, muted: true, volume: 1, rate: 1, tint: '#FFFFFF', onEnd: 'hold' } };
     case 'needle':
       return {
         ...base(type, 'Aguja', x, y, 40, 220),
@@ -689,8 +780,16 @@ export function createEmptyProject(params: {
   };
 }
 
-export function createPage(name: string): Page {
-  return { id: newId('page'), name, elements: [] };
+export function createPage(name: string, kind: PageKind = 'normal'): Page {
+  const p: Page = { id: newId('page'), name, elements: [] };
+  if (kind === 'boot') {
+    p.kind = 'boot';
+    p.duration = 3;
+  } else if (kind === 'function') {
+    p.kind = 'function';
+    p.trigger = createTrigger();
+  }
+  return p;
 }
 
 /**
@@ -725,7 +824,7 @@ export function migrateProject(raw: unknown): Project {
   const proj = p as unknown as Project;
   proj.physicalNeedles = Array.isArray(proj.physicalNeedles) ? proj.physicalNeedles : [];
   for (const d of proj.displays) {
-    d.settings = { ...DEFAULT_SETTINGS, ...d.settings, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) } };
+    d.settings = { ...DEFAULT_SETTINGS, ...d.settings, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) }, boot: { ...DEFAULT_BOOT, ...(d.settings?.boot ?? {}) } };
     if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];
     d.fonts = d.fonts ?? {};
   }

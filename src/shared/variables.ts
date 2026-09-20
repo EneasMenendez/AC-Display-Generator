@@ -145,6 +145,14 @@ export const CURATED_VARIABLES: VariableDef[] = [
   v('ambient_temp', 'Temperatura ambiente', 'Sesión', 'number', 'sim.ambientTemperature', '°C', [-10, 45], 24),
   v('road_temp', 'Temperatura de pista', 'Sesión', 'number', 'sim.roadTemperature', '°C', [-10, 60], 31),
   v('is_replay', 'Es replay', 'Sesión', 'boolean', 'sim.isReplayActive', '', [0, 1], false),
+  // botones y entradas para pantallas de funcionalidad
+  v('kers_button', 'Botón KERS pulsado', 'Estado', 'boolean', 'car.kersButtonPressed', '', [0, 1], false, true, false),
+  v('kers_input', 'Entrada KERS', 'Eléctrico', 'number', 'car.kersInput', '%', [0, 1], 0, true, 0),
+  v('clutch_full', 'Embrague a fondo', 'Estado', 'boolean', 'car.clutch > 0.9', '', [0, 1], false),
+  v('handbrake_on', 'Freno de mano puesto', 'Estado', 'boolean', 'car.handbrake > 0.5', '', [0, 1], false),
+  // proporcionadas por el runtime (máquina de páginas)
+  v('page_time', 'Tiempo en la página', 'Sesión', 'number', 'ACDG_PAGE_TIME', 's', [0, 60], 1.5),
+  v('page_entry_speed', 'Velocidad al entrar en la página', 'Sesión', 'number', 'ACDG_PAGE_ENTRY_SPEED', 'km/h', [0, 300], 0),
   v('cars_count', 'Número de coches', 'Sesión', 'integer', 'sim.carsCount', '', [1, 40], 12),
 ];
 

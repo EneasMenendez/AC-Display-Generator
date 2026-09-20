@@ -29,6 +29,14 @@ const MIME: Record<string, string> = {
   '.ttf': 'font/ttf',
   '.otf': 'font/otf',
   '.dds': 'application/octet-stream',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.wmv': 'video/x-ms-wmv',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
 };
 
 export function toDataUrl(path: string, data: Uint8Array): string {
