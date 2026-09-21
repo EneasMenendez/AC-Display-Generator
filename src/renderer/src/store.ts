@@ -8,7 +8,8 @@ import { VARIABLES } from '@shared/variables';
 
 export type Screen = 'start' | 'wizard' | 'editor';
 
-export type SimValues = Record<string, number | boolean>;
+import type { SimValues } from './sim';
+export type { SimValues };
 
 export interface Toast {
   text: string;

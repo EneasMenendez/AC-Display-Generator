@@ -1,5 +1,6 @@
 import type { DisplayDefaults } from '@shared/profile';
-import type { SimValues } from './store';
+/** valores de simulación por id de variable */
+export type SimValues = Record<string, number | boolean>;
 
 /**
  * Valores de variables para el preview: parte de los sliders del panel de simulación y calcula

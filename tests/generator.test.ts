@@ -8,7 +8,7 @@ import {
   generateConfigLua,
   generateDisplayIni,
   generateDisplayLua,
-  listIncludeBlocks, parseIncludeBlock, generateNeedlesIni, upsertIncludeBlock,
+  listIncludeBlocks, parseIncludeBlock, generateEmissiveIni, generateNeedlesIni, upsertIncludeBlock,
   removeIncludeBlock,
   findConflictingDisplays,
   toLua,
@@ -104,9 +104,19 @@ describe('generador', () => {
     expect(ini).toContain('MESHES = Plano_014_001');
     expect(ini).toContain('SCRIPT = driver_display.lua');
     expect(ini).toContain('RESOLUTION = 1593, 987');
-    const propsOnly = generateDisplayIni(profile, { ...display, emissive: { ...display.emissive, mode: 'props', ks_emissive: [3, 3, 3] } }, { script: 'driver_display.lua' });
+    // la emisión ya no va en la sección del display sino en un bloque de cola
+    expect(ini).not.toContain('ksEmissive');
+    const propsOnly = generateEmissiveIni([{ ...display, emissive: { ...display.emissive, mode: 'props', ks_emissive: [3, 3, 3] } }]);
     expect(propsOnly).toContain('PROP_0 = ksEmissive, 3, 3, 3');
     expect(propsOnly).not.toContain('SHADER =');
+    expect(generateEmissiveIni([{ ...display, emissive: { ...display.emissive, mode: 'none' } }])).toBe('');
+    // el bloque _emissive se coloca al final del archivo y los demás al principio
+    const withTail = upsertIncludeBlock('[HEADER]\nVERSION=extended-2\n\n[BASIC]\nX=1\n', '_emissive', propsOnly);
+    expect(withTail.trimEnd().endsWith('; ACDG END _emissive')).toBe(true);
+    const both = upsertIncludeBlock(withTail, 'driver_display', '[SCRIPTABLE_DISPLAY_...]\nMESHES = m\nSCRIPT = driver_display.lua');
+    expect(both.indexOf('; ACDG BEGIN driver_display')).toBeLessThan(both.indexOf('[BASIC]'));
+    expect(both.trimEnd().endsWith('; ACDG END _emissive')).toBe(true);
+    expect(listIncludeBlocks(both)).toEqual(['driver_display', '_emissive']);
     expect(ini).toContain('KEEP_BACKGROUND = 0');
     expect(ini).not.toContain('ACTIVE');
   });

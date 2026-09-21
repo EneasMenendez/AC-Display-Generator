@@ -7,7 +7,9 @@ import type { Project } from '@shared/model';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
   ACDG_LUA_HEADER,
+  EMISSIVE_BLOCK_ID,
   NEEDLES_BLOCK_ID,
+  generateEmissiveIni,
   PROJECT_FILE,
   generateNeedlesIni,
   generateConfigLua,
@@ -320,6 +322,24 @@ export function install(opts: InstallOptions): InstallResult {
       return done.join(', ') || 'nada que desactivar';
     });
   }
+  // --- emisión de las pantallas: bloque al final de ext_config.ini (prevalece sobre el material del coche) ---
+  if (opts.install) {
+    step('Emisión de las pantallas', () => {
+      const defs = selected.map((dp) => displayFor(profile, dp.display_id));
+      const body = generateEmissiveIni(defs);
+      const current = readExt();
+      if (!body) {
+        if (hasIncludeBlock(current, EMISSIVE_BLOCK_ID)) {
+          writeFileSync(extConfig, removeIncludeBlock(current, EMISSIVE_BLOCK_ID), 'utf8');
+          return 'como el coche (bloque anterior eliminado)';
+        }
+        return 'como el coche';
+      }
+      writeFileSync(extConfig, upsertIncludeBlock(current, EMISSIVE_BLOCK_ID, body), 'utf8');
+      return defs.map((d) => `${d.name}: ${d.emissive.mode === 'shader_replacement' ? `${d.emissive.shader} + ` : ''}ksEmissive ${d.emissive.ks_emissive[0]}`).join(' · ');
+    });
+  }
+
   // --- agujas físicas: bloque [ANALOG_INDICATOR_...] propio, y se desactivan las secciones ajenas del mismo objeto ---
   if (opts.install) {
     step('Agujas físicas', () => {
@@ -432,10 +452,16 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
     const next = removeIncludeBlock(txt, displayId);
     writeFileSync(extConfig, next, 'utf8');
     done.push('Eliminada la sección de ext_config.ini');
-    // la copia del proyecto se conserva mientras quede algún display instalado
-    if (listIncludeBlocks(next).filter((id) => id !== NEEDLES_BLOCK_ID).length === 0 && existsSync(join(base, PROJECT_FILE))) {
-      rmSync(join(base, PROJECT_FILE), { force: true });
-      done.push(`Eliminado ${PROJECT_FILE}`);
+    // la copia del proyecto y la emisión se conservan mientras quede algún display instalado
+    if (listIncludeBlocks(next).filter((id) => !id.startsWith('_')).length === 0) {
+      if (existsSync(join(base, PROJECT_FILE))) {
+        rmSync(join(base, PROJECT_FILE), { force: true });
+        done.push(`Eliminado ${PROJECT_FILE}`);
+      }
+      if (hasIncludeBlock(next, EMISSIVE_BLOCK_ID)) {
+        writeFileSync(extConfig, removeIncludeBlock(next, EMISSIVE_BLOCK_ID), 'utf8');
+        done.push('Eliminado el bloque de emisión');
+      }
     }
   }
   // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la carpeta)

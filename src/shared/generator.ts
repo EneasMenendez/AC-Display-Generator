@@ -313,21 +313,7 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   lines.push('');
 
   const em = display.emissive;
-  if (em.mode === 'shader_replacement') {
-    lines.push('[SHADER_REPLACEMENT_...]');
-    lines.push(`MESHES = ${display.meshes.join(', ')}`);
-    lines.push(`SHADER = ${em.shader}`);
-    lines.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
-    lines.push('PROP_1 = ksAmbient, 0');
-    lines.push('PROP_2 = ksDiffuse, 0');
-    lines.push('');
-  } else if (em.mode === 'props') {
-    // solo la emisión: el shader del coche (p. ej. DigitalScreen) se conserva
-    lines.push('[SHADER_REPLACEMENT_...]');
-    lines.push(`MESHES = ${display.meshes.join(', ')}`);
-    lines.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
-    lines.push('');
-  } else if (em.mode === 'custom' && em.ini) {
+  if (em.mode === 'custom' && em.ini) {
     lines.push(em.ini.trim());
     lines.push('');
   }
@@ -337,6 +323,39 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
     lines.push('');
   }
   return lines.join('\n');
+}
+
+/** id del bloque (al final de ext_config.ini) con la emisión de las pantallas */
+export const EMISSIVE_BLOCK_ID = '_emissive';
+
+/**
+ * Emisión del material de cada display. Va en un bloque aparte al final del archivo para que
+ * prevalezca sobre las secciones del coche (p. ej. [Material_DigitalScreen] con Emissive = 0.5,
+ * demasiado bajo para verse de noche).
+ */
+export function generateEmissiveIni(displays: DisplayDef[]): string {
+  const out: string[] = [];
+  for (const display of displays) {
+    const em = display.emissive;
+    if (em.mode === 'shader_replacement') {
+      out.push(`; ${display.name}: shader + emisión`);
+      out.push('[SHADER_REPLACEMENT_...]');
+      out.push(`MESHES = ${display.meshes.join(', ')}`);
+      out.push(`SHADER = ${em.shader}`);
+      out.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
+      out.push('PROP_1 = ksAmbient, 0');
+      out.push('PROP_2 = ksDiffuse, 0');
+      out.push('');
+    } else if (em.mode === 'props') {
+      // solo la emisión: el shader del coche (p. ej. DigitalScreen) se conserva
+      out.push(`; ${display.name}: emisión de la pantalla`);
+      out.push('[SHADER_REPLACEMENT_...]');
+      out.push(`MESHES = ${display.meshes.join(', ')}`);
+      out.push(`PROP_0 = ksEmissive, ${em.ks_emissive.join(', ')}`);
+      out.push('');
+    }
+  }
+  return out.join('\n').trimEnd();
 }
 
 /* ---------- display.lua ---------- */
@@ -464,13 +483,22 @@ export function listIncludeBlocks(extConfig: string): string[] {
  * Inserta o sustituye el bloque del display en el contenido de ext_config.ini.
  * Nunca toca el resto del archivo.
  */
+/** bloques que van al FINAL de ext_config.ini (deben prevalecer sobre las secciones del coche) */
+const TAIL_BLOCKS = new Set(['_emissive']);
+
 export function upsertIncludeBlock(extConfig: string, displayId: string, body: string, files: string[] = []): string {
   const block = includeBlock(displayId, body, files);
-  // todos los bloques ACDG van juntos al principio del archivo, en orden de instalación, para que los
+  if (TAIL_BLOCKS.has(displayId)) {
+    // bloque de cola: se quita de donde esté y se añade al final del archivo
+    const rest = removeIncludeBlock(extConfig, displayId).replace(/\s+$/, '');
+    return `${rest}${rest.length ? '\n\n' : ''}${block}`;
+  }
+  // los demás bloques ACDG van juntos al principio del archivo, en orden de instalación, para que los
   // displays se carguen antes que el resto de la configuración del coche
   const blocks: { id: string; text: string }[] = [];
   let rest = extConfig;
   for (const id of listIncludeBlocks(extConfig)) {
+    if (TAIL_BLOCKS.has(id)) continue;
     const m = includeMarkers(id);
     const re = new RegExp(`${escapeRe(m.begin)}[\\s\\S]*?${escapeRe(m.end)}\\r?\\n?`);
     const hit = re.exec(rest);

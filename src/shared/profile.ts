@@ -7,9 +7,9 @@ import { z } from 'zod';
 
 export const EmissiveSchema = z.object({
   /** none = como el coche; props = solo cambia ksEmissive (conserva el shader); shader_replacement = shader + ksEmissive */
-  mode: z.enum(['none', 'props', 'shader_replacement', 'custom']).default('none'),
+  mode: z.enum(['none', 'props', 'shader_replacement', 'custom']).default('props'),
   shader: z.string().default('ksPerPixel'),
-  ks_emissive: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
+  ks_emissive: z.tuple([z.number(), z.number(), z.number()]).default([3, 3, 3]),
   brightness_default: z.number().min(0).max(10).default(1),
   /** bloque ini literal cuando mode = custom */
   ini: z.string().optional(),
@@ -84,7 +84,15 @@ export interface ProfileValidation {
 
 export function parseProfile(json: unknown): ProfileValidation {
   const r = ProfileSchema.safeParse(json);
-  if (r.success) return { ok: true, profile: r.data, errors: [] };
+  if (r.success) {
+    // perfiles anteriores con la emisión sin tocar (none, 1/1/1): pasan a "solo emisión 3" para que la
+    // pantalla se vea de noche; quien quiera dejar el material del coche puede volver a elegir "Como el coche"
+    for (const d of r.data.displays) {
+      const e = d.emissive;
+      if (e.mode === 'none' && e.ks_emissive.every((v) => v === 1)) d.emissive = { ...e, mode: 'props', ks_emissive: [3, 3, 3] };
+    }
+    return { ok: true, profile: r.data, errors: [] };
+  }
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join('.') || '(raíz)'}: ${i.message}`) };
 }
 

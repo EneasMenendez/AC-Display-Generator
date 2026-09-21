@@ -1307,7 +1307,7 @@ function ScreenEmissionProps({ display }: { display: DisplayDef }) {
         </Prop>
       )}
       <div className="muted small">
-        Para que las luces destellen en el juego hace falta que la pantalla emita más de lo normal: sube aquí la emisión (2–4) y usa luminancia &gt; 1 en las luces. En coches con <code>[Material_DigitalScreen]</code> en su ext_config.ini, su <code>Emissive</code> puede prevalecer: ajústalo también allí.
+        La emisión es lo que hace visible la pantalla a oscuras (de noche el material del coche suele traer un valor bajo). Se escribe al final de <code>ext_config.ini</code>, por encima del material del coche. Orientativo: 3–4 para verse de noche; con luminancia &gt; 1 en las luces, además destellan.
       </div>
     </div>
   );
@@ -1539,12 +1539,12 @@ function ProjectProps() {
         <Prop label="Brillo global">
           <Num value={s.brightness} onChange={(v) => set({ brightness: v })} min={0.05} max={3} step={0.05} />
         </Prop>
-        <Prop label="Modo noche">
-          <Sel value={s.nightMode} onChange={(v) => set({ nightMode: v })} options={[{ value: 'off', label: 'Desactivado' }, { value: 'headlights', label: 'Con las luces encendidas' }, { value: 'time', label: 'Por hora (20:00–07:00)' }]} />
+        <Prop label="Cambio de brillo" title="Cambia el brillo del contenido del display cuando se cumple la condición (luces encendidas o noche). No sustituye a la emisión del material: la visibilidad de la pantalla a oscuras la da 'Emisión en el juego'.">
+          <Sel value={s.nightMode} onChange={(v) => set({ nightMode: v })} options={[{ value: 'off', label: 'Sin cambio' }, { value: 'headlights', label: 'Con las luces encendidas' }, { value: 'time', label: 'Por hora (20:00–07:00)' }]} />
         </Prop>
         {s.nightMode !== 'off' && (
-          <Prop label="Brillo nocturno">
-            <Num value={s.nightBrightness} onChange={(v) => set({ nightBrightness: v })} min={0.05} max={1} step={0.05} />
+          <Prop label="Brillo × en ese caso" title="1 = igual; < 1 atenúa (como un dimmer de salpicadero); > 1 aumenta el brillo del contenido">
+            <Num value={s.nightBrightness} onChange={(v) => set({ nightBrightness: v })} min={0.05} max={3} step={0.05} />
           </Prop>
         )}
       </div>
