@@ -65,10 +65,12 @@ ui = setmetatable({
   DWriteFont = setmetatable({ Weight = { Bold = 700 } }, { __call = function() return font end }),
   Alignment = { Start = -1, Center = 0, End = 1 },
   drawRectFilled = rec('drawRectFilled'), drawRect = rec('drawRect'), drawImage = rec('drawImage'),
-  drawCircleFilled = rec('drawCircleFilled'), drawCircle = rec('drawCircle'), drawLine = rec('drawLine'),
+  drawCircleFilled = rec('drawCircleFilled'), drawCircle = rec('drawCircle'),
   dwriteDrawTextClipped = function(text, size, a, b, ah, av) CALLS[#CALLS + 1] = 'dwriteDrawTextClipped'; TEXTS[#TEXTS + 1] = { text = text, size = size, y1 = a.y, y2 = b.y, x1 = a.x, x2 = b.x, av = av } return 0 end, measureDWriteText = function(t, s) return vec2(#t * s * 0.6, s * 1.33) end, pushDWriteFont = rec('pushDWriteFont'), popDWriteFont = rec('popDWriteFont'),
   pathClear = rec('pathClear'), pathArcTo = rec('pathArcTo'), pathStroke = rec('pathStroke'),
-  beginRotation = rec('beginRotation'), endPivotRotation = rec('endPivotRotation'),
+  beginRotation = rec('beginRotation'), endPivotRotation = function(deg, piv) CALLS[#CALLS + 1] = 'endPivotRotation'; ROT_DEG = deg return 0 end,
+  drawImageQuad = function(src, a, b, c, d) CALLS[#CALLS + 1] = 'drawImageQuad'; QUAD = { a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y } return 0 end,
+  drawLine = function(a, b) CALLS[#CALLS + 1] = 'drawLine'; LINE = { a.x, a.y, b.x, b.y } return 0 end,
   MediaPlayer = setmetatable({ supported = function() return true end }, { __call = function(_, src)
     local pl = { src = src, playing = false, pos = 0 }
     function pl:setAutoPlay() end function pl:setLooping() end function pl:setMuted() end function pl:setVolume() end function pl:setPlaybackRate() end
@@ -109,10 +111,18 @@ describe('runtime Lua generado', () => {
       await engine.doString('CARV.physicsAvailable = false; CARV.prefersImperialUnits = true; script.update(0.016)');
       const calls = Number(await engine.doString('return #CALLS'));
       expect(calls).toBeGreaterThan(20);
-      // aguja: rotación sobre su eje; textura de barra y LEDs con imagen
+      // aguja: geometría girada calculada (sin endPivotRotation); textura de barra y LEDs con imagen
       const names = String(await engine.doString('return table.concat(CALLS, ",")'));
-      expect(names).toContain('endPivotRotation');
+      expect(names).toContain('drawImageQuad');
+      expect(names).toContain('drawLine');
       expect(names).toContain('drawImage');
+      // la aguja simple gira alrededor de su eje (120, 300): la punta queda a 200 px del eje y, con rpm altas, a la derecha
+      const line = (await engine.doString('return LINE[1] .. "," .. LINE[2] .. "," .. LINE[3] .. "," .. LINE[4]')) as string;
+      const [lx0, ly0, lx1, ly1] = line.split(',').map(Number);
+      expect(lx0).toBe(120);
+      expect(ly0).toBe(300);
+      expect(Math.hypot(lx1 - lx0, ly1 - ly0)).toBeCloseTo(200, 1);
+      expect(lx1).toBeGreaterThan(lx0);
       expect(gen.assets).toContainEqual({ source: 'assets/needle.png', target: 'driver_display_needle.png' });
       expect(gen.assets).toContainEqual({ source: 'assets/bar_fill.png', target: 'driver_display_bar_fill.png' });
       // colocación vertical del texto: caja de línea (1,33 × tamaño según el stub) centrada en la caja del

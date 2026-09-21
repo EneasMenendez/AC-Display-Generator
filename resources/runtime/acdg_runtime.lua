@@ -723,8 +723,18 @@ end
 -- Aguja
 -- ------------------------------------------------------------
 
-local PIV = vec2()
+local Q1, Q2, Q3, Q4 = vec2(), vec2(), vec2(), vec2()
 
+-- gira (x, y) alrededor de (px, py) un ángulo horario en pantalla (misma fórmula que el editor)
+local function rotPoint(out, px, py, x, y, ca, sa)
+  local dx, dy = x - px, y - py
+  out.x = px + dx * ca - dy * sa
+  out.y = py + dx * sa + dy * ca
+  return out
+end
+
+-- La aguja no usa ui.beginRotation/endPivotRotation (giran en sentido antihorario y con 90° de
+-- desfase): se calcula la geometría girada directamente, igual que en el editor.
 function draw.needle(el, opacity, colorOverride, imageOverride)
   local c = el.config
   local raw = num(getVar(c.variable))
@@ -743,21 +753,23 @@ function draw.needle(el, opacity, colorOverride, imageOverride)
   local px, py = el.x + (c.pivot and c.pivot.x or el.width / 2), el.y + (c.pivot and c.pivot.y or el.height)
   local color = colorOverride or c.color
   local file = imageOverride or el.file
-  ui.beginRotation()
+  local a = math.rad(angle)
+  local ca, sa = math.cos(a), math.sin(a)
   if file then
-    p1.x, p1.y = el.x, el.y
-    p2.x, p2.y = el.x + el.width, el.y + el.height
-    ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(color, opacity))
+    local x0, y0, x1, y1 = el.x, el.y, el.x + el.width, el.y + el.height
+    rotPoint(Q1, px, py, x0, y0, ca, sa)
+    rotPoint(Q2, px, py, x1, y0, ca, sa)
+    rotPoint(Q3, px, py, x1, y1, ca, sa)
+    rotPoint(Q4, px, py, x0, y1, ca, sa)
+    ui.drawImageQuad(scriptDir .. '/' .. file, Q1, Q2, Q3, Q4, col(color, opacity))
   else
     p1.x, p1.y = px, py
-    p2.x, p2.y = el.x + el.width / 2, el.y
+    rotPoint(p2, px, py, el.x + el.width / 2, el.y, ca, sa)
     ui.drawLine(p1, p2, col(color, opacity), c.thickness or 6)
     if (c.hubRadius or 0) > 0 then
       ui.drawCircleFilled(p1, c.hubRadius, col(c.hubColor or color, opacity), 32)
     end
   end
-  PIV.x, PIV.y = px, py
-  ui.endPivotRotation(angle, PIV)
 end
 
 function draw.shift_light(el, opacity, colorOverride)
@@ -1051,7 +1063,8 @@ local function drawElement(el)
   fn(el, opacity, colorOverride, imageOverride)
   if rot ~= 0 then
     p1.x, p1.y = el.x + el.width / 2, el.y + el.height / 2
-    ui.endPivotRotation(rot, p1)
+    -- endPivotRotation gira en sentido antihorario y con 90° de desfase ("restar 90 para que actúe normal")
+    ui.endPivotRotation(90 - rot, p1)
   end
   el.x, el.y = ox, oy
 end
