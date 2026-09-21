@@ -177,16 +177,30 @@ export function Editor() {
         </button>
         <div className="pages">
           {dp.pages.map((pg, i) => (
-            <button
-              key={pg.id}
-              className={`page-tab ${i === activePage ? 'active' : ''}`}
-              onClick={() => setActivePage(i)}
-              title={pg.kind === 'boot' ? `Pantalla de arranque (${pg.duration ?? 3} s)` : pg.kind === 'function' ? `Pantalla de funcionalidad (${pg.trigger?.input ?? ''})` : pg.when ? 'Página con condición automática' : 'Página'}
-            >
-              {pg.kind === 'boot' ? '▶ ' : pg.kind === 'function' ? '⚡ ' : ''}
-              {pg.name}
-              {pg.when && !pg.kind && <span className="dot">•</span>}
-            </button>
+            <span key={pg.id} className={`page-tab-wrap ${i === activePage ? 'active' : ''}`}>
+              <button
+                className={`page-tab ${i === activePage ? 'active' : ''}`}
+                onClick={() => setActivePage(i)}
+                title={pg.kind === 'boot' ? `Pantalla de arranque (${pg.duration ?? 3} s)` : pg.kind === 'function' ? `Pantalla de funcionalidad (${pg.trigger?.input ?? ''})` : pg.when ? 'Página con condición automática' : 'Página'}
+              >
+                {pg.kind === 'boot' ? '▶ ' : pg.kind === 'function' ? '⚡ ' : ''}
+                {pg.name}
+                {pg.when && !pg.kind && <span className="dot">•</span>}
+              </button>
+              {i === activePage && dp.pages.length > 1 && (
+                <button
+                  className="page-close"
+                  title="Eliminar esta página"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const idx = await api.confirm(`¿Eliminar la página "${pg.name}"?`, `Se perderán sus ${pg.elements.length} elementos. Se puede deshacer con Ctrl+Z.`, ['Eliminar', 'Cancelar']);
+                    if (idx === 0) useStore.getState().removePage(i);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </span>
           ))}
           <button className="icon" title="Añadir página" onClick={() => useStore.getState().addPage()}>
             <Icon name="plus" size={12} />

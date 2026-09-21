@@ -1028,6 +1028,32 @@ table.info td:first-child {
   margin-left: 4px;
   color: var(--warn);
 }
+.page-tab-wrap {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+}
+.page-tab-wrap.active {
+  background: var(--accent-soft);
+}
+.page-tab-wrap.active .page-tab {
+  background: transparent;
+}
+.page-close {
+  height: 24px;
+  width: 20px;
+  margin-left: -6px;
+  padding: 0 6px 0 0;
+  border-radius: 0 12px 12px 0;
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.page-close:hover {
+  opacity: 1;
+  color: var(--err);
+}
 
 /* campos numéricos con arrastre */
 input[type='number'].scrub {
