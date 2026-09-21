@@ -1244,6 +1244,22 @@ function VisibleAreaProps({ display }: { display: DisplayDef }) {
   );
 }
 
+/** Guarda un cambio en la definición del display del perfil (y en extension/display_profile.json). */
+async function saveDisplayDef(displayId: string, patch: Partial<DisplayDef>): Promise<void> {
+  const s = useStore.getState();
+  if (!s.profile) return;
+  const next: DisplayProfile = { ...s.profile, displays: s.profile.displays.map((d) => (d.id === displayId ? { ...d, ...patch } : d)) };
+  let file = s.profileFile;
+  if (s.car) {
+    try {
+      file = await api.saveProfileToCar(next, s.car.path);
+    } catch (e) {
+      toast(`No se pudo guardar el perfil en el vehículo: ${(e as Error).message}`, 'err');
+    }
+  }
+  s.setProfile(next, file);
+}
+
 /**
  * Emisión de la pantalla en el juego: cuánta luz emite el material del display. Es lo que decide si
  * las luces con luminancia alta "florecen" (bloom) en CSP. Se guarda en el perfil del vehículo.
@@ -1602,6 +1618,11 @@ function ProjectProps() {
           />
         </Prop>
         <div className="muted small">Cada texto puede tener además su propia frecuencia (propiedades del texto → Actualizar).</div>
+        {display && (
+          <Prop label="Frame anterior" title="KEEP_BACKGROUND de CSP. Desactivado, CSP limpia la textura antes de cada frame (el fondo se repinta igualmente). Activado puede dejar restos (ghosting) en los valores que cambian rápido.">
+            <Chk value={display.keep_background} label="Conservar entre frames (KEEP_BACKGROUND)" onChange={(v) => void saveDisplayDef(display.id, { keep_background: v })} />
+          </Prop>
+        )}
       </div>
       <div className="prop-group">
         <h3>Unidades</h3>

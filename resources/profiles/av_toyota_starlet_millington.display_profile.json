@@ -14,7 +14,7 @@
       "meshes": ["Plano_014_001"],
       "texture_size": { "width": 1593, "height": 987 },
       "physical_size_m": { "width": 0.094063, "height": 0.075243 },
-      "keep_background": true,
+      "keep_background": false,
       "skip_frames": 1,
       "max_distance_m": 50,
       "emissive": { "mode": "none", "brightness_default": 1.0 },

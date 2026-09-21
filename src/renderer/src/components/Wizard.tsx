@@ -94,7 +94,8 @@ export async function defFromDetected(d: DetectedDisplay, carPath: string, kn5Fi
     texture_size: size,
     uv_region: uvRegion ?? undefined,
     physical_size_m: physical ?? undefined,
-    keep_background: d.keepBackground,
+    // el runtime repinta el fondo entero cada frame: no hace falta conservar el frame anterior (evita ghosting)
+    keep_background: false,
     skip_frames: d.skipFrames,
   });
   if (uvRegion && hasUvRegion(def)) {
@@ -726,7 +727,7 @@ export function CreatorForm({ onCreated, onDisplay, usedIds }: { onCreated?: (h:
   const [height, setHeight] = useState(512);
   const [pname, setPname] = useState(`${car.name} – Display`);
   const [displayName, setDisplayName] = useState(displayOnly ? 'Codriver Display' : 'Driver Display');
-  const [keepBg, setKeepBg] = useState(true);
+  const [keepBg, setKeepBg] = useState(false);
   const [limiter, setLimiter] = useState(8000);
   const [maxFuel, setMaxFuel] = useState(60);
   const [emissive, setEmissive] = useState(false);
@@ -912,7 +913,7 @@ export function CreatorForm({ onCreated, onDisplay, usedIds }: { onCreated?: (h:
           <label>Opciones</label>
           <div className="col gap4">
             <label className="row">
-              <input type="checkbox" checked={keepBg} onChange={(e) => setKeepBg(e.target.checked)} /> KEEP_BACKGROUND (no limpiar la textura)
+              <input type="checkbox" checked={keepBg} onChange={(e) => setKeepBg(e.target.checked)} /> Conservar el frame anterior (KEEP_BACKGROUND; puede producir ghosting)
             </label>
             <label className="row">
               <input type="checkbox" checked={emissive} onChange={(e) => setEmissive(e.target.checked)} /> Hacer emisiva la malla (shader replacement)
