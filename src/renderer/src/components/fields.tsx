@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Color, RpmValue } from '@shared/model';
 import { VarPicker } from './VarPicker';
 import { useStore, activeDisplayOf } from '../store';
@@ -14,9 +14,71 @@ export function Prop({ label, children, title }: { label: string; children: Reac
   );
 }
 
+/** píxeles de arrastre por cada paso del valor */
+const SCRUB_PX = 4;
+
+/**
+ * Campo numérico con arrastre: pulsar sobre el valor y mover el ratón a la izquierda baja y a la
+ * derecha sube (paso a paso; Mayús ×10, Ctrl ×0,1). Un clic sin mover deja escribir el valor.
+ */
 export function Num({ value, onChange, step = 1, min, max, disabled }: { value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; disabled?: boolean }) {
   const [txt, setTxt] = useState(String(value));
+  const [scrubbing, setScrubbing] = useState(false);
+  const drag = useRef<{ startX: number; startValue: number; moved: boolean; pointerId: number } | null>(null);
   useEffect(() => setTxt(String(Math.round(value * 1000) / 1000)), [value]);
+  const clamp = (v: number) => {
+    let c = v;
+    if (min !== undefined) c = Math.max(min, c);
+    if (max !== undefined) c = Math.min(max, c);
+    return Math.round(c * 1000) / 1000;
+  };
+  const decimals = Math.max(0, Math.min(3, -Math.floor(Math.log10(step)) ));
+  function onPointerDown(e: React.PointerEvent<HTMLInputElement>) {
+    if (disabled || e.button !== 0) return;
+    const input = e.currentTarget;
+    if (document.activeElement === input) return; // ya se está escribiendo: comportamiento normal del ratón
+    e.preventDefault();
+    try {
+      input.setPointerCapture(e.pointerId);
+    } catch {
+      /* sin captura: el arrastre sigue funcionando mientras el puntero esté sobre el campo */
+    }
+    drag.current = { startX: e.clientX, startValue: value, moved: false, pointerId: e.pointerId };
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLInputElement>) {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    if (!d.moved) {
+      if (Math.abs(dx) < 3) return;
+      d.moved = true;
+      setScrubbing(true);
+      useStore.getState().beginBatch();
+    }
+    const mult = e.shiftKey ? 10 : e.ctrlKey || e.altKey ? 0.1 : 1;
+    const steps = Math.trunc(dx / SCRUB_PX);
+    const next = clamp(d.startValue + steps * step * mult);
+    if (next !== value) onChange(Number(next.toFixed(decimals + (mult < 1 ? 1 : 0))));
+  }
+  function onPointerUp(e: React.PointerEvent<HTMLInputElement>) {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    const input = e.currentTarget;
+    try {
+      input.releasePointerCapture(d.pointerId);
+    } catch {
+      /* ya liberado */
+    }
+    if (d.moved) {
+      setScrubbing(false);
+      useStore.getState().endBatch();
+    } else {
+      // clic sin arrastrar: editar el valor a mano
+      input.focus();
+      input.select();
+    }
+  }
   const commit = () => {
     const v = parseFloat(txt.replace(',', '.'));
     if (Number.isFinite(v)) {
@@ -35,6 +97,12 @@ export function Num({ value, onChange, step = 1, min, max, disabled }: { value: 
       min={min}
       max={max}
       disabled={disabled}
+      className={scrubbing ? 'scrubbing' : 'scrub'}
+      title="Arrastra a izquierda/derecha para cambiar el valor (Mayús ×10, Ctrl ×0,1); clic para escribir"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       onChange={(e) => setTxt(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

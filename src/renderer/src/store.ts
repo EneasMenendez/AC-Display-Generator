@@ -43,6 +43,8 @@ interface State {
   followPageRules: boolean;
   /** contador: cada incremento reproduce la secuencia de arranque en la previsualización */
   bootRequest: number;
+  /** mientras es true los cambios no crean pasos de deshacer (arrastre de valores) */
+  batching: boolean;
   toast: Toast | null;
   zoom: number;
   pan: { x: number; y: number };
@@ -92,6 +94,9 @@ interface State {
   setPhysicalView(v: boolean): void;
   setFollowPageRules(v: boolean): void;
   playBoot(): void;
+  /** agrupa los cambios siguientes en un solo paso de deshacer hasta endBatch() */
+  beginBatch(): void;
+  endBatch(): void;
   setToast(t: Toast | null): void;
   setZoom(z: number): void;
   setPan(p: { x: number; y: number }): void;
@@ -146,6 +151,7 @@ export const useStore = create<State>((set, get) => ({
   physicalView: false,
   followPageRules: false,
   bootRequest: 0,
+  batching: false,
   toast: null,
   zoom: 0.5,
   pan: { x: 0, y: 0 },
@@ -168,8 +174,9 @@ export const useStore = create<State>((set, get) => ({
       if (!s.project) return {};
       const next = clone(s.project);
       fn(next);
-      const past = commit ? [...s.past.slice(-MAX_HISTORY + 1), s.project] : s.past;
-      return { project: next, past, future: commit ? [] : s.future, dirty: true };
+      const commitNow = commit && !s.batching;
+      const past = commitNow ? [...s.past.slice(-MAX_HISTORY + 1), s.project] : s.past;
+      return { project: next, past, future: commitNow ? [] : s.future, dirty: true };
     }),
   patchDisplay: (fn, commit = true) =>
     get().patchProject((p) => {
@@ -371,6 +378,13 @@ export const useStore = create<State>((set, get) => ({
   setPhysicalView: (physicalView) => set({ physicalView }),
   setFollowPageRules: (followPageRules) => set({ followPageRules }),
   playBoot: () => set((s) => ({ previewMode: true, followPageRules: true, selection: [], bootRequest: s.bootRequest + 1 })),
+  beginBatch: () => {
+    const s = get();
+    if (s.batching) return;
+    if (s.project) s.snapshot();
+    set({ batching: true });
+  },
+  endBatch: () => set({ batching: false }),
   setToast: (toast) => set({ toast }),
   setZoom: (zoom) => set({ zoom }),
   setPan: (pan) => set({ pan }),

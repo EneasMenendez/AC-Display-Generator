@@ -1028,3 +1028,16 @@ table.info td:first-child {
   margin-left: 4px;
   color: var(--warn);
 }
+
+/* campos numéricos con arrastre */
+input[type='number'].scrub {
+  cursor: ew-resize;
+}
+input[type='number'].scrub:focus {
+  cursor: text;
+}
+input[type='number'].scrubbing {
+  cursor: ew-resize;
+  outline: 1px solid var(--accent);
+  user-select: none;
+}
