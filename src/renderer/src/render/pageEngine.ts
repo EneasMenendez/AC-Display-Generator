@@ -1,4 +1,5 @@
 import type { DisplayProject, Page, PageCondition } from '@shared/model';
+import { pageConditions } from '@shared/model';
 import type { SimContext } from '../sim';
 import { compare } from './compare';
 
@@ -151,7 +152,7 @@ export class PageEngine {
     }
     // normales: condición automática > botón
     if (!page && normalPages.length) {
-      page = normalPages.find((pg) => pg.when && compare(ctx.values[pg.when.variable], pg.when.op, pg.when.value, ctx)) ?? null;
+      page = normalPages.find((pg) => pageConditions(pg).some((c) => compare(ctx.values[c.variable], c.op, c.value, ctx))) ?? null;
       if (!page) {
         const ps = display.settings.pageSwitch;
         if (ps.input !== 'none') {

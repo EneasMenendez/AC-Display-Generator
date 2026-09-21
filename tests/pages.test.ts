@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LuaFactory } from 'wasmoon';
-import { createElement, createEmptyProject, createPage, createTrigger, type Project, type TextElement, type VideoElement } from '../src/shared/model';
+import { createElement, createEmptyProject, createPage, createTrigger, pageConditions, type Project, type TextElement, type VideoElement } from '../src/shared/model';
 import { createTemplatePage, TEMPLATES } from '../src/shared/templates';
 import { parseProfile } from '../src/shared/profile';
 import { generateConfigLua, generateDisplayLua, collectVariables } from '../src/shared/generator';
@@ -69,11 +69,23 @@ describe('máquina de páginas (editor)', () => {
     r = eng.step(d, ctx({ speed: 80 }, 9), 9)!;
     expect(r.page.name).toBe('Principal');
   });
+  it('la página de boxes se muestra en pit lane o con el limitador puesto (cualquiera de las dos)', () => {
+    const p = project();
+    const d = p.displays[0];
+    d.pages.splice(3, 0, createTemplatePage('pit_limiter', d.canvas, 8000));
+    const eng = new PageEngine();
+    const ctx = (over: Record<string, number | boolean>, t: number) => resolveSim({ rpm: 3000, speed: 60, ...over }, profile.displays[0].defaults, t, 1);
+    expect(eng.step(d, ctx({}, 0), 0)!.page.name).toBe('Principal');
+    expect(eng.step(d, ctx({ in_pitlane: true }, 1), 1)!.page.name).toBe('Limitador de boxes');
+    expect(eng.step(d, ctx({ in_pitlane: false, pit_limiter: true }, 2), 2)!.page.name).toBe('Limitador de boxes');
+    expect(eng.step(d, ctx({ in_pitlane: false, pit_limiter: false }, 3), 3)!.page.name).toBe('Principal');
+    expect(collectVariables(d)).toContain('pit_limiter');
+  });
   it('las plantillas generan páginas válidas y sus variables existen', () => {
     for (const t of TEMPLATES) {
       const pg = createTemplatePage(t.id, { width: 1024, height: 512 }, 8000);
       expect(pg.elements.length).toBeGreaterThan(2);
-      expect(pg.kind === 'function' ? !!pg.trigger : !!pg.when).toBe(true);
+      expect(pg.kind === 'function' ? !!pg.trigger : pageConditions(pg).length > 0).toBe(true);
     }
     const p = project();
     const vars = collectVariables(p.displays[0]);

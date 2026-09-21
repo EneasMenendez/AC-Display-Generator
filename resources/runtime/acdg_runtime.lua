@@ -1236,6 +1236,7 @@ local function resolveNormal()
     local pg = cfg.pages[normalPages[i]]
     local w = pg.when
     if w and compare(getVar(w.variable), w.op, w.value) then return pg end
+    if pg.whenAny and condsAny(pg.whenAny) then return pg end
   end
   local ps = cfg.settings.pageSwitch
   if ps and ps.input and ps.input ~= 'none' then

@@ -1,5 +1,5 @@
 import type { DisplayElement, ElementAnim, Glow, PageCondition, PageTrigger, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
-import { DEFAULT_ANIM, DEFAULT_GLOW, createTrigger, newId } from '@shared/model';
+import { DEFAULT_ANIM, DEFAULT_GLOW, createTrigger, newId, pageConditions, setPageConditions } from '@shared/model';
 import { TEMPLATES, createTemplatePage, type TemplateId } from '@shared/templates';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
@@ -1454,32 +1454,14 @@ function ProjectProps() {
             {!pg.kind && (
               <div className="row gap4 wrap">
                 <Chk
-                  value={!!pg.when}
-                  label="Mostrar automáticamente si"
-                  onChange={(v) => patchDisplay((d) => (d.pages[i].when = v ? { variable: 'in_pitlane', op: '==', value: true } : undefined))}
+                  value={pageConditions(pg).length > 0}
+                  label="Mostrar automáticamente si (cualquiera)"
+                  onChange={(v) => patchDisplay((d) => setPageConditions(d.pages[i], v ? [{ variable: 'in_pitlane', op: '==', value: true }] : []))}
                 />
               </div>
             )}
-            {!pg.kind && pg.when && (
-              <div className="row gap4">
-                <VarSelect value={pg.when.variable} onChange={(v) => v && patchDisplay((d) => ((d.pages[i].when!.variable = v), (d.pages[i].when!.value = VARIABLE_MAP[v]?.type === 'boolean' ? true : 0)))} />
-                {VARIABLE_MAP[pg.when.variable]?.type === 'boolean' ? (
-                  <Sel value={pg.when.value === true ? 'true' : 'false'} onChange={(v) => patchDisplay((d) => ((d.pages[i].when!.op = '=='), (d.pages[i].when!.value = v === 'true')))} options={[{ value: 'true', label: 'activo' }, { value: 'false', label: 'inactivo' }]} />
-                ) : (
-                  <>
-                    <select value={pg.when.op} onChange={(e) => patchDisplay((d) => (d.pages[i].when!.op = e.target.value as Rule['when']['op']))} style={{ width: 56 }}>
-                      {['>', '>=', '<', '<=', '==', '!='].map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                    {pg.when.variable === 'rpm' ? (
-                      <RpmField value={typeof pg.when.value === 'boolean' ? 0 : pg.when.value} limiter={limiter} onChange={(v) => patchDisplay((d) => (d.pages[i].when!.value = v))} />
-                    ) : (
-                      <Num value={Number(pg.when.value)} onChange={(v) => patchDisplay((d) => (d.pages[i].when!.value = v))} />
-                    )}
-                  </>
-                )}
-              </div>
+            {!pg.kind && pageConditions(pg).length > 0 && (
+              <CondList list={pageConditions(pg)} onChange={(l) => patchDisplay((d) => setPageConditions(d.pages[i], l))} limiter={limiter} emptyLabel="Sin condiciones." />
             )}
           </div>
         ))}

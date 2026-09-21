@@ -8,7 +8,7 @@ export type TemplateId = 'launch' | 'pit_limiter' | 'settings' | 'fuel';
 
 export const TEMPLATES: { id: TemplateId; label: string; description: string }[] = [
   { id: 'launch', label: 'Launch control', description: 'Con el botón KERS mantenido y el coche parado: rpm actuales frente al objetivo, barra de rpm y luz READY.' },
-  { id: 'pit_limiter', label: 'Limitador de boxes', description: 'Automática con el limitador activo: velocidad, límite y tiempo en pit lane.' },
+  { id: 'pit_limiter', label: 'Limitador de boxes', description: 'Automática al entrar en boxes o al poner el limitador: velocidad, límite y tiempo en pit lane.' },
   { id: 'settings', label: 'Ajustes del coche', description: 'Conmutable con Extra A: freno, ABS, TC, mapa de motor y presiones.' },
   { id: 'fuel', label: 'Combustible / estrategia', description: 'Conmutable con Extra B: litros, vueltas restantes y consumo por vuelta.' },
 ];
@@ -67,18 +67,25 @@ export function createTemplatePage(id: TemplateId, canvas: { width: number; heig
     }
     case 'pit_limiter': {
       const p = createPage('Limitador de boxes', 'normal');
-      p.when = { variable: 'pit_limiter', op: '==', value: true };
+      // en boxes (automático) o con el limitador puesto a mano fuera de ellos
+      p.when = { variable: 'in_pitlane', op: '==', value: true };
+      p.whenAny = [{ variable: 'pit_limiter', op: '==', value: true }];
       const bg = createElement('rect', 0, 0) as RectElement;
       bg.width = W;
       bg.height = H;
       bg.config.fill = '#000000FF';
       bg.name = 'Fondo';
-      const title = text(px(0.05), py(0.06), px(0.9), py(0.14), undefined, { staticText: 'PIT LIMITER', color: '#2D7BFF', name: 'Título' });
-      title.rules.push({ id: 'blink', when: { variable: 'pit_limiter', op: '==', value: true }, set: { blinkHz: 1.5 } });
+      const title = text(px(0.05), py(0.06), px(0.9), py(0.14), undefined, { staticText: 'PIT LANE', color: '#2D7BFF', name: 'Título' });
+      const limOn = text(px(0.05), py(0.06), px(0.9), py(0.14), undefined, { staticText: 'PIT LIMITER', color: '#28C840', name: 'Limitador puesto' });
+      limOn.visible = true;
+      // con el limitador puesto: el título cambia a "PIT LIMITER" parpadeando; sin él se ve "PIT LANE"
+      limOn.rules.push({ id: 'off', when: { variable: 'pit_limiter', op: '==', value: false }, set: { visible: false } });
+      limOn.rules.push({ id: 'blink', when: { variable: 'pit_limiter', op: '==', value: true }, set: { blinkHz: 1.5 } });
+      title.rules.push({ id: 'hide', when: { variable: 'pit_limiter', op: '==', value: true }, set: { visible: false } });
       const speed = text(px(0.05), py(0.28), px(0.9), py(0.4), 'speed', { suffix: ' km/h', name: 'Velocidad', color: '#FFFFFF' });
       const lim = text(px(0.05), py(0.7), px(0.9), py(0.1), undefined, { staticText: 'LÍMITE 80 km/h', color: '#888888', name: 'Límite' });
       const tPit = text(px(0.05), py(0.82), px(0.9), py(0.1), 'page_time', { decimals: 1, suffix: ' s en boxes', color: '#888888', name: 'Tiempo' });
-      p.elements.push(bg, title, speed, lim, tPit);
+      p.elements.push(bg, title, limOn, speed, lim, tPit);
       return p;
     }
     case 'settings': {

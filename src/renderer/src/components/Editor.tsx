@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { pageConditions } from '@shared/model';
 import { useStore, toast, activeDisplayOf, activePageOf } from '../store';
 import { saveProjectFlow } from '../flows';
 import { CanvasEditor, isTyping } from './CanvasEditor';
@@ -181,11 +182,11 @@ export function Editor() {
               <button
                 className={`page-tab ${i === activePage ? 'active' : ''}`}
                 onClick={() => setActivePage(i)}
-                title={pg.kind === 'boot' ? `Pantalla de arranque (${pg.duration ?? 3} s)` : pg.kind === 'function' ? `Pantalla de funcionalidad (${pg.trigger?.input ?? ''})` : pg.when ? 'Página con condición automática' : 'Página'}
+                title={pg.kind === 'boot' ? `Pantalla de arranque (${pg.duration ?? 3} s)` : pg.kind === 'function' ? `Pantalla de funcionalidad (${pg.trigger?.input ?? ''})` : pageConditions(pg).length ? 'Página con condición automática' : 'Página'}
               >
                 {pg.kind === 'boot' ? '▶ ' : pg.kind === 'function' ? '⚡ ' : ''}
                 {pg.name}
-                {pg.when && !pg.kind && <span className="dot">•</span>}
+                {pageConditions(pg).length > 0 && !pg.kind && <span className="dot">•</span>}
               </button>
               {i === activePage && dp.pages.length > 1 && (
                 <button

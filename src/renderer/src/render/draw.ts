@@ -1,5 +1,5 @@
 import type { Color, DisplayElement, DisplayProject, Glow, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
-import { resolveRpm } from '@shared/model';
+import { pageConditions, resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
 import { compare } from './compare';
 import { formatBinding } from '@shared/format';
@@ -107,9 +107,7 @@ export interface RuleResult {
 
 /** Evalúa la condición de una página (misma semántica que el runtime). */
 export function pageMatches(page: Page, ctx: SimContext): boolean {
-  if (!page.when) return false;
-  const v = ctx.values[page.when.variable];
-  return compare(v, page.when.op, page.when.value, ctx);
+  return pageConditions(page).some((c) => compare(ctx.values[c.variable], c.op, c.value, ctx));
 }
 
 export function applyRules(el: DisplayElement, ctx: SimContext): RuleResult {

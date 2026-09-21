@@ -1,3 +1,4 @@
+import { pageConditions } from './model';
 import type { DisplayElement, DisplayProject, PhysicalNeedle, Project } from './model';
 import type { DisplayDef, DisplayProfile } from './profile';
 import { VARIABLE_MAP, type VariableDef } from './variables';
@@ -63,7 +64,7 @@ export function collectVariables(display: DisplayProject): string[] {
   const ids = new Set<string>();
   const add = (id?: string) => id && ids.add(id);
   for (const page of display.pages) {
-    if (page.when) add(page.when.variable);
+    for (const c of pageConditions(page)) add(c.variable);
     if (page.trigger) {
       add(page.trigger.input);
       for (const c of [...page.trigger.enter, ...page.trigger.exit]) add(c.variable);
@@ -185,6 +186,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
     id: p.id,
     name: p.name,
     when: p.when,
+    whenAny: p.whenAny,
     kind: p.kind ?? 'normal',
     duration: p.duration,
     trigger: p.trigger,

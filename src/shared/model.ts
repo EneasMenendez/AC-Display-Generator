@@ -405,6 +405,8 @@ export interface Page {
   elements: DisplayElement[];
   /** si se cumple, esta página se muestra automáticamente (prioridad por orden); si no, se usa la seleccionada por botón */
   when?: PageCondition;
+  /** condiciones automáticas adicionales: la página se muestra si se cumple `when` O cualquiera de estas */
+  whenAny?: PageCondition[];
   kind?: PageKind;
   /** duración en segundos (pantallas de arranque) */
   duration?: number;
@@ -829,6 +831,17 @@ export function migrateProject(raw: unknown): Project {
     d.fonts = d.fonts ?? {};
   }
   return proj;
+}
+
+/** Todas las condiciones automáticas de una página (when + whenAny), en orden. */
+export function pageConditions(page: Pick<Page, 'when' | 'whenAny'>): PageCondition[] {
+  return [...(page.when ? [page.when] : []), ...(page.whenAny ?? [])];
+}
+
+/** Guarda una lista de condiciones automáticas en la página (la primera en `when`, el resto en `whenAny`). */
+export function setPageConditions(page: Page, list: PageCondition[]): void {
+  page.when = list[0];
+  page.whenAny = list.length > 1 ? list.slice(1) : undefined;
 }
 
 /** Resuelve un RpmValue a rpm absolutas usando el limitador. */

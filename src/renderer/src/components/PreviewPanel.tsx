@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { VARIABLES, VARIABLE_MAP } from '@shared/variables';
 import { collectVariables } from '@shared/generator';
+import { pageConditions } from '@shared/model';
 import { useStore, activeDisplayOf } from '../store';
 
 const MAIN = ['rpm', 'speed', 'gear', 'throttle', 'brake', 'fuel', 'water_temp', 'oil_temp', 'oil_pressure', 'delta', 'lap_time', 'last_lap', 'best_lap', 'battery_voltage', 'turbo_boost', 'race_position'];
@@ -71,7 +72,7 @@ export function PreviewPanel() {
                 {pg.name}
               </button>
             ))}
-            {dp.pages.some((pg) => pg.when || pg.kind) && (
+            {dp.pages.some((pg) => pageConditions(pg).length > 0 || pg.kind) && (
               <button className={`scenario ${followPageRules ? 'active' : ''}`} onClick={() => setFollowPageRules(!followPageRules)} title="En modo previsualización, cambiar de página como en el juego (arranque, botones, condiciones)">
                 Automático
               </button>
