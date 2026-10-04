@@ -1,5 +1,6 @@
 import { pageConditions } from './model';
 import type { DisplayElement, DisplayProject, PhysicalNeedle, Project } from './model';
+import { buttonStateVar, displayHasTouch, isSwitchAction, switchVar, usedSwitches } from './touch';
 import type { DisplayDef, DisplayProfile } from './profile';
 import { VARIABLE_MAP, type VariableDef } from './variables';
 
@@ -93,6 +94,10 @@ export function collectVariables(display: DisplayProject): string[] {
         case 'needle':
           add(el.config.variable);
           break;
+        case 'button':
+          // variable que ilumina el botón (interruptor táctil, luces, DRS…)
+          add(buttonStateVar(el));
+          break;
       }
     }
   }
@@ -165,6 +170,23 @@ export interface GeneratedConfig {
   variables: string[];
 }
 
+/** Parte táctil de la configuración: estado inicial de los interruptores y gestos. */
+function touchConfig(dp: DisplayProject): Record<string, unknown> {
+  const t = dp.settings.touch;
+  const switches: Record<string, { initial: boolean; remember: boolean }> = {};
+  for (const key of usedSwitches(dp)) {
+    const def = t?.switches?.find((x) => x.key === key);
+    switches[key] = { initial: def?.initial ?? false, remember: def?.remember ?? false };
+  }
+  return {
+    enabled: displayHasTouch(dp),
+    hover: t?.hover !== false,
+    swipePages: !!t?.swipePages,
+    swipePct: t?.swipePct ?? 25,
+    switches,
+  };
+}
+
 export function generateConfigLua(project: Project, dp: DisplayProject, display: DisplayDef, opts: GenerateOptions = {}): GeneratedConfig {
   const assets: AssetRef[] = [];
   const addAsset = (source: string): string => {
@@ -223,6 +245,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
       refreshHz: dp.settings.refreshHz || 0,
       boot,
       pageSwitch: dp.settings.pageSwitch,
+      touch: touchConfig(dp),
     },
     defaults: {
       rpmLimiter: display.defaults.rpm_limiter,
@@ -285,6 +308,16 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
       return { ...base, config: el.config, file: el.config.image ? addAsset(el.config.image) : undefined };
     case 'video':
       return { ...base, config: el.config, file: el.config.file ? addAsset(el.config.file) : undefined };
+    case 'button':
+      return {
+        ...base,
+        config: el.config,
+        file: el.config.image ? addAsset(el.config.image) : undefined,
+        fileOn: el.config.imageOn ? addAsset(el.config.imageOn) : undefined,
+        /** variable que lo ilumina (resuelta aquí para que el runtime no repita la lógica) */
+        stateVar: buttonStateVar(el),
+        switchKey: isSwitchAction(el.config.action) ? el.config.switch || 'a' : undefined,
+      };
     default:
       return { ...base, config: (el as { config: unknown }).config };
   }
@@ -295,6 +328,8 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
 export interface IniOptions {
   /** nombre del script, relativo a extension/ (o skins/<skin>/) */
   script: string;
+  /** pantalla táctil: CSP proyecta el puntero sobre la malla (INTERACTIVE = 1) */
+  interactive?: boolean;
 }
 
 export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef, opts: IniOptions): string {
@@ -310,6 +345,10 @@ export function generateDisplayIni(profile: DisplayProfile, display: DisplayDef,
   lines.push(`RESOLUTION = ${display.texture_size.width}, ${display.texture_size.height}`);
   lines.push(`KEEP_BACKGROUND = ${display.keep_background ? 1 : 0}`);
   lines.push(`SKIP_FRAMES = ${display.skip_frames}`);
+  if (opts.interactive) {
+    // el puntero del ratón se proyecta sobre la malla y llega al script en píxeles de la textura
+    lines.push('INTERACTIVE = 1 ; pantalla táctil: cuesta un raycast cuando se usa el ratón');
+  }
   lines.push('');
 
   const em = display.emissive;

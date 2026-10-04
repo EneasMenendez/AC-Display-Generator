@@ -1,5 +1,6 @@
 import type { DisplayElement, ElementAnim, Glow, PageCondition, PageTrigger, Rule, TextStyle, Threshold, TimeFormat } from '@shared/model';
-import { DEFAULT_ANIM, DEFAULT_GLOW, createTrigger, newId, pageConditions, setPageConditions } from '@shared/model';
+import { DEFAULT_ANIM, DEFAULT_GLOW, DEFAULT_TOUCH, createTrigger, newId, pageConditions, setPageConditions } from '@shared/model';
+import { TOUCH_ACTIONS, TOUCH_GROUPS, TOUCH_SWITCHES, TOUCH_ACTION_MAP, buttonStateVar, displayHasTouch, isSwitchAction, switchVar, usedSwitches } from '@shared/touch';
 import { TEMPLATES, createTemplatePage, type TemplateId } from '@shared/templates';
 import { VARIABLE_MAP } from '@shared/variables';
 import { api } from '../api';
@@ -71,6 +72,7 @@ export function PropertiesPanel() {
       </div>
 
       {el.type === 'text' && <TextProps el={el} update={update} />}
+      {el.type === 'button' && <ButtonProps el={el} update={update} />}
       {el.type === 'gear' && (
         <div className="prop-group">
           <h3>Marcha</h3>
@@ -655,6 +657,7 @@ export function typeLabel(t: DisplayElement['type']): string {
     shift_lights: 'Luces de cambio',
     needle: 'Aguja',
     video: 'Vídeo',
+    button: 'Botón táctil',
   }[t];
 }
 
@@ -802,6 +805,171 @@ function unitChoices(base: string): { value: string; label: string }[] {
   const alts = map[base];
   if (!alts) return [];
   return [{ value: '', label: `${base} (automático)` }, { value: base, label: base }, ...alts.map((a) => ({ value: a, label: a }))];
+}
+
+function ButtonProps({ el, update }: { el: Extract<DisplayElement, { type: 'button' }>; update: (fn: (e: DisplayElement) => void) => void }) {
+  const dp = useStore(activeDisplayOf)!;
+  const patchDisplay = useStore((st) => st.patchDisplay);
+  const c = el.config;
+  const def = TOUCH_ACTION_MAP[c.action];
+  const set = (fn: (cfg: typeof c) => void) => update((e) => e.type === 'button' && fn(e.config));
+  const normalPages = dp.pages.filter((pg) => !pg.kind || pg.kind === 'normal');
+  const stateVar = buttonStateVar(el);
+  const key = c.switch || 'a';
+  const swDef = dp.settings.touch?.switches?.find((x) => x.key === key);
+  const setSwitchDef = (patch: Partial<{ label: string; initial: boolean; remember: boolean }>) =>
+    patchDisplay((d) => {
+      d.settings.touch = { ...DEFAULT_TOUCH, ...(d.settings.touch ?? {}), switches: [...(d.settings.touch?.switches ?? [])] };
+      const list = d.settings.touch.switches;
+      const i = list.findIndex((x) => x.key === key);
+      const base = i >= 0 ? list[i] : { key, label: `Interruptor ${key.toUpperCase()}`, initial: false, remember: false };
+      const next = { ...base, ...patch };
+      if (i >= 0) list[i] = next;
+      else list.push(next);
+    });
+
+  return (
+    <>
+      <div className="prop-group">
+        <h3>Botón táctil</h3>
+        <Prop label="Acción" title="Lo que hace al pulsarlo en el coche. Las acciones del coche usan la API de control de CSP (ac.setKERS, ac.setHeadlights…).">
+          <Sel
+            value={c.action}
+            onChange={(v) => set((cfg) => (cfg.action = v as typeof cfg.action))}
+            options={TOUCH_GROUPS.flatMap((grp) =>
+              TOUCH_ACTIONS.filter((a) => a.group === grp).map((a) => ({ value: a.id, label: `${grp} · ${a.label}` })),
+            )}
+          />
+        </Prop>
+        {def?.note && <div className="muted small mb8">{def.note}</div>}
+        {c.action === 'page_go' && (
+          <Prop label="Página destino">
+            <Sel
+              value={c.pageId ?? normalPages[0]?.id ?? ''}
+              onChange={(v) => set((cfg) => (cfg.pageId = v))}
+              options={normalPages.map((pg) => ({ value: pg.id, label: pg.name }))}
+            />
+          </Prop>
+        )}
+        {isSwitchAction(c.action) && (
+          <>
+            <Prop label="Interruptor" title="Variable interna del display: úsala en reglas, iconos o condiciones de página (Interruptor táctil A…F)">
+              <Sel value={key} onChange={(v) => set((cfg) => (cfg.switch = v))} options={TOUCH_SWITCHES.map((k) => ({ value: k, label: `Interruptor ${k.toUpperCase()} (${switchVar(k)})` }))} />
+            </Prop>
+            <Prop label="Nombre">
+              <Txt value={swDef?.label ?? `Interruptor ${key.toUpperCase()}`} onChange={(v) => setSwitchDef({ label: v })} />
+            </Prop>
+            <Prop label="Al cargar">
+              <div className="col gap4">
+                <Chk value={swDef?.initial ?? false} label="Empezar activado" onChange={(v) => setSwitchDef({ initial: v })} />
+                <Chk value={swDef?.remember ?? false} label="Recordar entre sesiones" onChange={(v) => setSwitchDef({ remember: v })} />
+              </div>
+            </Prop>
+          </>
+        )}
+        <Prop label="Pulsación" title="tap: actúa al tocar · mientras se mantiene: actúa sin parar hasta soltar (KERS) · repetir: repite mientras se mantiene (subir valores)">
+          <Sel
+            value={c.behavior}
+            onChange={(v) => set((cfg) => (cfg.behavior = v))}
+            options={[
+              { value: 'tap', label: 'Al tocar' },
+              { value: 'hold', label: 'Mientras se mantiene' },
+              { value: 'repeat', label: 'Repetir al mantener' },
+            ]}
+          />
+        </Prop>
+        {c.behavior === 'repeat' && (
+          <Prop label="Repetir cada (ms)">
+            <Num value={c.repeatMs} onChange={(v) => set((cfg) => (cfg.repeatMs = Math.max(50, v)))} min={50} max={2000} step={10} />
+          </Prop>
+        )}
+        {def?.usesStep && (
+          <Prop label="Paso" title="Cuánto cambia el valor en cada pulsación (0 = el paso normal de la acción)">
+            <Num value={c.step} onChange={(v) => set((cfg) => (cfg.step = Math.max(0, v)))} min={0} step={0.005} />
+          </Prop>
+        )}
+        <Prop label="Zona táctil extra (px)" title="Amplía el área sensible alrededor del botón: ayuda a acertar con el coche en movimiento">
+          <Num value={c.padding} onChange={(v) => set((cfg) => (cfg.padding = Math.max(0, v)))} min={0} max={200} />
+        </Prop>
+        {def?.holdOnly && c.behavior !== 'hold' && (
+          <div className="muted small">Esta acción está pensada para "mientras se mantiene".</div>
+        )}
+      </div>
+      <div className="prop-group">
+        <h3>Aspecto</h3>
+        <Prop label="Forma">
+          <Sel
+            value={c.shape}
+            onChange={(v) => set((cfg) => (cfg.shape = v))}
+            options={[
+              { value: 'rect', label: 'Rectángulo' },
+              { value: 'circle', label: 'Círculo' },
+              { value: 'none', label: 'Sin fondo (solo texto/imagen)' },
+            ]}
+          />
+        </Prop>
+        <Prop label="Relleno / Puntero">
+          <div className="pair">
+            <ColorField value={c.fill} onChange={(v) => set((cfg) => (cfg.fill = v))} />
+            <ColorField value={c.fillHover} onChange={(v) => set((cfg) => (cfg.fillHover = v))} />
+          </div>
+        </Prop>
+        <Prop label="Pulsado / Activo">
+          <div className="pair">
+            <ColorField value={c.fillActive} onChange={(v) => set((cfg) => (cfg.fillActive = v))} />
+            <ColorField value={c.fillOn} onChange={(v) => set((cfg) => (cfg.fillOn = v))} />
+          </div>
+        </Prop>
+        <Prop label="Borde / Grosor">
+          <div className="pair">
+            <ColorField value={c.stroke} onChange={(v) => set((cfg) => (cfg.stroke = v))} />
+            <Num value={c.strokeWidth} onChange={(v) => set((cfg) => (cfg.strokeWidth = Math.max(0, v)))} min={0} max={40} />
+          </div>
+        </Prop>
+        {c.shape === 'rect' && (
+          <Prop label="Esquinas">
+            <Num value={c.radius} onChange={(v) => set((cfg) => (cfg.radius = Math.max(0, v)))} min={0} />
+          </Prop>
+        )}
+        <Prop label="Imagen">
+          <ImageField value={c.image} onChange={(v) => set((cfg) => (cfg.image = v))} />
+        </Prop>
+        <Prop label="Imagen activo">
+          <ImageField value={c.imageOn} onChange={(v) => set((cfg) => (cfg.imageOn = v))} />
+        </Prop>
+        <Prop label="Texto">
+          <Txt value={c.label} onChange={(v) => set((cfg) => (cfg.label = v))} />
+        </Prop>
+        <Prop label="Texto activo">
+          <Txt value={c.labelOn ?? ''} placeholder="(el mismo)" onChange={(v) => set((cfg) => (cfg.labelOn = v || undefined))} />
+        </Prop>
+        <StyleProps style={c.style} onChange={(st) => set((cfg) => (cfg.style = st))} />
+        <Prop label="Color activo">
+          <ColorField value={c.colorOn} onChange={(v) => set((cfg) => (cfg.colorOn = v))} />
+        </Prop>
+        <Prop label="Encendido">
+          <Chk value={c.litWhenOn} label="Iluminar cuando la acción está activa" onChange={(v) => set((cfg) => (cfg.litWhenOn = v))} />
+        </Prop>
+        {c.litWhenOn && (
+          <div className="muted small mb8">
+            {stateVar ? `Se ilumina con: ${VARIABLE_MAP[stateVar]?.label ?? stateVar}` : 'Esta acción no informa de su estado: el botón no se puede iluminar.'}
+          </div>
+        )}
+        <GlowProps
+          glow={c.glow ?? DEFAULT_GLOW}
+          blinkDuty={undefined}
+          hasBlink={false}
+          onGlow={(g) => set((cfg) => (cfg.glow = g))}
+          onDuty={() => undefined}
+        />
+      </div>
+      {!displayHasTouch(dp) && (
+        <div className="prop-group">
+          <div className="muted small">El táctil está desactivado en los ajustes del display: el botón se verá pero no responderá.</div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function IconProps({ el, update }: { el: Extract<DisplayElement, { type: 'icon' }>; update: (fn: (e: DisplayElement) => void) => void }) {
@@ -1605,6 +1773,52 @@ function ProjectProps() {
           </Prop>
         </div>
       )}
+      <div className="prop-group">
+        <h3>Pantalla táctil</h3>
+        <Prop label="Táctil" title="Escribe INTERACTIVE = 1 en la sección del display: CSP proyecta el puntero del ratón sobre la malla y lo convierte en coordenadas de la pantalla. Cuesta un raycast cuando se usa el ratón, por eso conviene dejarlo en automático.">
+          <Sel
+            value={s.touch?.mode ?? 'auto'}
+            onChange={(v) => set({ touch: { ...DEFAULT_TOUCH, ...(s.touch ?? {}), mode: v } })}
+            options={[
+              { value: 'auto', label: 'Automático (si hay botones o gestos)' },
+              { value: 'on', label: 'Siempre activo' },
+              { value: 'off', label: 'Desactivado' },
+            ]}
+          />
+        </Prop>
+        <Prop label="Opciones">
+          <div className="col gap4">
+            <Chk value={s.touch?.hover !== false} label="Resaltar el botón bajo el puntero" onChange={(v) => set({ touch: { ...DEFAULT_TOUCH, ...(s.touch ?? {}), hover: v } })} />
+            <Chk value={!!s.touch?.swipePages} label="Deslizar en horizontal cambia de página" onChange={(v) => set({ touch: { ...DEFAULT_TOUCH, ...(s.touch ?? {}), swipePages: v } })} />
+          </div>
+        </Prop>
+        {s.touch?.swipePages && (
+          <Prop label="Recorrido mínimo (%)">
+            <Num value={s.touch?.swipePct ?? 25} onChange={(v) => set({ touch: { ...DEFAULT_TOUCH, ...(s.touch ?? {}), swipePct: Math.max(5, Math.min(90, v)) } })} min={5} max={90} />
+          </Prop>
+        )}
+        {usedSwitches(dp).length > 0 && (
+          <Prop label="Interruptores">
+            <div className="col gap4">
+              {usedSwitches(dp).map((k) => {
+                const sd = s.touch?.switches?.find((x) => x.key === k);
+                return (
+                  <span key={k} className="small mono">
+                    {switchVar(k)} — {sd?.label ?? `Interruptor ${k.toUpperCase()}`}
+                    {sd?.initial ? ' · empieza activado' : ''}
+                    {sd?.remember ? ' · se recuerda' : ''}
+                  </span>
+                );
+              })}
+            </div>
+          </Prop>
+        )}
+        <div className="muted small">
+          {displayHasTouch(dp)
+            ? 'Este display se instala como táctil. En el modo previsualización puedes pulsar los botones con el ratón para probarlos.'
+            : 'Añade un botón táctil (o activa los gestos) para que el display se instale como táctil.'}
+        </div>
+      </div>
       <div className="prop-group">
         <h3>Refresco</h3>
         <Prop label="Frecuencia" title="Cuántas veces por segundo se redibuja el display en el juego. Los displays reales suelen ir a 10–30 Hz; con menos frecuencia los valores rápidos (milésimas) se leen mejor y se ahorra rendimiento.">

@@ -39,6 +39,7 @@ const PATHS: Record<string, string> = {
   refresh: 'M13 8a5 5 0 1 1-1.5-3.5 M13 2.5v3h-3',
   leds: 'M3 8a1.5 1.5 0 1 0 0-.01 M8 8a1.5 1.5 0 1 0 0-.01 M13 8a1.5 1.5 0 1 0 0-.01',
   needle: 'M8 13V3 M5.5 5.5 8 3l2.5 2.5 M8 14a1.5 1.5 0 1 0 0-.01',
+  touch: 'M6.5 8.5V3.6a1.4 1.4 0 0 1 2.8 0V8 M9.3 8.2v-.6a1.4 1.4 0 0 1 2.8 0V11a4 4 0 0 1-4 4H7.6a3.6 3.6 0 0 1-3-1.7l-1.4-2.4a1.2 1.2 0 0 1 2-1.3l1.3 1.6',
 };
 
 export function Icon({ name, size = 16, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {

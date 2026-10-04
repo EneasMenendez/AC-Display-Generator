@@ -3,6 +3,8 @@
  * Es la única fuente de verdad: el editor lo renderiza y el generador lo traduce a display_config.lua.
  */
 
+import type { TouchActionId } from './touch';
+
 export const PROJECT_FORMAT_VERSION = 2;
 
 /** Color en formato #RRGGBB o #RRGGBBAA. */
@@ -33,7 +35,8 @@ export type ElementType =
   | 'gauge'
   | 'shift_lights'
   | 'needle'
-  | 'video';
+  | 'video'
+  | 'button';
 
 export type RuleOp = '>' | '>=' | '<' | '<=' | '==' | '!=';
 
@@ -251,6 +254,59 @@ export interface VideoElement extends ElementBase {
   };
 }
 
+/**
+ * Botón táctil. En el juego funciona con `INTERACTIVE = 1` en la sección del display: CSP proyecta el
+ * puntero sobre la malla y el runtime consulta `ui.rectHovered` / `ui.mouseClicked` en coordenadas de
+ * la textura. Ver src/shared/touch.ts para el catálogo de acciones.
+ */
+export interface ButtonConfig {
+  /** qué hace al pulsarlo */
+  action: TouchActionId;
+  /** página destino (action = page_go) */
+  pageId?: string;
+  /** interruptor táctil que usa (acciones switch_*): a…f → variable touch_a…touch_f */
+  switch: string;
+  /** paso de las acciones numéricas (reparto de frenada…); 0 = el de la acción */
+  step: number;
+  /** tap = al pulsar; hold = mientras se mantiene; repeat = repite mientras se mantiene */
+  behavior: 'tap' | 'hold' | 'repeat';
+  /** intervalo de repetición en ms (behavior = repeat) */
+  repeatMs: number;
+  /** forma del fondo; none = solo texto/imagen */
+  shape: 'rect' | 'circle' | 'none';
+  fill: Color;
+  /** color con el puntero encima */
+  fillHover: Color;
+  /** color mientras se mantiene pulsado */
+  fillActive: Color;
+  /** color cuando su acción está activa (interruptor puesto, luces encendidas…) */
+  fillOn: Color;
+  stroke: Color;
+  strokeWidth: number;
+  radius: number;
+  /** imagen del botón (asset del proyecto) */
+  image?: string;
+  /** imagen cuando está activo */
+  imageOn?: string;
+  label: string;
+  /** texto cuando está activo (vacío = el mismo) */
+  labelOn?: string;
+  style: TextStyle;
+  /** color del texto cuando está activo */
+  colorOn: Color;
+  /** iluminar el botón cuando su acción está activa */
+  litWhenOn: boolean;
+  /** destello del botón encendido */
+  glow?: Glow;
+  /** amplía la zona táctil respecto a la caja dibujada (px) */
+  padding: number;
+}
+
+export interface ButtonElement extends ElementBase {
+  type: 'button';
+  config: ButtonConfig;
+}
+
 export interface Threshold {
   value: number;
   color: Color;
@@ -368,7 +424,8 @@ export type DisplayElement =
   | GaugeElement
   | ShiftLightsElement
   | NeedleElement
-  | VideoElement;
+  | VideoElement
+  | ButtonElement;
 
 /** Condición que activa automáticamente una página (p. ej. "Boxes" cuando car.isInPitlane). */
 export interface PageCondition {
@@ -456,6 +513,33 @@ export function createTrigger(input = 'kers_button'): PageTrigger {
 /** Entrada de CSP (botón del volante / tecla extra) que pasa a la siguiente página. */
 export type PageSwitchInput = 'none' | 'extraA' | 'extraB' | 'extraC' | 'extraD' | 'extraE' | 'extraF' | 'extraG' | 'extraH';
 
+/** Un interruptor táctil del display (variable touch_<key> del catálogo). */
+export interface TouchSwitchDef {
+  /** a…f */
+  key: string;
+  label: string;
+  /** estado al cargar el coche */
+  initial: boolean;
+  /** recordarlo entre sesiones (ac.storage) */
+  remember: boolean;
+}
+
+/** Configuración táctil del display (INTERACTIVE = 1 y gestos). */
+export interface TouchSettings {
+  /** auto = táctil solo si hay botones o gestos; on = siempre; off = nunca */
+  mode: 'auto' | 'on' | 'off';
+  /** resaltar el botón que está bajo el puntero */
+  hover: boolean;
+  /** deslizar en horizontal cambia de página */
+  swipePages: boolean;
+  /** recorrido mínimo del deslizamiento, en % del ancho de la pantalla */
+  swipePct: number;
+  /** interruptores usados por los botones */
+  switches: TouchSwitchDef[];
+}
+
+export const DEFAULT_TOUCH: TouchSettings = { mode: 'auto', hover: true, swipePages: false, swipePct: 25, switches: [] };
+
 export interface PageSwitch {
   input: PageSwitchInput;
   /** volver a la primera página tras la última */
@@ -477,6 +561,8 @@ export interface ProjectSettings {
   /** frecuencia de refresco del display en el juego (Hz); 0 = cada frame */
   refreshHz: number;
   boot: BootSettings;
+  /** pantalla táctil (botones y gestos) */
+  touch: TouchSettings;
 }
 
 /** Un display (una malla del coche) con sus páginas. Un proyecto puede tener varios (dash, volante, navegador…). */
@@ -595,6 +681,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   pageSwitch: { input: 'none', wrap: true, remember: true },
   refreshHz: 0,
   boot: { ...DEFAULT_BOOT },
+  touch: { ...DEFAULT_TOUCH },
 };
 
 function base(type: ElementType, name: string, x: number, y: number, w: number, h: number): ElementBase {
@@ -728,6 +815,32 @@ export function createElement(type: ElementType, x = 100, y = 100): DisplayEleme
           clamp: true,
         },
       };
+    case 'button':
+      return {
+        ...base(type, 'Botón', x, y, 240, 96),
+        type,
+        config: {
+          action: 'page_next',
+          switch: 'a',
+          step: 0,
+          behavior: 'tap',
+          repeatMs: 250,
+          shape: 'rect',
+          fill: '#15181DCC',
+          fillHover: '#262B33DD',
+          fillActive: '#39404CEE',
+          fillOn: '#2D7BFF66',
+          stroke: '#FFFFFF44',
+          strokeWidth: 2,
+          radius: 12,
+          label: 'Botón',
+          style: { ...DEFAULT_TEXT_STYLE, size: 36, bold: false },
+          colorOn: '#FFFFFF',
+          litWhenOn: true,
+          padding: 0,
+          glow: { size: 14, intensity: 0.6, luminance: 1.3, core: 0 },
+        },
+      };
     case 'gauge':
       return {
         ...base(type, 'Indicador circular', x, y, 300, 300),
@@ -757,7 +870,7 @@ export function createDisplayProject(params: { displayId: string; name: string; 
     name: params.name,
     canvas: { width: params.width, height: params.height },
     background: { file: null, locked: true, color: '#000000' },
-    settings: { ...DEFAULT_SETTINGS, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch } },
+    settings: { ...DEFAULT_SETTINGS, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch }, touch: { ...DEFAULT_TOUCH, switches: [] } },
     pages: [{ id: 'main', name: 'Principal', elements: [] }],
     fonts: {},
   };
@@ -809,7 +922,7 @@ export function migrateProject(raw: unknown): Project {
       name: String(p.display_id ?? 'Display'),
       canvas: p.canvas as DisplayProject['canvas'],
       background: p.background as DisplayProject['background'],
-      settings: { ...DEFAULT_SETTINGS, ...(p.settings as Partial<ProjectSettings>), pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch } },
+      settings: { ...DEFAULT_SETTINGS, ...(p.settings as Partial<ProjectSettings>), pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch }, touch: { ...DEFAULT_TOUCH, switches: [] } },
       pages: (p.pages as Page[]) ?? [{ id: 'main', name: 'Principal', elements: [] }],
       fonts: (p.fonts as Record<string, string>) ?? {},
     };
@@ -826,7 +939,13 @@ export function migrateProject(raw: unknown): Project {
   const proj = p as unknown as Project;
   proj.physicalNeedles = Array.isArray(proj.physicalNeedles) ? proj.physicalNeedles : [];
   for (const d of proj.displays) {
-    d.settings = { ...DEFAULT_SETTINGS, ...d.settings, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) }, boot: { ...DEFAULT_BOOT, ...(d.settings?.boot ?? {}) } };
+    d.settings = {
+      ...DEFAULT_SETTINGS,
+      ...d.settings,
+      pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch, ...(d.settings?.pageSwitch ?? {}) },
+      boot: { ...DEFAULT_BOOT, ...(d.settings?.boot ?? {}) },
+      touch: { ...DEFAULT_TOUCH, ...(d.settings?.touch ?? {}), switches: d.settings?.touch?.switches ?? [] },
+    };
     if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];
     d.fonts = d.fonts ?? {};
   }

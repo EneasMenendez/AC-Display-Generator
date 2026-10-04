@@ -1,6 +1,7 @@
 import type { Color, DisplayElement, DisplayProject, Glow, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
 import { pageConditions, resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
+import { buttonStateVar } from '@shared/touch';
 import { compare } from './compare';
 import { formatBinding } from '@shared/format';
 import { VARIABLE_MAP } from '@shared/variables';
@@ -26,6 +27,8 @@ export interface DrawEnv {
   /** estado persistente entre frames (histéresis, suavizado) */
   state: Map<string, { on?: boolean; v?: number; text?: string; at?: number }>;
   dt: number;
+  /** táctil en la previsualización: botón bajo el puntero y botón que se está pulsando */
+  touch?: { hover?: string | null; active?: string | null };
 }
 
 /* ---------- utilidades ---------- */
@@ -683,6 +686,76 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
         g.setLineDash([6, 4]);
         g.strokeRect(x, y, w, h);
       }
+      break;
+    }
+    case 'button': {
+      // mismo estado que el runtime: pulsado > encendido > puntero encima > normal
+      const c = el.config;
+      const sv = buttonStateVar(el);
+      const lit = c.litWhenOn !== false && !!sv && varValue(ctx, sv) === true;
+      const active = env.touch?.active === el.id;
+      const hovered = env.touch?.hover === el.id;
+      let fill = c.fill;
+      if (active) fill = c.fillActive ?? fill;
+      else if (lit) fill = c.fillOn ?? fill;
+      else if (hovered) fill = c.fillHover ?? fill;
+      if (rr.color) fill = rr.color;
+      const lum = lit ? lightLevels(c.glow).lum : 1;
+      const color = C(lit ? litColor(fill, lum) : fill);
+      const circle = c.shape === 'circle';
+      const shape = () => {
+        g.fillStyle = color;
+        if (circle) {
+          g.beginPath();
+          g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+          g.fill();
+        } else {
+          roundRect(g, x, y, w, h, c.radius);
+          g.fill();
+        }
+      };
+      const coreShape = (alpha: number) => {
+        g.save();
+        g.globalAlpha *= alpha;
+        g.fillStyle = C('#FFFFFF');
+        if (circle) {
+          g.beginPath();
+          g.arc(x + w / 2, y + h / 2, (Math.min(w, h) / 2) * 0.5, 0, Math.PI * 2);
+          g.fill();
+        } else {
+          roundRect(g, x + w * 0.25, y + h * 0.25, w * 0.5, h * 0.5, c.radius);
+          g.fill();
+        }
+        g.restore();
+      };
+      if (c.shape !== 'none') {
+        if (lit && c.glow) withGlow(g, c.glow, color, shape, coreShape);
+        else shape();
+        if (c.strokeWidth > 0) {
+          g.strokeStyle = C(c.stroke);
+          g.lineWidth = c.strokeWidth;
+          if (circle) {
+            g.beginPath();
+            g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+            g.stroke();
+          } else {
+            roundRect(g, x, y, w, h, c.radius);
+            g.stroke();
+          }
+        }
+      }
+      const file = rr.image ?? (lit && c.imageOn ? c.imageOn : c.image);
+      const img = file ? env.images.get(file) : undefined;
+      if (img && img.complete && img.naturalWidth > 0) {
+        const k = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        const dw = img.naturalWidth * k;
+        const dh = img.naturalHeight * k;
+        g.globalAlpha = O;
+        g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+        g.globalAlpha = 1;
+      }
+      const label = lit && c.labelOn ? c.labelOn : c.label;
+      if (label) drawText(g, label, x, y, w, h, c.style, C(lit ? c.colorOn : c.style.color));
       break;
     }
     case 'rect': {

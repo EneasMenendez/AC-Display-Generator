@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
-import type { DisplayElement } from '@shared/model';
+import type { ButtonElement, DisplayElement, Page } from '@shared/model';
 import { useStore, activeDisplayOf, activePageOf } from '../store';
 import { resolveSim } from '../sim';
-import { drawScene, type DrawEnv } from '../render/draw';
+import { applyRules, drawScene, type DrawEnv } from '../render/draw';
 import { PageEngine } from '../render/pageEngine';
+import { buttonAt } from '@shared/touch';
+import { fireTouch, type TouchPhase, type TouchSimApi } from '../render/touchSim';
 import { hasUvRegion, uvRegionPx } from '@shared/uv';
 
 /**
@@ -51,6 +53,10 @@ export function CanvasEditor() {
   const lastT = useRef(performance.now());
   const t0 = useRef(performance.now());
   const heldCtx = useRef<{ display: string; at: number; ctx: ReturnType<typeof resolveSim> } | null>(null);
+  /** página que se está viendo y contexto del último frame (táctil de la previsualización) */
+  const shown = useRef<Page | null>(null);
+  const lastCtx = useRef<ReturnType<typeof resolveSim> | null>(null);
+  const touch = useRef<{ hover: string | null; active: string | null; repeatAt: number; swipeX: number | null }>({ hover: null, active: null, repeatAt: 0, swipeX: null });
 
   // ---------- transformación vista ----------
   function view() {
@@ -177,7 +183,8 @@ export function CanvasEditor() {
         if (held && held.display === p.display_id && t - held.at < 1 / hz && t >= held.at) simCtx = held.ctx;
         else heldCtx.current = { display: p.display_id, at: t, ctx: simCtx };
       } else heldCtx.current = null;
-      const env: DrawEnv = { images: images.current, videos: videos.current, brightness: p.settings.brightness * s.ambient, state: drawState.current, dt };
+      const env: DrawEnv = { images: images.current, videos: videos.current, brightness: p.settings.brightness * s.ambient, state: drawState.current, dt, touch: s.previewMode ? touch.current : undefined };
+      lastCtx.current = simCtx;
 
       const g = canvas.getContext('2d')!;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -238,6 +245,19 @@ export function CanvasEditor() {
         drawScene(g, p, page, simCtx, env, bg);
       }
       g.restore();
+      shown.current = page;
+      // botón mantenido: acciones "mientras se mantiene" y repetición
+      if (s.previewMode && touch.current.active) {
+        const el = page.elements.find((it) => it.id === touch.current.active);
+        if (el && el.type === 'button') {
+          const b = el.config.behavior ?? 'tap';
+          if (b === 'hold') fireTouch(el, 'hold', touchApi());
+          else if (b === 'repeat' && now >= touch.current.repeatAt) {
+            touch.current.repeatAt = now + Math.max(50, el.config.repeatMs || 250);
+            fireTouch(el, 'press', touchApi());
+          }
+        }
+      }
 
       // área visible de la malla (UV): fuera de ella lo dibujado no se ve en el coche
       const area = display && hasUvRegion(display) ? uvRegionPx({ uv_region: display.uv_region, texture_size: p.canvas }) : null;
@@ -402,6 +422,73 @@ export function CanvasEditor() {
     };
   }, []);
 
+  /** páginas normales del display activo (las que recorren los botones y los gestos) */
+  function normalPages(): Page[] {
+    const s = useStore.getState();
+    const dp = activeDisplayOf(s);
+    return dp ? dp.pages.filter((pg) => !pg.kind || pg.kind === 'normal') : [];
+  }
+
+  /** acciones táctiles de la previsualización: páginas, interruptores y variables simuladas */
+  function touchApi(): TouchSimApi {
+    const s = useStore.getState();
+    const pages = normalPages();
+    const live = s.previewMode && s.followPageRules;
+    const current = () => {
+      if (live) return engine.current.getManual();
+      const id = activePageOf(s)?.id;
+      const i = pages.findIndex((pg) => pg.id === id);
+      return i < 0 ? 0 : i;
+    };
+    const go = (i: number) => {
+      if (pages.length === 0) return;
+      const j = Math.max(0, Math.min(pages.length - 1, i));
+      if (live) engine.current.setManual(j);
+      else {
+        const dp = activeDisplayOf(s);
+        const idx = dp ? dp.pages.findIndex((pg) => pg.id === pages[j].id) : -1;
+        if (idx >= 0) s.setActivePage(idx);
+      }
+    };
+    return {
+      get: (id) => useStore.getState().sim[id],
+      set: (id, v) => useStore.getState().setSim(id, v),
+      stepPage: (d) => {
+        const wrap = activeDisplayOf(s)?.settings.pageSwitch.wrap !== false;
+        if (live) engine.current.stepManual(d, pages.length, wrap);
+        else {
+          let i = current() + d;
+          if (i >= pages.length) i = wrap ? 0 : pages.length - 1;
+          else if (i < 0) i = wrap ? pages.length - 1 : 0;
+          go(i);
+        }
+      },
+      gotoPage: go,
+      indexOfPage: (pageId) => {
+        const i = pages.findIndex((pg) => pg.id === pageId);
+        return i < 0 ? null : i;
+      },
+      previousPage: () => (live ? engine.current.getPreviousManual() : 0),
+      playBoot: () => useStore.getState().playBoot(),
+      note: (text) => useStore.getState().setToast({ text, kind: 'info' }),
+    };
+  }
+
+  /** botón táctil bajo el puntero, teniendo en cuenta sus reglas de visibilidad */
+  function hitButton(x: number, y: number): ButtonElement | null {
+    const page = shown.current;
+    const ctx = lastCtx.current;
+    if (!page || !ctx) return null;
+    return buttonAt(page, x, y, (el) => {
+      const rr = applyRules(el, ctx);
+      return rr.visible && rr.opacity > 0;
+    });
+  }
+
+  function fireButton(el: ButtonElement, phase: TouchPhase) {
+    fireTouch(el, phase, touchApi());
+  }
+
   function hitElement(x: number, y: number): DisplayElement | null {
     const s = useStore.getState();
     const els = activePageOf(s)!.elements;
@@ -449,12 +536,31 @@ export function CanvasEditor() {
   function onPointerDown(e: React.PointerEvent) {
     const s = useStore.getState();
     if (!activePageOf(s)) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // puntero sintético (pruebas automáticas): sin captura
+    }
     if (e.button === 1 || (e.button === 0 && space.current)) {
       drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: s.pan.x, panY: s.pan.y };
       return;
     }
-    if (e.button !== 0 || s.previewMode) return;
+    if (e.button !== 0) return;
+    if (s.previewMode) {
+      // previsualización: el ratón actúa como el dedo sobre la pantalla del coche
+      const { x, y } = toCanvas(e.clientX, e.clientY);
+      const btn = hitButton(x, y);
+      if (btn) {
+        touch.current.active = btn.id;
+        touch.current.hover = btn.id;
+        touch.current.repeatAt = performance.now() + Math.max(50, btn.config.repeatMs || 250);
+        touch.current.swipeX = null;
+        fireButton(btn, 'press');
+      } else {
+        touch.current.swipeX = x;
+      }
+      return;
+    }
     const { x, y } = toCanvas(e.clientX, e.clientY);
     const pivotId = hitPivot(e.clientX, e.clientY);
     if (pivotId) {
@@ -488,6 +594,18 @@ export function CanvasEditor() {
     if (!activePageOf(s)) return;
     const { x, y } = toCanvas(e.clientX, e.clientY);
     s.setHoverPos({ x: Math.round(x), y: Math.round(y) });
+    if (s.previewMode && !drag.current) {
+      const btn = hitButton(x, y);
+      touch.current.hover = btn ? btn.id : null;
+      const act = touch.current.active;
+      if (act && (!btn || btn.id !== act)) {
+        const prev = shown.current?.elements.find((it) => it.id === act);
+        if (prev && prev.type === 'button') fireButton(prev, 'release');
+        touch.current.active = null;
+      }
+      canvasRef.current!.style.cursor = btn ? 'pointer' : 'default';
+      return;
+    }
     const d = drag.current;
     if (!d) {
       const h = hitHandle(e.clientX, e.clientY);
@@ -583,6 +701,26 @@ export function CanvasEditor() {
 
   function onPointerUp(e: React.PointerEvent) {
     const s = useStore.getState();
+    if (s.previewMode) {
+      const act = touch.current.active;
+      if (act) {
+        const el = shown.current?.elements.find((it) => it.id === act);
+        if (el && el.type === 'button') fireButton(el, 'release');
+        touch.current.active = null;
+      } else if (touch.current.swipeX !== null) {
+        // gesto: deslizar en horizontal cambia de página (igual que en el juego)
+        const dp = activeDisplayOf(s);
+        const tc = dp?.settings.touch;
+        const { x } = toCanvas(e.clientX, e.clientY);
+        const dx = x - touch.current.swipeX;
+        if (dp && tc?.swipePages && Math.abs(dx) >= (dp.canvas.width * (tc.swipePct ?? 25)) / 100) {
+          touchApi().stepPage(dx > 0 ? -1 : 1);
+        }
+        touch.current.swipeX = null;
+      }
+      drag.current = null;
+      return;
+    }
     const d = drag.current;
     drag.current = null;
     guides.current = [];
@@ -717,7 +855,16 @@ export function CanvasEditor() {
 
   return (
     <div className="canvas-area" ref={wrapRef} onWheel={onWheel}>
-      <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => useStore.getState().setHoverPos(null)} onContextMenu={(e) => e.preventDefault()} />
+      <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => {
+          useStore.getState().setHoverPos(null);
+          const act = touch.current.active;
+          if (act) {
+            const el = shown.current?.elements.find((it) => it.id === act);
+            if (el && el.type === 'button') fireButton(el, 'release');
+            touch.current.active = null;
+          }
+          touch.current.hover = null;
+        }} onContextMenu={(e) => e.preventDefault()} />
     </div>
   );
 }

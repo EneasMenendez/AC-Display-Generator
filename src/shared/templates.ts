@@ -1,16 +1,17 @@
-import { createElement, createPage, createTrigger, type Page, type RpmBarElement, type TextElement, type ShiftLightElement, type IconElement, type BarElement, type RectElement } from './model';
+import { createElement, createPage, createTrigger, type ButtonElement, type Page, type RpmBarElement, type TextElement, type ShiftLightElement, type IconElement, type BarElement, type RectElement } from './model';
 
 /**
  * Plantillas de pantallas de funcionalidad: generan páginas con elementos normales, editables después.
  * Coordenadas relativas al lienzo (w × h) para que valgan en cualquier resolución.
  */
-export type TemplateId = 'launch' | 'pit_limiter' | 'settings' | 'fuel';
+export type TemplateId = 'launch' | 'pit_limiter' | 'settings' | 'fuel' | 'touch_menu';
 
 export const TEMPLATES: { id: TemplateId; label: string; description: string }[] = [
   { id: 'launch', label: 'Launch control', description: 'Con el botón KERS mantenido y el coche parado: rpm actuales frente al objetivo, barra de rpm y luz READY.' },
   { id: 'pit_limiter', label: 'Limitador de boxes', description: 'Automática al entrar en boxes o al poner el limitador: velocidad, límite y tiempo en pit lane.' },
   { id: 'settings', label: 'Ajustes del coche', description: 'Conmutable con Extra A: freno, ABS, TC, mapa de motor y presiones.' },
   { id: 'fuel', label: 'Combustible / estrategia', description: 'Conmutable con Extra B: litros, vueltas restantes y consumo por vuelta.' },
+  { id: 'touch_menu', label: 'Menú táctil', description: 'Barra de botones táctiles: página anterior/siguiente, luces y un interruptor propio.' },
 ];
 
 function text(x: number, y: number, w: number, h: number, variable: string | undefined, opts: Partial<TextElement['binding']> & { staticText?: string; size?: number; color?: string; align?: TextElement['style']['align']; name?: string } = {}): TextElement {
@@ -23,6 +24,20 @@ function text(x: number, y: number, w: number, h: number, variable: string | und
   if (opts.color) el.style.color = opts.color;
   if (opts.align) el.style.align = opts.align;
   if (opts.name) el.name = opts.name;
+  return el;
+}
+
+/** Botón táctil de una plantilla. */
+function button(x: number, y: number, w: number, h: number, label: string, action: ButtonElement['config']['action'], opts: { name?: string; switchKey?: string; color?: string } = {}): ButtonElement {
+  const el = createElement('button', x, y) as ButtonElement;
+  el.width = w;
+  el.height = h;
+  el.name = opts.name ?? label;
+  el.config.label = label;
+  el.config.action = action;
+  if (opts.switchKey) el.config.switch = opts.switchKey;
+  if (opts.color) el.config.fillOn = opts.color;
+  el.config.style.size = Math.round(h * 0.4);
   return el;
 }
 
@@ -142,6 +157,28 @@ export function createTemplatePage(id: TemplateId, canvas: { width: number; heig
       icon.height = py(0.12);
       icon.name = 'Aviso combustible';
       p.elements.push(bg, title, fuel, laps, per, bar, icon);
+      return p;
+    }
+    case 'touch_menu': {
+      const p = createPage('Menú táctil', 'normal');
+      const bg = createElement('rect', 0, 0) as RectElement;
+      bg.width = W;
+      bg.height = H;
+      bg.config.fill = '#000000FF';
+      bg.name = 'Fondo';
+      const title = text(px(0.05), py(0.08), px(0.9), py(0.16), undefined, { staticText: 'MENÚ', color: '#FFB000', name: 'Título' });
+      const speed = text(px(0.05), py(0.3), px(0.9), py(0.28), 'speed', { suffix: ' km/h', color: '#FFFFFF', name: 'Velocidad' });
+      // barra de botones: anterior, luces, interruptor propio y siguiente
+      const bw = px(0.22);
+      const bh = py(0.2);
+      const by = py(0.72);
+      const gap = px(0.02);
+      const x0 = (W - (bw * 4 + gap * 3)) / 2;
+      const prev = button(x0, by, bw, bh, '◀', 'page_prev', { name: 'Página anterior' });
+      const lights = button(x0 + bw + gap, by, bw, bh, 'LUCES', 'headlights', { name: 'Luces', color: '#FFB00066' });
+      const sw = button(x0 + (bw + gap) * 2, by, bw, bh, 'MODO', 'switch_toggle', { name: 'Interruptor A', switchKey: 'a', color: '#28C84066' });
+      const next = button(x0 + (bw + gap) * 3, by, bw, bh, '▶', 'page_next', { name: 'Página siguiente' });
+      p.elements.push(bg, title, speed, prev, lights, sw, next);
       return p;
     }
   }

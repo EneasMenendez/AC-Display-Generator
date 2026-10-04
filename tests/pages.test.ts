@@ -85,7 +85,8 @@ describe('máquina de páginas (editor)', () => {
     for (const t of TEMPLATES) {
       const pg = createTemplatePage(t.id, { width: 1024, height: 512 }, 8000);
       expect(pg.elements.length).toBeGreaterThan(2);
-      expect(pg.kind === 'function' ? !!pg.trigger : pageConditions(pg).length > 0).toBe(true);
+      // las normales se eligen por condición o, si llevan botones táctiles, con el dedo
+      expect(pg.kind === 'function' ? !!pg.trigger : pageConditions(pg).length > 0 || pg.elements.some((e) => e.type === 'button')).toBe(true);
     }
     const p = project();
     const vars = collectVariables(p.displays[0]);

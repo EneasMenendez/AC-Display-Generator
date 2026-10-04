@@ -30,6 +30,7 @@ export class PageEngine {
   private lastRpm = 0;
   private manual = 0;
   private lastButton = false;
+  private prevManual = 0;
   private trans = { from: null as Page | null, startedAt: -1e9 };
   private bootRequested = false;
 
@@ -40,6 +41,7 @@ export class PageEngine {
     this.edges.clear();
     this.toggles.clear();
     this.manual = 0;
+    this.prevManual = 0;
     this.trans = { from: null, startedAt: -1e9 };
   }
 
@@ -50,7 +52,27 @@ export class PageEngine {
 
   /** página manual (botón de cambio) para las pruebas del editor */
   setManual(i: number): void {
+    if (i !== this.manual) this.prevManual = this.manual;
     this.manual = Math.max(0, i);
+  }
+
+  /** índice (0-based) de la página normal seleccionada a mano */
+  getManual(): number {
+    return this.manual;
+  }
+
+  /** página normal anterior (acción táctil "volver") */
+  getPreviousManual(): number {
+    return this.prevManual;
+  }
+
+  /** avanza o retrocede entre las páginas normales (botón o gesto táctil) */
+  stepManual(delta: number, count: number, wrap: boolean): void {
+    if (count <= 1) return;
+    let i = this.manual + delta;
+    if (i >= count) i = wrap ? 0 : count - 1;
+    else if (i < 0) i = wrap ? count - 1 : 0;
+    this.setManual(i);
   }
 
   private pressed(key: string, value: unknown): boolean {

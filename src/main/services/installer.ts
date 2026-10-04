@@ -23,6 +23,7 @@ import {
   upsertIncludeBlock,
   findConflictingDisplays,
 } from '@shared/generator';
+import { displayHasTouch } from '@shared/touch';
 import { session, packProject } from './projectManager';
 import { disableSection, enableAllSections, enableSectionsMatching, parseIni } from '@shared/ini';
 import { encodeDdsBc3, toRgba } from './imageManager';
@@ -242,7 +243,7 @@ export function install(opts: InstallOptions): InstallResult {
       });
     }
 
-    const ini = generateDisplayIni(profile, display, { script: scriptName });
+    const ini = generateDisplayIni(profile, display, { script: scriptName, interactive: displayHasTouch(dp) });
     const readme = generateReadme(project, dp, display, scriptName, Object.keys(files));
 
     if (opts.install && existsSync(extConfig)) {

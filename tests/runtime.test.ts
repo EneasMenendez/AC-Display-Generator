@@ -111,6 +111,8 @@ describe('runtime Lua generado', () => {
       await engine.doString('CARV.physicsAvailable = false; CARV.prefersImperialUnits = true; script.update(0.016)');
       const calls = Number(await engine.doString('return #CALLS'));
       expect(calls).toBeGreaterThan(20);
+      // con las luces encendidas (destello y núcleo) tampoco debe fallar nada del dibujado
+      expect(await engine.doString('return ERRORED'), 'error dibujando con luces encendidas').toBeFalsy();
       // aguja: geometría girada calculada (sin endPivotRotation); textura de barra y LEDs con imagen
       const names = String(await engine.doString('return table.concat(CALLS, ",")'));
       expect(names).toContain('drawImageQuad');

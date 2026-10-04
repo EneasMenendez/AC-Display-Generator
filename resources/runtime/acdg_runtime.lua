@@ -19,9 +19,32 @@ local nightTarget = 1
 local nightCurrent = 1
 local physicsOk = true
 
+-- Táctil (INTERACTIVE = 1 en la sección del display): CSP proyecta el puntero sobre la malla y lo
+-- traduce a píxeles de la textura; aquí se consulta con ui.rectHovered / ui.mouseDown / ui.mouseClicked.
+local tReal = 0           -- tiempo real: avanza aunque se salten frames de dibujo (temporiza el táctil)
+local touch = {
+  on = false,             -- la pantalla es táctil
+  hover = nil,            -- id del botón bajo el puntero
+  active = nil,           -- id del botón que se está pulsando
+  nextRepeat = 0,
+  pressStrip = -1,        -- franja donde empezó un posible deslizamiento
+  prevManual = nil,       -- página anterior (acción "volver")
+  daytime = false,
+  engineBrake = 0,
+  sw = {},                -- interruptores táctiles (a…f)
+  storage = nil,
+}
+
+-- Interruptor de una pantalla táctil: variables touch_a … touch_f del catálogo.
+function ACDG.sw(k)
+  return touch.sw[k] == true
+end
+
 local VEC0 = vec2(0, 0)
 local VEC1 = vec2(1, 1)
 local WHITE = rgbm(1, 1, 1, 1)
+-- puntos reutilizables para las llamadas de dibujo (evitan crear vec2 en cada frame)
+local p1, p2 = vec2(), vec2()
 
 -- ------------------------------------------------------------
 -- Utilidades
@@ -93,6 +116,16 @@ local function blinkOn(hz, duty)
   duty = duty or 0.5
   if duty < 0.05 then duty = 0.05 elseif duty > 0.95 then duty = 0.95 end
   return (t * hz) % 1 < duty
+end
+
+local function clamp01(x)
+  if x < 0 then return 0 end
+  if x > 1 then return 1 end
+  return x
+end
+
+local function lerp(a, b, k)
+  return a + (b - a) * k
 end
 
 -- ------------------------------------------------------------
@@ -174,16 +207,6 @@ local function coreRect(x, y, w, h, radius, glow, opacity)
   p1.x, p1.y = x + w * 0.25, y + h * 0.25
   p2.x, p2.y = x + w * 0.75, y + h * 0.75
   ui.drawRectFilled(p1, p2, glowColor, radius or 0)
-end
-
-local function clamp01(x)
-  if x < 0 then return 0 end
-  if x > 1 then return 1 end
-  return x
-end
-
-local function lerp(a, b, k)
-  return a + (b - a) * k
 end
 
 -- ------------------------------------------------------------
@@ -426,8 +449,6 @@ local function getFont(name, bold)
 end
 
 local ALIGN_H = { left = ui.Alignment.Start, center = ui.Alignment.Center, right = ui.Alignment.End }
-
-local p1, p2 = vec2(), vec2()
 
 -- métricas por defecto (Segoe UI) si el editor no midió la fuente
 local DEFAULT_METRICS = { line = 1.33, shift = -0.139 }
@@ -1033,6 +1054,56 @@ end
 
 local currentPageDuration = nil
 
+-- Botón táctil: fondo según el estado (normal / puntero encima / pulsado / encendido), imagen y texto.
+function draw.button(el, opacity, colorOverride, imageOverride)
+  local c = el.config
+  local lit = c.litWhenOn ~= false and el.stateVar ~= nil and getVar(el.stateVar) == true
+  local active = touch.active == el.id
+  local hovered = touch.hover == el.id
+  local fill = c.fill
+  if active then fill = c.fillActive or fill
+  elseif lit then fill = c.fillOn or fill
+  elseif hovered then fill = c.fillHover or fill end
+  if colorOverride then fill = colorOverride end
+  local shape = c.shape or 'rect'
+  local radius = c.radius or 0
+  local cx, cy = el.x + el.width / 2, el.y + el.height / 2
+  local rad = math.min(el.width, el.height) / 2
+  local lum = 1
+  if lit and c.glow then lum = lightLevels(c.glow) end
+  if shape ~= 'none' then
+    if lit and c.glow then
+      if shape == 'circle' then glowCircle(cx, cy, rad, fill, c.glow, opacity)
+      else glowRect(el.x, el.y, el.width, el.height, radius, fill, c.glow, opacity) end
+    end
+    if shape == 'circle' then
+      p1.x, p1.y = cx, cy
+      ui.drawCircleFilled(p1, rad, litCol(fill, lum, opacity), 48)
+      if (c.strokeWidth or 0) > 0 then ui.drawCircle(p1, rad, col(c.stroke, opacity), 48, c.strokeWidth) end
+    else
+      p1.x, p1.y = el.x, el.y
+      p2.x, p2.y = el.x + el.width, el.y + el.height
+      ui.drawRectFilled(p1, p2, litCol(fill, lum, opacity), radius)
+      if (c.strokeWidth or 0) > 0 then ui.drawRect(p1, p2, col(c.stroke, opacity), radius, nil, c.strokeWidth) end
+    end
+    if lit and c.glow then
+      if shape == 'circle' then coreCircle(cx, cy, rad, c.glow, opacity)
+      else coreRect(el.x, el.y, el.width, el.height, radius, c.glow, opacity) end
+    end
+  end
+  local file = imageOverride or (lit and el.fileOn) or el.file
+  if file and file ~= '' then
+    p1.x, p1.y = el.x, el.y
+    p2.x, p2.y = el.x + el.width, el.y + el.height
+    ui.drawImage(scriptDir .. '/' .. file, p1, p2, col(WHITE, opacity), VEC0, VEC1, FIT.fit)
+  end
+  local label = c.label or ''
+  if lit and c.labelOn and c.labelOn ~= '' then label = c.labelOn end
+  if label ~= '' and c.style then
+    drawText(label, el.x, el.y, el.width, el.height, c.style, lit and c.colorOn or c.style.color, opacity)
+  end
+end
+
 local function drawElement(el)
   local visible, opacity, colorOverride, imageOverride = applyRules(el)
   if not visible or opacity <= 0 then return end
@@ -1282,6 +1353,252 @@ function ACDG.setPage(i)
 end
 
 -- ------------------------------------------------------------
+-- Táctil: puntero sobre la malla y acciones de los botones
+-- ------------------------------------------------------------
+
+local STRIPS = 8   -- franjas verticales con las que se detecta un deslizamiento (solo con ui.rectHovered)
+
+-- las funciones de puntero de CSP devuelven booleanos: se comparan con true para no tomar 0 por verdadero
+local function uiFlag(fn, a, b, c)
+  if type(fn) ~= 'function' then return false end
+  local ok, r = pcall(fn, a, b, c)
+  return ok and r == true
+end
+
+local function rectHovered(x, y, w, h)
+  p1.x, p1.y = x, y
+  p2.x, p2.y = x + w, y + h
+  return uiFlag(ui.rectHovered, p1, p2, false)
+end
+
+local function touchStrip()
+  local w = W / STRIPS
+  for i = 0, STRIPS - 1 do
+    if rectHovered(i * w, 0, w, H) then return i end
+  end
+  return -1
+end
+
+local function normalIndexOf(pageId)
+  for i = 1, #normalPages do
+    if cfg.pages[normalPages[i]].id == pageId then return i end
+  end
+  return nil
+end
+
+local function gotoNormal(i)
+  local n = #normalPages
+  if n == 0 then return end
+  if i < 1 then i = 1 elseif i > n then i = n end
+  if i ~= manualPage then touch.prevManual = manualPage end
+  manualPage = i
+  if pageStorage then pageStorage.page = manualPage end
+end
+
+local function stepPage(d)
+  local n = #normalPages
+  if n <= 1 then return end
+  local wrap = not (cfg.settings.pageSwitch and cfg.settings.pageSwitch.wrap == false)
+  local i = manualPage + d
+  if i > n then i = wrap and 1 or n elseif i < 1 then i = wrap and n or 1 end
+  gotoNormal(i)
+end
+
+local actionErrors = {}
+
+-- llamada a la API de CSP: un fallo (función ausente en builds antiguos, coche sin la ayuda…) no debe
+-- romper el display, pero sí quedar en el log una vez
+local function call(fn, a, b)
+  if type(fn) ~= 'function' then return end
+  local ok, err = pcall(fn, a, b)
+  if not ok then
+    local key = tostring(err)
+    if not actionErrors[key] then
+      actionErrors[key] = true
+      ac.error('[ACDG] acción táctil: ' .. key)
+    end
+  end
+end
+
+local function setSwitch(k, v)
+  touch.sw[k] = v == true
+  varCache['touch_' .. k] = nil
+  if touch.storage then touch.storage['sw_' .. k] = v and 1 or 0 end
+end
+
+local function cycle(value, delta, count)
+  local n = math.max(1, math.floor(count or 1))
+  local v = math.floor(value + delta)
+  if v >= n then v = 0 elseif v < 0 then v = n - 1 end
+  return v
+end
+
+local function step(el, fallback)
+  local v = el.config.step or 0
+  if v > 0 then return v end
+  return fallback
+end
+
+-- press = al pulsar (y en cada repetición); hold = cada frame mientras se mantiene; release = al soltar
+local ACTIONS = {
+  none = {},
+  page_next = { press = function() stepPage(1) end },
+  page_prev = { press = function() stepPage(-1) end },
+  page_first = { press = function() gotoNormal(1) end },
+  page_go = { press = function(el) local i = normalIndexOf(el.config.pageId) if i then gotoNormal(i) end end },
+  page_back = { press = function() gotoNormal(touch.prevManual or 1) end },
+  boot_replay = { press = function() ACDG.startBoot() end },
+  switch_toggle = { press = function(el) local k = el.switchKey or 'a' setSwitch(k, not (touch.sw[k] == true)) end },
+  switch_on = { press = function(el) setSwitch(el.switchKey or 'a', true) end },
+  switch_off = { press = function(el) setSwitch(el.switchKey or 'a', false) end },
+  headlights = { press = function() call(ac.setHeadlights, car.headlightsActive ~= true) end },
+  high_beams = { press = function() call(ac.setHighBeams, car.highBeams ~= true) end },
+  daytime = { press = function() touch.daytime = not touch.daytime call(ac.setDaytimeLights, touch.daytime) end },
+  flash = { press = function() call(ac.flashLights) end },
+  turn_left = { press = function() call(ac.setTurningLights, car.turningLeftLights == true and 0 or 1) end },
+  turn_right = { press = function() call(ac.setTurningLights, car.turningRightLights == true and 0 or 2) end },
+  hazards = { press = function() call(ac.setTurningLights, car.hazardLights == true and 0 or 3) end },
+  turn_off = { press = function() call(ac.setTurningLights, 0) end },
+  wipers_next = { press = function() call(ac.setWiperMode, cycle(num(car.wiperMode), 1, num(car.wiperModes))) end },
+  wipers_off = { press = function() call(ac.setWiperMode, 0) end },
+  kers = {
+    press = function() call(ac.setKERS, true) end,
+    hold = function() call(ac.setKERS, true) end,
+    release = function() call(ac.setKERS, false) end,
+  },
+  drs = { press = function() call(ac.setDRS, car.drsActive ~= true) end },
+  mguk_delivery_up = { press = function() call(ac.setMGUKDelivery, cycle(num(car.mgukDelivery), 1, num(car.mgukDeliveryCount))) end },
+  mguk_delivery_down = { press = function() call(ac.setMGUKDelivery, cycle(num(car.mgukDelivery), -1, num(car.mgukDeliveryCount))) end },
+  mguk_recovery_up = { press = function() call(ac.setMGUKRecovery, math.min(10, num(car.mgukRecovery) + 1)) end },
+  mguk_recovery_down = { press = function() call(ac.setMGUKRecovery, math.max(0, num(car.mgukRecovery) - 1)) end },
+  mguh_toggle = { press = function() call(ac.setMGUHCharging, car.mguhChargingBatteries ~= true) end },
+  tc_up = { press = function() call(ac.setTractionControl, cycle(num(car.tractionControlMode), 1, num(car.tractionControlModes) + 1)) end },
+  tc_down = { press = function() call(ac.setTractionControl, cycle(num(car.tractionControlMode), -1, num(car.tractionControlModes) + 1)) end },
+  abs_up = { press = function() call(ac.setABS, cycle(num(car.absMode), 1, num(car.absModes) + 1)) end },
+  abs_down = { press = function() call(ac.setABS, cycle(num(car.absMode), -1, num(car.absModes) + 1)) end },
+  brake_bias_up = { press = function(el) call(ac.setBrakeBias, math.min(1, num(car.brakeBias) + step(el, 0.005))) end },
+  brake_bias_down = { press = function(el) call(ac.setBrakeBias, math.max(0, num(car.brakeBias) - step(el, 0.005))) end },
+  engine_brake_up = { press = function()
+    touch.engineBrake = cycle(touch.engineBrake, 1, math.max(1, num(car.engineBrakeSettingsCount)))
+    call(ac.setEngineBrakeSetting, touch.engineBrake)
+  end },
+  engine_brake_down = { press = function()
+    touch.engineBrake = cycle(touch.engineBrake, -1, math.max(1, num(car.engineBrakeSettingsCount)))
+    call(ac.setEngineBrakeSetting, touch.engineBrake)
+  end },
+  neutral = { press = function() call(ac.switchToNeutralGear) end },
+  autoshifter = { press = function() call(ac.setAutoShifter, car.autoShift ~= true) end },
+  extra_a = { press = function() call(ac.setExtraSwitch, 0, car.extraA ~= true) end },
+  extra_b = { press = function() call(ac.setExtraSwitch, 1, car.extraB ~= true) end },
+  extra_c = { press = function() call(ac.setExtraSwitch, 2, car.extraC ~= true) end },
+  extra_d = { press = function() call(ac.setExtraSwitch, 3, car.extraD ~= true) end },
+}
+
+local function fire(el, phase)
+  local def = ACTIONS[el.config.action or 'none']
+  if not def then return end
+  local fn = def[phase]
+  if fn then fn(el) end
+end
+
+local function initTouch()
+  local tc = cfg.settings.touch
+  touch.on = tc ~= nil and tc.enabled == true
+  touch.hover, touch.active, touch.pressStrip = nil, nil, -1
+  touch.prevManual, touch.engineBrake, touch.daytime = nil, 0, false
+  touch.sw, touch.storage = {}, nil
+  if not tc or type(tc.switches) ~= 'table' then return end
+  local defaults, any = {}, false
+  for k, def in pairs(tc.switches) do
+    touch.sw[k] = def.initial == true
+    if def.remember then
+      defaults['sw_' .. k] = def.initial and 1 or 0
+      any = true
+    end
+  end
+  if any and ac.storage then
+    local ok, st = pcall(ac.storage, defaults)
+    if ok and st then
+      touch.storage = st
+      for k, def in pairs(tc.switches) do
+        if def.remember then touch.sw[k] = num(st['sw_' .. k]) >= 0.5 end
+      end
+    end
+  end
+end
+
+-- Lectura del puntero: se hace a la frecuencia real del juego (aunque se salten frames de dibujo) para
+-- no perder pulsaciones, y sobre la página que el jugador está viendo.
+local function updateTouch()
+  if not touch.on then
+    touch.hover, touch.active = nil, nil
+    return
+  end
+  local page = currentPageRef or cfg.pages[1]
+  local tc = cfg.settings.touch or {}
+  local down = uiFlag(ui.mouseDown)
+  local clicked = uiFlag(ui.mouseClicked)
+
+  -- botón bajo el puntero (cuesta un raycast: solo se busca si hace falta)
+  local hovered = nil
+  if page and (down or clicked or tc.hover ~= false) then
+    local els = page.elements
+    for i = #els, 1, -1 do
+      local el = els[i]
+      if el.type == 'button' then
+        local visible, opacity = applyRules(el)
+        if visible and opacity > 0 then
+          local pad = el.config.padding or 0
+          if rectHovered(el.x - pad, el.y - pad, el.width + 2 * pad, el.height + 2 * pad) then
+            hovered = el
+            break
+          end
+        end
+      end
+    end
+  end
+  touch.hover = hovered and hovered.id or nil
+
+  -- botón que se estaba pulsando
+  local act = nil
+  if touch.active and page then
+    for i = 1, #page.elements do
+      if page.elements[i].id == touch.active then act = page.elements[i] break end
+    end
+  end
+  if act and (not down or hovered == nil or hovered.id ~= act.id) then
+    fire(act, 'release')
+    touch.active, act = nil, nil
+  end
+  if clicked and hovered then
+    touch.active = hovered.id
+    touch.nextRepeat = tReal + math.max(0.05, (hovered.config.repeatMs or 250) / 1000)
+    fire(hovered, 'press')
+  elseif act then
+    local b = act.config.behavior or 'tap'
+    if b == 'hold' then
+      fire(act, 'hold')
+    elseif b == 'repeat' and tReal >= touch.nextRepeat then
+      touch.nextRepeat = tReal + math.max(0.05, (act.config.repeatMs or 250) / 1000)
+      fire(act, 'press')
+    end
+  end
+
+  -- gesto: deslizar en horizontal cambia de página (si la pulsación no era de un botón)
+  if tc.swipePages then
+    if clicked and not hovered then touch.pressStrip = touchStrip() end
+    if touch.pressStrip >= 0 and not down then
+      local to = touchStrip()
+      local need = math.max(1, math.ceil((tc.swipePct or 25) / (100 / STRIPS)))
+      if to >= 0 and math.abs(to - touch.pressStrip) >= need then
+        stepPage(to > touch.pressStrip and -1 or 1)
+      end
+      touch.pressStrip = -1
+    end
+  end
+end
+
+-- ------------------------------------------------------------
 -- Ciclo de vida
 -- ------------------------------------------------------------
 
@@ -1299,6 +1616,7 @@ function ACDG.init(config, dir)
   state = {}
   fonts = {}
   initPages()
+  initTouch()
   currentPageRef = nil
   previousPageRef = nil
   pageEnteredAt = t
@@ -1325,13 +1643,25 @@ end
 ACDG.dt = 0
 local refreshAcc = 0
 
+local touchErrorLogged = false
+
 function ACDG.update(dt)
   if not cfg then return end
+  tReal = tReal + dt
   -- rendimiento: coches lejanos y no enfocados no se actualizan
   local maxD = cfg.display.maxDistance or 50
   if not car.focused and num(car.distanceToCamera) > maxD then
     ac.skipFrame()
     return
+  end
+  -- táctil: el puntero se lee a la frecuencia del juego, incluso en los frames que no se dibujan
+  if touch.on then
+    for k in pairs(varCache) do varCache[k] = nil end
+    local okT, errT = pcall(updateTouch)
+    if not okT and not touchErrorLogged then
+      touchErrorLogged = true
+      ac.error('[ACDG] táctil: ' .. tostring(errT))
+    end
   end
   -- frecuencia de refresco: entre actualizaciones se conserva el frame anterior
   local hz = cfg.settings.refreshHz or 0

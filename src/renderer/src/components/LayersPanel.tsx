@@ -11,6 +11,7 @@ const ADD: { type: ElementType; label: string; icon: string }[] = [
   { type: 'shift_light', label: 'Shift light', icon: 'light' },
   { type: 'shift_lights', label: 'Luces de cambio', icon: 'leds' },
   { type: 'needle', label: 'Aguja', icon: 'needle' },
+  { type: 'button', label: 'Botón táctil', icon: 'touch' },
   { type: 'bar', label: 'Barra', icon: 'bar' },
   { type: 'gauge', label: 'Indicador', icon: 'gauge' },
   { type: 'icon', label: 'Icono', icon: 'icon' },

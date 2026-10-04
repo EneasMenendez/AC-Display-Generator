@@ -150,6 +150,10 @@ export const CURATED_VARIABLES: VariableDef[] = [
   v('kers_input', 'Entrada KERS', 'Eléctrico', 'number', 'car.kersInput', '%', [0, 1], 0, true, 0),
   v('clutch_full', 'Embrague a fondo', 'Estado', 'boolean', 'car.clutch > 0.9', '', [0, 1], false),
   v('handbrake_on', 'Freno de mano puesto', 'Estado', 'boolean', 'car.handbrake > 0.5', '', [0, 1], false),
+  // interruptores de las pantallas táctiles (los cambian los botones del display)
+  ...['a', 'b', 'c', 'd', 'e', 'f'].map((k) =>
+    v(`touch_${k}`, `Interruptor táctil ${k.toUpperCase()}`, 'Estado', 'boolean', `ACDG.sw('${k}')`, '', [0, 1], false),
+  ),
   // proporcionadas por el runtime (máquina de páginas)
   v('page_time', 'Tiempo en la página', 'Sesión', 'number', 'ACDG_PAGE_TIME', 's', [0, 60], 1.5),
   v('page_entry_speed', 'Velocidad al entrar en la página', 'Sesión', 'number', 'ACDG_PAGE_ENTRY_SPEED', 'km/h', [0, 300], 0),
