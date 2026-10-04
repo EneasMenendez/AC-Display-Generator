@@ -29,6 +29,7 @@ local touch = {
   nextRepeat = 0,
   pressStrip = -1,        -- franja donde empezó un posible deslizamiento
   prevManual = nil,       -- página anterior (acción "volver")
+  wasDown = false,        -- estado del botón del ratón en la consulta anterior (flanco propio)
   daytime = false,
   engineBrake = 0,
   sw = {},                -- interruptores táctiles (a…f)
@@ -1406,16 +1407,23 @@ end
 
 local actionErrors = {}
 
--- llamada a la API de CSP: un fallo (función ausente en builds antiguos, coche sin la ayuda…) no debe
--- romper el display, pero sí quedar en el log una vez
-local function call(fn, a, b)
-  if type(fn) ~= 'function' then return end
+-- llamada a la API de control de CSP por nombre (ac.setKERS, ac.setHeadlights…): si la función no
+-- existe en esta versión de CSP o falla, no se rompe el display, pero queda en el log (una vez)
+local function call(name, a, b)
+  local fn = ac[name]
+  if type(fn) ~= 'function' then
+    if not actionErrors[name] then
+      actionErrors[name] = true
+      ac.error('[ACDG] acción táctil: esta versión de CSP no tiene ac.' .. tostring(name) .. '()')
+    end
+    return
+  end
   local ok, err = pcall(fn, a, b)
   if not ok then
-    local key = tostring(err)
+    local key = name .. ': ' .. tostring(err)
     if not actionErrors[key] then
       actionErrors[key] = true
-      ac.error('[ACDG] acción táctil: ' .. key)
+      ac.error('[ACDG] acción táctil ' .. key)
     end
   end
 end
@@ -1451,54 +1459,63 @@ local ACTIONS = {
   switch_toggle = { press = function(el) local k = el.switchKey or 'a' setSwitch(k, not (touch.sw[k] == true)) end },
   switch_on = { press = function(el) setSwitch(el.switchKey or 'a', true) end },
   switch_off = { press = function(el) setSwitch(el.switchKey or 'a', false) end },
-  headlights = { press = function() call(ac.setHeadlights, car.headlightsActive ~= true) end },
-  high_beams = { press = function() call(ac.setHighBeams, car.highBeams ~= true) end },
-  daytime = { press = function() touch.daytime = not touch.daytime call(ac.setDaytimeLights, touch.daytime) end },
-  flash = { press = function() call(ac.flashLights) end },
-  turn_left = { press = function() call(ac.setTurningLights, car.turningLeftLights == true and 0 or 1) end },
-  turn_right = { press = function() call(ac.setTurningLights, car.turningRightLights == true and 0 or 2) end },
-  hazards = { press = function() call(ac.setTurningLights, car.hazardLights == true and 0 or 3) end },
-  turn_off = { press = function() call(ac.setTurningLights, 0) end },
-  wipers_next = { press = function() call(ac.setWiperMode, cycle(num(car.wiperMode), 1, num(car.wiperModes))) end },
-  wipers_off = { press = function() call(ac.setWiperMode, 0) end },
+  headlights = { press = function() call('setHeadlights', car.headlightsActive ~= true) end },
+  high_beams = { press = function() call('setHighBeams', car.highBeams ~= true) end },
+  daytime = { press = function() touch.daytime = not touch.daytime call('setDaytimeLights', touch.daytime) end },
+  flash = { press = function() call('flashLights') end },
+  turn_left = { press = function() call('setTurningLights', car.turningLeftLights == true and 0 or 1) end },
+  turn_right = { press = function() call('setTurningLights', car.turningRightLights == true and 0 or 2) end },
+  hazards = { press = function() call('setTurningLights', car.hazardLights == true and 0 or 3) end },
+  turn_off = { press = function() call('setTurningLights', 0) end },
+  wipers_next = { press = function() call('setWiperMode', cycle(num(car.wiperMode), 1, num(car.wiperModes))) end },
+  wipers_off = { press = function() call('setWiperMode', 0) end },
   kers = {
-    press = function() call(ac.setKERS, true) end,
-    hold = function() call(ac.setKERS, true) end,
-    release = function() call(ac.setKERS, false) end,
+    press = function() call('setKERS', true) end,
+    hold = function() call('setKERS', true) end,
+    release = function() call('setKERS', false) end,
   },
-  drs = { press = function() call(ac.setDRS, car.drsActive ~= true) end },
-  mguk_delivery_up = { press = function() call(ac.setMGUKDelivery, cycle(num(car.mgukDelivery), 1, num(car.mgukDeliveryCount))) end },
-  mguk_delivery_down = { press = function() call(ac.setMGUKDelivery, cycle(num(car.mgukDelivery), -1, num(car.mgukDeliveryCount))) end },
-  mguk_recovery_up = { press = function() call(ac.setMGUKRecovery, math.min(10, num(car.mgukRecovery) + 1)) end },
-  mguk_recovery_down = { press = function() call(ac.setMGUKRecovery, math.max(0, num(car.mgukRecovery) - 1)) end },
-  mguh_toggle = { press = function() call(ac.setMGUHCharging, car.mguhChargingBatteries ~= true) end },
-  tc_up = { press = function() call(ac.setTractionControl, cycle(num(car.tractionControlMode), 1, num(car.tractionControlModes) + 1)) end },
-  tc_down = { press = function() call(ac.setTractionControl, cycle(num(car.tractionControlMode), -1, num(car.tractionControlModes) + 1)) end },
-  abs_up = { press = function() call(ac.setABS, cycle(num(car.absMode), 1, num(car.absModes) + 1)) end },
-  abs_down = { press = function() call(ac.setABS, cycle(num(car.absMode), -1, num(car.absModes) + 1)) end },
-  brake_bias_up = { press = function(el) call(ac.setBrakeBias, math.min(1, num(car.brakeBias) + step(el, 0.005))) end },
-  brake_bias_down = { press = function(el) call(ac.setBrakeBias, math.max(0, num(car.brakeBias) - step(el, 0.005))) end },
+  drs = { press = function() call('setDRS', car.drsActive ~= true) end },
+  mguk_delivery_up = { press = function() call('setMGUKDelivery', cycle(num(car.mgukDelivery), 1, num(car.mgukDeliveryCount))) end },
+  mguk_delivery_down = { press = function() call('setMGUKDelivery', cycle(num(car.mgukDelivery), -1, num(car.mgukDeliveryCount))) end },
+  mguk_recovery_up = { press = function() call('setMGUKRecovery', math.min(10, num(car.mgukRecovery) + 1)) end },
+  mguk_recovery_down = { press = function() call('setMGUKRecovery', math.max(0, num(car.mgukRecovery) - 1)) end },
+  mguh_toggle = { press = function() call('setMGUHCharging', car.mguhChargingBatteries ~= true) end },
+  tc_up = { press = function() call('setTractionControl', cycle(num(car.tractionControlMode), 1, num(car.tractionControlModes) + 1)) end },
+  tc_down = { press = function() call('setTractionControl', cycle(num(car.tractionControlMode), -1, num(car.tractionControlModes) + 1)) end },
+  abs_up = { press = function() call('setABS', cycle(num(car.absMode), 1, num(car.absModes) + 1)) end },
+  abs_down = { press = function() call('setABS', cycle(num(car.absMode), -1, num(car.absModes) + 1)) end },
+  brake_bias_up = { press = function(el) call('setBrakeBias', math.min(1, num(car.brakeBias) + step(el, 0.005))) end },
+  brake_bias_down = { press = function(el) call('setBrakeBias', math.max(0, num(car.brakeBias) - step(el, 0.005))) end },
   engine_brake_up = { press = function()
     touch.engineBrake = cycle(touch.engineBrake, 1, math.max(1, num(car.engineBrakeSettingsCount)))
-    call(ac.setEngineBrakeSetting, touch.engineBrake)
+    call('setEngineBrakeSetting', touch.engineBrake)
   end },
   engine_brake_down = { press = function()
     touch.engineBrake = cycle(touch.engineBrake, -1, math.max(1, num(car.engineBrakeSettingsCount)))
-    call(ac.setEngineBrakeSetting, touch.engineBrake)
+    call('setEngineBrakeSetting', touch.engineBrake)
   end },
-  neutral = { press = function() call(ac.switchToNeutralGear) end },
-  autoshifter = { press = function() call(ac.setAutoShifter, car.autoShift ~= true) end },
-  extra_a = { press = function() call(ac.setExtraSwitch, 0, car.extraA ~= true) end },
-  extra_b = { press = function() call(ac.setExtraSwitch, 1, car.extraB ~= true) end },
-  extra_c = { press = function() call(ac.setExtraSwitch, 2, car.extraC ~= true) end },
-  extra_d = { press = function() call(ac.setExtraSwitch, 3, car.extraD ~= true) end },
+  neutral = { press = function() call('switchToNeutralGear') end },
+  autoshifter = { press = function() call('setAutoShifter', car.autoShift ~= true) end },
+  extra_a = { press = function() call('setExtraSwitch', 0, car.extraA ~= true) end },
+  extra_b = { press = function() call('setExtraSwitch', 1, car.extraB ~= true) end },
+  extra_c = { press = function() call('setExtraSwitch', 2, car.extraC ~= true) end },
+  extra_d = { press = function() call('setExtraSwitch', 3, car.extraD ~= true) end },
 }
+
+local pressLogged = {}
 
 local function fire(el, phase)
   local def = ACTIONS[el.config.action or 'none']
   if not def then return end
   local fn = def[phase]
-  if fn then fn(el) end
+  if not fn then return end
+  -- la primera pulsación de cada botón queda en el log de CSP: sirve para comprobar que el táctil
+  -- llega al script aunque la acción no se note en el coche
+  if phase == 'press' and not pressLogged[el.id] then
+    pressLogged[el.id] = true
+    ac.warn('[ACDG] botón "' .. tostring(el.name or el.id) .. '" pulsado → ' .. tostring(el.config.action))
+  end
+  fn(el)
 end
 
 local function initTouch()
@@ -1506,6 +1523,7 @@ local function initTouch()
   touch.on = tc ~= nil and tc.enabled == true
   touch.hover, touch.active, touch.pressStrip = nil, nil, -1
   touch.prevManual, touch.engineBrake, touch.daytime = nil, 0, false
+  touch.wasDown = false
   touch.sw, touch.storage = {}, nil
   if not tc or type(tc.switches) ~= 'table' then return end
   local defaults, any = {}, false
@@ -1537,7 +1555,10 @@ local function updateTouch()
   local page = currentPageRef or cfg.pages[1]
   local tc = cfg.settings.touch or {}
   local down = uiFlag(ui.mouseDown)
-  local clicked = uiFlag(ui.mouseClicked)
+  -- el flanco se calcula aquí y no solo con ui.mouseClicked(): con SKIP_FRAMES (o pocos Hz de
+  -- refresco) el script no se ejecuta en todos los frames y ese aviso se perdería
+  local clicked = uiFlag(ui.mouseClicked) or (down and not touch.wasDown)
+  touch.wasDown = down
 
   -- botón bajo el puntero (cuesta un raycast: solo se busca si hace falta)
   local hovered = nil

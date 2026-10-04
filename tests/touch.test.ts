@@ -260,6 +260,31 @@ describe('táctil: runtime Lua', () => {
     }
   }, 30000);
 
+  it('la pulsación se detecta por el flanco del ratón aunque CSP se salte frames', async () => {
+    // con SKIP_FRAMES (o pocos Hz de refresco) el script no corre en todos los frames y el aviso de
+    // ui.mouseClicked() se pierde: el flanco se calcula en el runtime a partir de ui.mouseDown()
+    const p = project();
+    p.displays[0].settings.refreshHz = 20;
+    const lua = generateDisplayLua(generateConfigLua(p, p.displays[0], profile.displays[0]).lua, RUNTIME, 'driver_display');
+    const engine = await new LuaFactory().createEngine();
+    try {
+      await engine.doString(STUBS);
+      await engine.doString(lua);
+      await engine.doString('script.update(0.016)');
+      // MOUSE.clicked se queda en false: solo se mantiene el botón pulsado
+      await engine.doString('MOUSE.x, MOUSE.y = 150, 150; MOUSE.down = true; for i = 1, 20 do script.update(0.016) end');
+      expect(await engine.doString("return ACDG.sw('a')")).toBe(true);
+      // "al tocar" no se repite mientras se mantiene
+      await engine.doString('for i = 1, 20 do script.update(0.016) end');
+      expect(await engine.doString("return ACDG.sw('a')")).toBe(true);
+      await engine.doString('MOUSE.down = false; script.update(0.016); MOUSE.down = true; for i = 1, 10 do script.update(0.016) end');
+      expect(await engine.doString("return ACDG.sw('a')")).toBe(false);
+      expect(await engine.doString('return ERRORED')).toBeFalsy();
+    } finally {
+      engine.global.close();
+    }
+  }, 30000);
+
   it('sin táctil no se consulta el puntero y el gesto cambia de página', async () => {
     const p = project();
     const d = p.displays[0];

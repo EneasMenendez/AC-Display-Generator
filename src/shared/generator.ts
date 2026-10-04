@@ -311,6 +311,8 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
     case 'button':
       return {
         ...base,
+        /** nombre visible: se usa en el log de CSP al pulsarlo */
+        name: el.name,
         config: el.config,
         file: el.config.image ? addAsset(el.config.image) : undefined,
         fileOn: el.config.imageOn ? addAsset(el.config.imageOn) : undefined,
