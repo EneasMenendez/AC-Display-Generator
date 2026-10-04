@@ -10,6 +10,7 @@ import { PreviewPanel } from './PreviewPanel';
 import { InstallDialog } from './InstallDialog';
 import { AddDisplayDialog } from './AddDisplayDialog';
 import { NeedlesDialog } from './NeedlesDialog';
+import { PhysicalButtonsDialog } from './PhysicalButtonsDialog';
 import { Icon } from './icons';
 
 export function Editor() {
@@ -33,6 +34,7 @@ export function Editor() {
   const [install, setInstall] = useState(false);
   const [addDisplay, setAddDisplay] = useState(false);
   const [needles, setNeedles] = useState(false);
+  const [physBtns, setPhysBtns] = useState(false);
   const [help, setHelp] = useState(false);
 
   // cargar fuentes del proyecto en el documento
@@ -173,6 +175,9 @@ export function Editor() {
         <button className="ghost" onClick={() => setAddDisplay(true)} title="Añadir otro display del coche al proyecto (copiloto, volante…)">
           <Icon name="plus" size={14} /> Display
         </button>
+        <button className="ghost" onClick={() => setPhysBtns(true)} title="Botones físicos del coche: mallas del modelo 3D que se pulsan con el ratón (botonera, pulsadores del salpicadero…)">
+          <Icon name="touch" size={14} /> Botones{dp?.physicalButtons?.length ? ` (${dp.physicalButtons.length})` : ''}
+        </button>
         <button className="ghost" onClick={() => setNeedles(true)} title="Agujas físicas del modelo 3D (cuentarrevoluciones, presión…), sin display">
           <Icon name="needle" size={14} /> Agujas{project.physicalNeedles?.length ? ` (${project.physicalNeedles.length})` : ''}
         </button>
@@ -278,6 +283,7 @@ export function Editor() {
       {install && <InstallDialog onClose={() => setInstall(false)} />}
       {addDisplay && <AddDisplayDialog onClose={() => setAddDisplay(false)} />}
       {needles && <NeedlesDialog onClose={() => setNeedles(false)} />}
+      {physBtns && <PhysicalButtonsDialog onClose={() => setPhysBtns(false)} />}
       {help && (
         <div className="modal-bg" onClick={() => setHelp(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

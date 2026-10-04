@@ -1518,6 +1518,68 @@ local function fire(el, phase)
   fn(el)
 end
 
+-- ------------------------------------------------------------
+-- Botones físicos: mallas del coche que se pulsan con el ratón (ac.isMeshPressed hace el raycast,
+-- y solo mientras el ratón está pulsado, así que no cuesta nada el resto del tiempo).
+-- ------------------------------------------------------------
+
+local physical = {}   -- estado por botón físico: { down, nextRepeat, uvFrom, uvSize, pos }
+
+local function initPhysical()
+  physical = {}
+  local list = cfg.physicalButtons
+  if type(list) ~= 'table' then return end
+  for i = 1, #list do
+    local b = list[i]
+    local st = { down = false, nextRepeat = 0 }
+    if b.uv then
+      st.uvFrom = vec2(b.uv.x or 0, b.uv.y or 0)
+      st.uvSize = vec2(b.uv.width or 1, b.uv.height or 1)
+    end
+    if b.point and b.radius then st.pos = vec3(b.point.x or 0, b.point.y or 0, b.point.z or 0) end
+    physical[i] = st
+  end
+end
+
+local function meshPressed(b, st)
+  local ok, r = pcall(ac.isMeshPressed, b.mesh, st.uvFrom, st.uvSize, st.pos, b.radius, b.localPoint == true)
+  if not ok then
+    if not actionErrors['isMeshPressed'] then
+      actionErrors['isMeshPressed'] = true
+      ac.error('[ACDG] botones físicos: ' .. tostring(r))
+    end
+    return false
+  end
+  return r == true
+end
+
+local function updatePhysical()
+  local list = cfg.physicalButtons
+  if type(list) ~= 'table' then return end
+  for i = 1, #list do
+    local b = list[i]
+    local st = physical[i]
+    if st then
+      local down = meshPressed(b, st)
+      local behavior = b.config.behavior or 'tap'
+      if down and not st.down then
+        st.nextRepeat = tReal + math.max(0.05, (b.config.repeatMs or 250) / 1000)
+        fire(b, 'press')
+      elseif down then
+        if behavior == 'hold' then
+          fire(b, 'hold')
+        elseif behavior == 'repeat' and tReal >= st.nextRepeat then
+          st.nextRepeat = tReal + math.max(0.05, (b.config.repeatMs or 250) / 1000)
+          fire(b, 'press')
+        end
+      elseif st.down then
+        fire(b, 'release')
+      end
+      st.down = down
+    end
+  end
+end
+
 local function initTouch()
   local tc = cfg.settings.touch
   touch.on = tc ~= nil and tc.enabled == true
@@ -1638,6 +1700,7 @@ function ACDG.init(config, dir)
   fonts = {}
   initPages()
   initTouch()
+  initPhysical()
   currentPageRef = nil
   previousPageRef = nil
   pageEnteredAt = t
@@ -1675,10 +1738,15 @@ function ACDG.update(dt)
     ac.skipFrame()
     return
   end
-  -- táctil: el puntero se lee a la frecuencia del juego, incluso en los frames que no se dibujan
-  if touch.on then
+  -- táctil y botones físicos: se leen a la frecuencia del juego, incluso en los frames que no se
+  -- dibujan (los botones físicos no necesitan que la pantalla sea táctil)
+  local hasPhysical = type(cfg.physicalButtons) == 'table' and #cfg.physicalButtons > 0
+  if touch.on or hasPhysical then
     for k in pairs(varCache) do varCache[k] = nil end
-    local okT, errT = pcall(updateTouch)
+    local okT, errT = pcall(function()
+      if touch.on then updateTouch() end
+      if hasPhysical then updatePhysical() end
+    end)
     if not okT and not touchErrorLogged then
       touchErrorLogged = true
       ac.error('[ACDG] táctil: ' .. tostring(errT))

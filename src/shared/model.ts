@@ -513,6 +513,48 @@ export function createTrigger(input = 'kers_button'): PageTrigger {
 /** Entrada de CSP (botón del volante / tecla extra) que pasa a la siguiente página. */
 export type PageSwitchInput = 'none' | 'extraA' | 'extraB' | 'extraC' | 'extraD' | 'extraE' | 'extraF' | 'extraG' | 'extraH';
 
+/**
+ * Botón físico del coche: una malla (o parte de ella) del modelo 3D que se puede pulsar con el ratón.
+ * CSP lo resuelve con `ac.isMeshPressed` (un raycast contra la malla, solo mientras se pulsa el ratón),
+ * así que no necesita que la pantalla sea táctil. Lo atiende el script del display al que pertenece.
+ */
+export interface PhysicalButton {
+  id: string;
+  name: string;
+  /** malla o nodo del modelo; varias con la sintaxis de CSP: "{ mesh1, mesh2 }" */
+  mesh: string;
+  /** limitar la zona sensible a una región de la UV de la malla (0–1) */
+  uv?: { x: number; y: number; width: number; height: number };
+  /** limitar la zona sensible a una esfera alrededor de un punto (coordenadas del coche, metros) */
+  point?: { x: number; y: number; z: number };
+  /** radio de esa esfera en metros */
+  radius?: number;
+  /** el punto está en coordenadas locales de la malla, no del coche */
+  localPoint?: boolean;
+  /** qué hace (mismo catálogo que los botones táctiles) */
+  action: TouchActionId;
+  /** página destino (action = page_go) */
+  pageId?: string;
+  /** interruptor táctil que usa (acciones switch_*) */
+  switch: string;
+  step: number;
+  behavior: 'tap' | 'hold' | 'repeat';
+  repeatMs: number;
+}
+
+export function createPhysicalButton(mesh = ''): PhysicalButton {
+  return {
+    id: newId('pbtn'),
+    name: mesh || 'Botón físico',
+    mesh,
+    action: 'page_next',
+    switch: 'a',
+    step: 0,
+    behavior: 'tap',
+    repeatMs: 250,
+  };
+}
+
 /** Un interruptor táctil del display (variable touch_<key> del catálogo). */
 export interface TouchSwitchDef {
   /** a…f */
@@ -576,6 +618,8 @@ export interface DisplayProject {
   pages: Page[];
   /** fuentes importadas: nombre → ruta relativa dentro de assets/fonts */
   fonts: Record<string, string>;
+  /** botones físicos del coche atendidos por el script de este display */
+  physicalButtons?: PhysicalButton[];
 }
 
 /**
@@ -873,6 +917,7 @@ export function createDisplayProject(params: { displayId: string; name: string; 
     settings: { ...DEFAULT_SETTINGS, pageSwitch: { ...DEFAULT_SETTINGS.pageSwitch }, touch: { ...DEFAULT_TOUCH, switches: [] } },
     pages: [{ id: 'main', name: 'Principal', elements: [] }],
     fonts: {},
+    physicalButtons: [],
   };
 }
 
@@ -948,6 +993,7 @@ export function migrateProject(raw: unknown): Project {
     };
     if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];
     d.fonts = d.fonts ?? {};
+    d.physicalButtons = Array.isArray(d.physicalButtons) ? d.physicalButtons : [];
   }
   return proj;
 }

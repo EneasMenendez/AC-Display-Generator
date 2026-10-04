@@ -19,6 +19,7 @@
  */
 
 import type { ButtonElement, DisplayProject, Page } from './model';
+import { pageConditions } from './model';
 
 export type TouchActionId =
   | 'none'
@@ -208,6 +209,8 @@ export function usedSwitches(dp: DisplayProject): string[] {
       if (e.type === 'button' && isSwitchAction(e.config.action)) used.add(e.config.switch || 'a');
       for (const r of e.rules) if (r.when.variable?.startsWith('touch_')) used.add(r.when.variable.slice('touch_'.length));
     }
+    for (const c of pageConditions(p)) if (c.variable?.startsWith('touch_')) used.add(c.variable.slice('touch_'.length));
   }
+  for (const b of dp.physicalButtons ?? []) if (isSwitchAction(b.action)) used.add(b.switch || 'a');
   return TOUCH_SWITCHES.filter((k) => used.has(k));
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LuaFactory } from 'wasmoon';
-import { createElement, createEmptyProject, type ButtonElement, type Project } from '../src/shared/model';
+import { createElement, createEmptyProject, createPhysicalButton, type ButtonElement, type Project } from '../src/shared/model';
 import { parseProfile } from '../src/shared/profile';
 import { collectVariables, generateConfigLua, generateDisplayIni, generateDisplayLua } from '../src/shared/generator';
 import { TOUCH_ACTIONS, buttonAt, buttonStateVar, displayHasTouch, usedSwitches } from '../src/shared/touch';
@@ -41,6 +41,10 @@ function project(): Project {
   );
   d.pages.push({ id: 'p2', name: 'Segunda', elements: [createElement('text')] });
   d.settings.touch.switches = [{ key: 'a', label: 'Modo', initial: false, remember: true }];
+  d.physicalButtons = [
+    { ...createPhysicalButton('ButtonPanel_01'), name: 'Botonera: páginas', action: 'page_next' },
+    { ...createPhysicalButton('ButtonPanel_02'), name: 'Botonera: modo', action: 'switch_toggle', switch: 'b' },
+  ];
   return p;
 }
 
@@ -84,7 +88,7 @@ describe('táctil: modelo y generación', () => {
     expect(gen.lua).toContain('a = {');
     expect(gen.lua).toContain('remember = true');
     // el interruptor y las variables de estado de los botones entran en el catálogo del display
-    expect(usedSwitches(p.displays[0])).toEqual(['a']);
+    expect(usedSwitches(p.displays[0])).toEqual(['a', 'b']); // a: botón de la pantalla, b: botón físico
     const vars = collectVariables(p.displays[0]);
     expect(vars).toContain('touch_a');
     expect(vars).toContain('kers_button');
@@ -151,6 +155,8 @@ const STUBS = `
 local vmt = {}
 vmt.__index = vmt
 function vec2(x, y) return setmetatable({ x = x or 0, y = y or 0 }, vmt) end
+function vec3(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, vmt) end
+MESH_PRESSED = nil
 local cmt = {}
 cmt.__index = cmt
 rgbm = setmetatable({}, { __call = function(_, r, g, b, m) return setmetatable({ r = r or 1, g = g or 1, b = b or 1, mult = m or 1 }, cmt) end })
@@ -181,6 +187,7 @@ ac = setmetatable({
   error = function(...) ERRORED = table.concat({ ... }, ' ') end,
   setKERS = function(v) KERS = v CALLS[#CALLS + 1] = 'setKERS' end,
   setTractionControl = function(v) TC = v CALLS[#CALLS + 1] = 'setTractionControl' end,
+  isMeshPressed = function(name) return MESH_PRESSED == name end,
 }, { __index = function(_, k) return rec(k) end })
 CARV = { rpm = 4500, rpmLimiter = 8000, gear = 3, speedKmh = 0, focused = true, distanceToCamera = 2,
   physicsAvailable = true, tractionControlMode = 3, tractionControlModes = 6, isInPitlane = false }
@@ -209,6 +216,54 @@ function RELEASE()
   script.update(0.016)
 end
 `;
+
+describe('botones físicos del coche', () => {
+  it('se emiten en la configuración con la malla, la zona y la acción', () => {
+    const p = project();
+    const d = p.displays[0];
+    d.physicalButtons![0].point = { x: 0.1, y: 0.8, z: 0.4 };
+    d.physicalButtons![0].radius = 0.04;
+    d.physicalButtons![1].uv = { x: 0, y: 0.5, width: 0.5, height: 0.5 };
+    const gen = generateConfigLua(p, d, profile.displays[0]);
+    expect(gen.lua).toContain('physicalButtons = {');
+    expect(gen.lua).toContain("mesh = 'ButtonPanel_01'");
+    expect(gen.lua).toContain('radius = 0.04');
+    expect(gen.lua).toContain("action = 'page_next'");
+    expect(gen.lua).toContain("switchKey = 'b'");
+    // los interruptores que usan también se inicializan
+    expect(usedSwitches(d)).toEqual(['a', 'b']);
+    // una malla vacía no se emite
+    d.physicalButtons![0].mesh = '  ';
+    expect(generateConfigLua(p, d, profile.displays[0]).lua).not.toContain('ButtonPanel_01');
+  });
+
+  it('pulsar la malla en el juego ejecuta la acción una sola vez por pulsación', async () => {
+    const p = project();
+    const lua = generateDisplayLua(generateConfigLua(p, p.displays[0], profile.displays[0]).lua, RUNTIME, 'driver_display');
+    const engine = await new LuaFactory().createEngine();
+    try {
+      await engine.doString(STUBS);
+      await engine.doString(lua);
+      await engine.doString('script.update(0.016)');
+      // la botonera del interruptor: una pulsación mantenida cuenta una vez ("al pulsar")
+      await engine.doString("MESH_PRESSED = 'ButtonPanel_02'; for i = 1, 10 do script.update(0.016) end");
+      expect(await engine.doString("return ACDG.sw('b')")).toBe(true);
+      await engine.doString('MESH_PRESSED = nil; script.update(0.016)');
+      await engine.doString("MESH_PRESSED = 'ButtonPanel_02'; for i = 1, 5 do script.update(0.016) end");
+      expect(await engine.doString("return ACDG.sw('b')")).toBe(false);
+      // la botonera de páginas cambia de página (la segunda tiene menos elementos)
+      await engine.doString('MESH_PRESSED = nil; CALLS = {}; script.update(0.016)');
+      const antes = Number(await engine.doString('return #CALLS'));
+      await engine.doString("MESH_PRESSED = 'ButtonPanel_01'; script.update(0.016); MESH_PRESSED = nil");
+      await engine.doString('for i = 1, 60 do script.update(0.016) end');
+      await engine.doString('CALLS = {}; script.update(0.016)');
+      expect(Number(await engine.doString('return #CALLS'))).toBeLessThan(antes);
+      expect(await engine.doString('return ERRORED')).toBeFalsy();
+    } finally {
+      engine.global.close();
+    }
+  }, 30000);
+});
 
 describe('táctil: runtime Lua', () => {
   it('pulsar un botón conmuta el interruptor, cambia de página y mantiene el KERS', async () => {

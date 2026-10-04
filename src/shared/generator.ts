@@ -170,6 +170,32 @@ export interface GeneratedConfig {
   variables: string[];
 }
 
+/**
+ * Botones físicos del coche. Se emiten con la misma forma que un botón de la pantalla (config.action…)
+ * para que el runtime use la misma tabla de acciones.
+ */
+function physicalButtonsConfig(dp: DisplayProject): Record<string, unknown>[] {
+  return (dp.physicalButtons ?? [])
+    .filter((b) => b.mesh.trim() !== '')
+    .map((b) => ({
+      id: b.id,
+      name: b.name,
+      mesh: b.mesh.trim(),
+      uv: b.uv,
+      point: b.point && b.radius ? b.point : undefined,
+      radius: b.point && b.radius ? b.radius : undefined,
+      localPoint: b.localPoint || undefined,
+      switchKey: isSwitchAction(b.action) ? b.switch || 'a' : undefined,
+      config: {
+        action: b.action,
+        pageId: b.pageId,
+        behavior: b.behavior,
+        repeatMs: b.repeatMs,
+        step: b.step,
+      },
+    }));
+}
+
 /** Parte táctil de la configuración: estado inicial de los interruptores y gestos. */
 function touchConfig(dp: DisplayProject): Record<string, unknown> {
   const t = dp.settings.touch;
@@ -259,6 +285,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
     vars,
     varMeta,
     pages,
+    physicalButtons: physicalButtonsConfig(dp),
   };
 
   const header = [

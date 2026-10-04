@@ -1,4 +1,4 @@
-import type { ButtonElement } from '@shared/model';
+import type { ButtonConfig } from '@shared/model';
 import { TOUCH_ACTION_MAP, isSwitchAction, switchVar } from '@shared/touch';
 
 /**
@@ -24,8 +24,13 @@ export interface TouchSimApi {
 
 export type TouchPhase = 'press' | 'hold' | 'release';
 
+/** Botón de la pantalla o botón físico del coche: solo hace falta su configuración. */
+export interface TouchTarget {
+  config: Pick<ButtonConfig, 'action'> & Partial<Pick<ButtonConfig, 'switch' | 'step' | 'pageId'>>;
+}
+
 /** Ejecuta la acción de un botón táctil en la previsualización. */
-export function fireTouch(el: ButtonElement, phase: TouchPhase, api: TouchSimApi): void {
+export function fireTouch(el: TouchTarget, phase: TouchPhase, api: TouchSimApi): void {
   const c = el.config;
   const def = TOUCH_ACTION_MAP[c.action];
   if (!def || c.action === 'none') return;
