@@ -2,7 +2,7 @@ import type { Color, DisplayElement, DisplayProject, Glow, Page, RpmValue, TextS
 import { resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
 import { buttonStateVar } from '@shared/touch';
-import { compare } from './compare';
+import { applyRules, blinkOn, type RuleResult } from './rules';
 import { formatBinding } from '@shared/format';
 import { VARIABLE_MAP } from '@shared/variables';
 import type { SimContext } from '../sim';
@@ -46,10 +46,6 @@ function css(c: Color | undefined, brightness: number, opacity: number): string 
   return `rgba(${Math.min(255, Math.round(r * k))},${Math.min(255, Math.round(g * k))},${Math.min(255, Math.round(b * k))},${(a * opacity).toFixed(3)})`;
 }
 
-function blinkOn(t: number, hz: number | undefined, duty = 0.5): boolean {
-  if (!hz || hz <= 0) return true;
-  return (t * hz) % 1 < Math.max(0.05, Math.min(0.95, duty || 0.5));
-}
 
 /**
  * Destello: dibuja la forma con sombra difuminada del mismo color (halo) y después la forma limpia.
@@ -101,31 +97,6 @@ function rpmOf(v: RpmValue, ctx: SimContext): number {
   return resolveRpm(v, ctx.limiter);
 }
 
-export interface RuleResult {
-  visible: boolean;
-  opacity: number;
-  color?: Color;
-  image?: string;
-}
-
-
-export function applyRules(el: DisplayElement, ctx: SimContext): RuleResult {
-  let visible = el.visible;
-  let opacity = el.opacity;
-  let color: Color | undefined;
-  let image: string | undefined;
-  for (const r of el.rules) {
-    const v = ctx.values[r.when.variable];
-    if (r.when.variable === 'is_replay' ? v === true : compare(v, r.when.op, r.when.value, ctx)) {
-      if (r.set.visible !== undefined) visible = r.set.visible;
-      if (r.set.opacity !== undefined) opacity = r.set.opacity;
-      if (r.set.color !== undefined) color = r.set.color;
-      if (r.set.image !== undefined) image = r.set.image;
-      if (r.set.blinkHz && r.set.blinkHz > 0 && !blinkOn(ctx.t, r.set.blinkHz)) visible = false;
-    }
-  }
-  return { visible, opacity, color, image };
-}
 
 /** Valor de variable con fallback cuando no hay físicas (replay). */
 function varValue(ctx: SimContext, id: string | undefined): number | boolean | undefined {
@@ -832,13 +803,16 @@ export function drawElement(g: CanvasRenderingContext2D, el: DisplayElement, ctx
   g.restore();
 }
 
-const tintCanvas = document.createElement('canvas');
+// lienzo auxiliar para teñir imágenes; se crea al primer uso (así el módulo se puede importar fuera
+// del navegador, por ejemplo en las pruebas de las reglas)
+let tintCanvas: HTMLCanvasElement | null = null;
 
 /** Dibuja una imagen multiplicada por un color (equivalente al parámetro color de ui.drawImage). */
 function drawTinted(g: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, color: Color, brightness: number, opacity: number): void {
   const [r, gg, b, a] = parseColor(color);
   const tw = Math.max(1, Math.round(w));
   const th = Math.max(1, Math.round(h));
+  if (!tintCanvas) tintCanvas = document.createElement('canvas');
   tintCanvas.width = tw;
   tintCanvas.height = th;
   const t = tintCanvas.getContext('2d')!;
@@ -878,3 +852,5 @@ export function drawScene(g: CanvasRenderingContext2D, project: DisplayProject, 
   for (const el of page.elements) drawElement(g, el, ctx, env);
   g.restore();
 }
+
+export { applyRules, type RuleResult };

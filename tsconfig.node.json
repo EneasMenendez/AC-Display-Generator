@@ -15,5 +15,5 @@
     "composite": true,
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/renderer/src/sim.ts", "src/renderer/src/render/compare.ts", "src/renderer/src/render/pageEngine.ts", "src/renderer/src/render/touchSim.ts", "electron.vite.config.ts", "tests/**/*"]
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/renderer/src/sim.ts", "src/renderer/src/render/compare.ts", "src/renderer/src/render/rules.ts", "src/renderer/src/render/pageEngine.ts", "src/renderer/src/render/touchSim.ts", "electron.vite.config.ts", "tests/**/*"]
 }
