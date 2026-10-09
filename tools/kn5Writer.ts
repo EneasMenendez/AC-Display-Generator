@@ -101,12 +101,13 @@ export function plane(
   const hw = width / 2;
   const hh = height / 2;
   const n = v3(0, 0, -1);
-  // la esquina de mayor X es la que el conductor ve a su izquierda: ahí va el borde u0 de la textura
+  // El orden de los vértices no se toca (marca hacia dónde mira la cara); lo que se invierte es la
+  // U: la esquina de mayor X es la que el conductor ve a su izquierda, así que ahí va u0.
   const vertices: Kn5Vertex[] = [
-    { pos: v3(center.x + hw, center.y + hh, center.z), normal: n, uv: [uv.u0, uv.v0] },
     { pos: v3(center.x - hw, center.y + hh, center.z), normal: n, uv: [uv.u1, uv.v0] },
-    { pos: v3(center.x - hw, center.y - hh, center.z), normal: n, uv: [uv.u1, uv.v1] },
+    { pos: v3(center.x + hw, center.y + hh, center.z), normal: n, uv: [uv.u0, uv.v0] },
     { pos: v3(center.x + hw, center.y - hh, center.z), normal: n, uv: [uv.u0, uv.v1] },
+    { pos: v3(center.x - hw, center.y - hh, center.z), normal: n, uv: [uv.u1, uv.v1] },
   ];
   return { vertices, indices: [0, 1, 2, 0, 2, 3] };
 }
@@ -121,9 +122,8 @@ export function box(
   const hx = size.x / 2;
   const hy = size.y / 2;
   const hz = size.z / 2;
-  // la cara que mira al conductor (-Z) se mapea como el plano: de +X a -X
   const faces: { n: Vec3; corners: Vec3[] }[] = [
-    { n: v3(0, 0, -1), corners: [v3(hx, hy, -hz), v3(-hx, hy, -hz), v3(-hx, -hy, -hz), v3(hx, -hy, -hz)] },
+    { n: v3(0, 0, -1), corners: [v3(-hx, hy, -hz), v3(hx, hy, -hz), v3(hx, -hy, -hz), v3(-hx, -hy, -hz)] },
     { n: v3(0, 0, 1), corners: [v3(hx, hy, hz), v3(-hx, hy, hz), v3(-hx, -hy, hz), v3(hx, -hy, hz)] },
     { n: v3(0, 1, 0), corners: [v3(-hx, hy, hz), v3(hx, hy, hz), v3(hx, hy, -hz), v3(-hx, hy, -hz)] },
     { n: v3(0, -1, 0), corners: [v3(-hx, -hy, -hz), v3(hx, -hy, -hz), v3(hx, -hy, hz), v3(-hx, -hy, hz)] },
@@ -134,11 +134,12 @@ export function box(
   const indices: number[] = [];
   for (const f of faces) {
     const base = vertices.length;
+    // igual que en el plano: la U va de +X a -X para que las texturas se lean del derecho
     const uvs: [number, number][] = [
-      [uv.u0, uv.v0],
       [uv.u1, uv.v0],
-      [uv.u1, uv.v1],
+      [uv.u0, uv.v0],
       [uv.u0, uv.v1],
+      [uv.u1, uv.v1],
     ];
     f.corners.forEach((c, i) => vertices.push({ pos: v3(cx + c.x, cy + c.y, cz + c.z), normal: f.n, uv: uvs[i] }));
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);

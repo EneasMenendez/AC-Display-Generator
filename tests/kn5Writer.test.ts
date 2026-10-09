@@ -78,3 +78,44 @@ describe('escritura de kn5', () => {
     expect(btn.vertices).toBe(24);
   });
 });
+
+describe('orientación de las caras', () => {
+  /**
+   * Normal que implica el orden de los vértices. El criterio es el que ya se vio funcionar en el
+   * juego: el producto vectorial del orden coincide con la normal declarada de la cara.
+   */
+  function windingNormal(v: { pos: { x: number; y: number; z: number } }[], i: number[]) {
+    const a = v[i[0]].pos;
+    const b = v[i[1]].pos;
+    const c = v[i[2]].pos;
+    const u = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const w = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+    return { x: u.y * w.z - u.z * w.y, y: u.z * w.x - u.x * w.z, z: u.x * w.y - u.y * w.x };
+  }
+
+  it('un plano mira al conductor y su textura se lee del derecho', () => {
+    const p = plane({ x: 0, y: 1, z: 0.7 }, 0.2, 0.1);
+    // el orden de los vértices tiene que corresponder a la cara que mira hacia -Z (al conductor)
+    expect(windingNormal(p.vertices, p.indices).z).toBeLessThan(0);
+    expect(p.vertices.every((v) => v.normal.z === -1)).toBe(true);
+    // en Assetto Corsa +X es el lado izquierdo del coche: ahí va el borde izquierdo de la textura
+    const derechaDelConductor = p.vertices.filter((v) => v.pos.x < 0);
+    const izquierdaDelConductor = p.vertices.filter((v) => v.pos.x > 0);
+    expect(izquierdaDelConductor.every((v) => v.uv[0] === 0)).toBe(true);
+    expect(derechaDelConductor.every((v) => v.uv[0] === 1)).toBe(true);
+    // arriba es v = 0
+    expect(p.vertices.filter((v) => v.pos.y > 1).every((v) => v.uv[1] === 0)).toBe(true);
+  });
+
+  it('las seis caras de una caja miran hacia fuera', () => {
+    const b = box({ x: 0, y: 0, z: 0 }, { x: 0.1, y: 0.1, z: 0.1 });
+    for (let f = 0; f < 6; f++) {
+      const tri = b.indices.slice(f * 6, f * 6 + 3);
+      const n = windingNormal(b.vertices, tri);
+      const declared = b.vertices[tri[0]].normal;
+      // el orden de los vértices y la normal declarada tienen que apuntar al mismo lado
+      const dot = n.x * declared.x + n.y * declared.y + n.z * declared.z;
+      expect(dot, `cara ${f}`).toBeGreaterThan(0);
+    }
+  });
+});
