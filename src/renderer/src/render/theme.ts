@@ -32,14 +32,21 @@ export const theme = {
   },
   /** acento: selección y tiradores */
   get accent(): string {
-    return cssVar('--accent', '#4f8cff');
+    return cssVar('--accent', '#f0a73a');
   },
   get accentFill(): string {
     return alpha(theme.accent, 0.12);
   },
-  /** avisos sobre el lienzo: área visible y elementos bloqueados */
+  /** elementos bloqueados */
   get warn(): string {
     return cssVar('--warn', '#d6a03f');
+  },
+  /** chrome discreto: marco del área visible y su etiqueta */
+  get dim(): string {
+    return cssVar('--text-3', '#5e636b');
+  },
+  get dimText(): string {
+    return cssVar('--text-2', '#92979f');
   },
   get warnFill(): string {
     return alpha(theme.warn, 0.33);

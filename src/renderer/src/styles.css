@@ -13,8 +13,10 @@
   --text: #e6e8ec;
   --text-2: #92979f;
   --text-3: #5e636b;
-  --accent: #4f8cff;
-  --accent-soft: rgba(79, 140, 255, 0.1);
+  --accent: #f0a73a;
+  --accent-soft: rgba(240, 167, 58, 0.12);
+  /* texto sobre el acento: el ámbar pide tinta oscura, no blanca */
+  --on-accent: #16171a;
   /* realce neutro: lo que antes resolvía un borde o un fondo más claro */
   --sel: rgba(255, 255, 255, 0.055);
   --ok: #58b878;
@@ -102,10 +104,11 @@ button:disabled {
 }
 button.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
+  font-weight: 600;
 }
 button.primary:hover {
-  background: #639aff;
+  background: #ffb94f;
 }
 /* "outline" ya no lleva borde: se distingue por un relleno apenas perceptible */
 button.outline {
@@ -149,7 +152,8 @@ button:focus-visible {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 ::selection {
-  background: rgba(79, 140, 255, 0.28);
+  background: rgba(240, 167, 58, 0.3);
+  color: #fff;
 }
 
 input[type='text'],

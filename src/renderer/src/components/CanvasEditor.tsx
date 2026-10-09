@@ -274,13 +274,13 @@ export function CanvasEditor() {
         g.rect(v.px, v.py, W * v.sx, H * v.sy);
         g.rect(ax, ay, aw, ah);
         g.fill('evenodd');
-        g.strokeStyle = s.previewMode ? theme.outline : theme.warn;
+        g.strokeStyle = s.previewMode ? theme.outline : theme.dim;
         g.lineWidth = 1;
         g.setLineDash(s.previewMode ? [] : [6, 4]);
         g.strokeRect(Math.round(ax) + 0.5, Math.round(ay) + 0.5, Math.round(aw), Math.round(ah));
         g.setLineDash([]);
         if (!s.previewMode) {
-          g.fillStyle = theme.warn;
+          g.fillStyle = theme.dimText;
           g.font = '11px system-ui, sans-serif';
           g.textBaseline = 'bottom';
           g.fillText(`área visible ${area.width}×${area.height} px`, ax + 4, ay - 3 > v.py + 12 ? ay - 3 : ay + 14);
