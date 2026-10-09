@@ -6,6 +6,8 @@ const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(chann
 export const api = {
   appInfo: () => invoke('app:info'),
   saveSettings: (patch: Record<string, unknown>) => invoke('settings:save', patch),
+  pickBackground: () => invoke('appearance:pickBackground'),
+  clearBackground: () => invoke('appearance:clearBackground'),
   pickAcRoot: () => invoke('ac:pickRoot'),
 
   listCars: (acRoot: string) => invoke('cars:list', acRoot),

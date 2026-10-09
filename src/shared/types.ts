@@ -9,9 +9,9 @@ export interface AppSettings {
   language: 'es' | 'en';
   convertToDds: boolean;
   theme: 'dark' | 'light';
-  /** acento: 'cm' (el de Content Manager), un preajuste ('amber', 'blue'…) o un #RRGGBB */
+  /** acento: un preajuste ('amber', 'blue'…) o un #RRGGBB */
   accent: string;
-  /** profundidad del fondo */
+  /** profundidad del fondo; con imagen de fondo marca cuánto se transparenta la interfaz */
   background: 'deep' | 'normal' | 'soft';
 }
 
@@ -22,8 +22,8 @@ export interface AppInfo {
   acRoots: string[];
   cspVersion: string | null;
   contentManager: string | null;
-  /** acento configurado en Content Manager (null si no lo ha personalizado o no se pudo leer) */
-  cmAccent: string | null;
+  /** imagen de fondo de la aplicación, ya cargada (null si no hay) */
+  backgroundUrl: string | null;
   settings: AppSettings;
   projectsDir: string;
 }
@@ -237,6 +237,9 @@ export interface BuiltinIcon {
 export interface AcdgApi {
   appInfo(): Promise<AppInfo>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** elige una imagen de fondo para la aplicación; devuelve su data URL (null si se cancela) */
+  pickBackground(): Promise<string | null>;
+  clearBackground(): Promise<void>;
   pickAcRoot(): Promise<{ acRoot?: string; error?: string } | null>;
 
   listCars(acRoot: string): Promise<CarSummary[]>;

@@ -4,7 +4,7 @@ import { app } from 'electron';
 import type { AppSettings } from '@shared/types';
 export type { AppSettings };
 
-const DEFAULTS: AppSettings = { acRoot: null, lastCar: null, language: 'es', convertToDds: false, theme: 'dark', accent: 'cm', background: 'normal' };
+const DEFAULTS: AppSettings = { acRoot: null, lastCar: null, language: 'es', convertToDds: false, theme: 'dark', accent: 'amber', background: 'normal' };
 
 function file(): string {
   return join(app.getPath('userData'), 'config.json');
@@ -12,7 +12,12 @@ function file(): string {
 
 export function loadSettings(): AppSettings {
   try {
-    if (existsSync(file())) return { ...DEFAULTS, ...(JSON.parse(readFileSync(file(), 'utf8')) as Partial<AppSettings>) };
+    if (existsSync(file())) {
+      const saved = { ...DEFAULTS, ...(JSON.parse(readFileSync(file(), 'utf8')) as Partial<AppSettings>) };
+      // 'cm' era el acento tomado de Content Manager, que ya no se usa
+      if (saved.accent === 'cm') saved.accent = DEFAULTS.accent;
+      return saved;
+    }
   } catch {
     /* config corrupta: se usan valores por defecto */
   }

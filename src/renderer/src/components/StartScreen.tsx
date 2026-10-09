@@ -130,37 +130,54 @@ export function StartScreen() {
 }
 
 /**
- * Aspecto: color de acento y profundidad del fondo. Por defecto el acento es el de Content Manager
- * (si allí se ha personalizado); si no, el ámbar de la aplicación.
+ * Aspecto: color de acento, profundidad del fondo e imagen de fondo opcional. Con imagen, los tres
+ * niveles pasan a decidir cuánta se ve a través de la interfaz.
  */
 function AppearanceCard() {
   const info = useStore((s) => s.info);
   const setInfo = useStore((s) => s.setInfo);
   if (!info) return null;
-  const { settings, cmAccent } = info;
-  const accent = settings.accent ?? 'cm';
-  const custom = accent !== 'cm' && !ACCENT_PRESETS[accent];
+  const { settings, backgroundUrl } = info;
+  const accent = settings.accent ?? 'amber';
+  const custom = !ACCENT_PRESETS[accent];
+
+  function apply(next: AppSettings, image: string | null) {
+    applyAppearance(next, image);
+    setInfo({ ...info!, settings: next, backgroundUrl: image });
+  }
 
   async function change(patch: Partial<AppSettings>) {
     const next = { ...settings, ...patch };
-    applyAppearance(next, cmAccent);
-    setInfo({ ...info!, settings: next });
+    apply(next, backgroundUrl);
     await api.saveSettings(patch);
+  }
+
+  async function pickImage() {
+    try {
+      const url = await api.pickBackground();
+      if (url) apply(settings, url);
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    }
+  }
+
+  async function removeImage() {
+    await api.clearBackground();
+    apply(settings, null);
   }
 
   return (
     <div className="card">
       <h3>Aspecto</h3>
       <div className="row">
-        <span className="muted small" style={{ width: 70 }}>
+        <span className="muted small" style={{ width: 62 }}>
           Acento
         </span>
         <select
           className="grow"
           value={custom ? 'custom' : accent}
-          onChange={(e) => change({ accent: e.target.value === 'custom' ? resolveAccent(settings, cmAccent) : e.target.value })}
+          onChange={(e) => change({ accent: e.target.value === 'custom' ? resolveAccent(settings) : e.target.value })}
         >
-          <option value="cm">Content Manager</option>
           <option value="amber">Ámbar</option>
           <option value="blue">Azul</option>
           <option value="green">Verde</option>
@@ -170,20 +187,34 @@ function AppearanceCard() {
         {custom && <input type="color" value={accent} onChange={(e) => change({ accent: e.target.value.toUpperCase() })} />}
       </div>
       <div className="row mt8">
-        <span className="muted small" style={{ width: 70 }}>
+        <span className="muted small" style={{ width: 62 }}>
           Fondo
         </span>
         {Object.entries(BACKGROUNDS).map(([id, b]) => (
-          <button key={id} className={`small ${(settings.background ?? 'normal') === id ? 'active' : 'ghost'}`} onClick={() => change({ background: id as AppSettings['background'] })}>
+          <button
+            key={id}
+            className={`small ${(settings.background ?? 'normal') === id ? 'active' : 'ghost'}`}
+            title={backgroundUrl ? `Deja ver ${Math.round((1 - b.alpha[0]) * 100)} % de la imagen` : undefined}
+            onClick={() => change({ background: id as AppSettings['background'] })}
+          >
             {b.label}
           </button>
         ))}
       </div>
-      {accent === 'cm' && (
-        <div className="muted small mt8">
-          {cmAccent ? `Tomado de Content Manager: ${cmAccent}` : 'Content Manager no tiene un acento propio guardado; se usa el ámbar de la aplicación.'}
-        </div>
-      )}
+      <div className="row mt8">
+        <span className="muted small" style={{ width: 62 }}>
+          Imagen
+        </span>
+        <button className="outline small grow" onClick={pickImage}>
+          {backgroundUrl ? 'Cambiar imagen…' : 'Elegir imagen…'}
+        </button>
+        {backgroundUrl && (
+          <button className="small ghost" onClick={removeImage}>
+            Quitar
+          </button>
+        )}
+      </div>
+      {backgroundUrl && <div className="muted small mt8">Con imagen, los tres niveles deciden cuánta se ve: profundo la deja casi tapada y suave la deja asomar.</div>}
     </div>
   );
 }

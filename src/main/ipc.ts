@@ -18,7 +18,7 @@ import { loadSettings, saveSettings, type AppSettings } from './services/setting
 import { RUNTIME_VERSION } from '@shared/generator';
 import { resourcesDir } from './services/resources';
 import { readCspLog } from './services/cspLog';
-import { readCmAccent } from './services/contentManager';
+import { backgroundUrl, clearBackground, setBackground } from './services/background';
 
 const execFileAsync = promisify(execFile);
 
@@ -41,12 +41,22 @@ export function registerIpc(): void {
       acRoots: roots,
       cspVersion: acRoot ? detectCspVersion(acRoot) : null,
       contentManager: findContentManager(acRoot),
-      cmAccent: readCmAccent(findContentManager(acRoot)),
+      backgroundUrl: backgroundUrl(),
       settings: { ...settings, acRoot },
       projectsDir: pm.defaultProjectsDir(),
     };
   });
   ipcMain.handle('settings:save', (_e, patch: Partial<AppSettings>) => saveSettings(patch));
+  ipcMain.handle('appearance:pickBackground', async () => {
+    const r = await dialog.showOpenDialog(win(), {
+      title: 'Imagen de fondo de la aplicación',
+      filters: [{ name: 'Imágenes', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }],
+      properties: ['openFile'],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return setBackground(r.filePaths[0]);
+  });
+  ipcMain.handle('appearance:clearBackground', () => clearBackground());
   ipcMain.handle('ac:pickRoot', async () => {
     const r = await dialog.showOpenDialog(win(), { title: 'Carpeta de Assetto Corsa', properties: ['openDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;

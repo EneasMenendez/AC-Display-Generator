@@ -189,8 +189,8 @@ export function CanvasEditor() {
 
       const g = canvas.getContext('2d')!;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.fillStyle = theme.bg;
-      g.fillRect(0, 0, cw, ch);
+      // el fondo lo pone el CSS (color o imagen); aquí solo se limpia lo dibujado antes
+      g.clearRect(0, 0, cw, ch);
       const v = view();
       const W = p.canvas.width;
       const H = p.canvas.height;
@@ -269,7 +269,7 @@ export function CanvasEditor() {
         const ah = area.height * v.sy;
         g.save();
         // oscurecer lo que queda fuera (en previsualización se oculta del todo)
-        g.fillStyle = s.previewMode ? theme.bg : theme.veil;
+        g.fillStyle = s.previewMode ? theme.veilSolid : theme.veil;
         g.beginPath();
         g.rect(v.px, v.py, W * v.sx, H * v.sy);
         g.rect(ax, ay, aw, ah);

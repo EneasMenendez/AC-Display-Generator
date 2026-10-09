@@ -67,8 +67,11 @@ export const theme = {
   get guide(): string {
     return '#d46bb3';
   },
-  /** velo sobre lo que la malla no muestra */
+  /** velo sobre lo que la malla no muestra (en previsualización lo tapa del todo) */
   get veil(): string {
-    return alpha(theme.bg, 0.78);
+    return 'rgba(0,0,0,0.72)';
+  },
+  get veilSolid(): string {
+    return '#000';
   },
 };

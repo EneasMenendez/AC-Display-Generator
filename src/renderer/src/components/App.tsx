@@ -17,8 +17,8 @@ export function App() {
     api
       .appInfo()
       .then((info) => {
-        // el acento puede venir de Content Manager: se aplica antes de pintar nada más
-        applyAppearance(info.settings, info.cmAccent);
+        // acento, profundidad y fondo: se aplican antes de pintar nada más
+        applyAppearance(info.settings, info.backgroundUrl);
         setInfo(info);
       })
       .catch((e) => toast(`No se pudo inicializar: ${e.message}`, 'err'));
