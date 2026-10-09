@@ -1742,10 +1742,9 @@ function ACDG.update(dt)
   local hasPhysical = type(cfg.physicalButtons) == 'table' and #cfg.physicalButtons > 0
   if touch.on or hasPhysical then
     for k in pairs(varCache) do varCache[k] = nil end
-    local okT, errT = pcall(function()
-      if touch.on then updateTouch() end
-      if hasPhysical then updatePhysical() end
-    end)
+    local okT, errT = true, nil
+    if touch.on then okT, errT = pcall(updateTouch) end
+    if okT and hasPhysical then okT, errT = pcall(updatePhysical) end
     if not okT and not touchErrorLogged then
       touchErrorLogged = true
       ac.error('[ACDG] táctil: ' .. tostring(errT))

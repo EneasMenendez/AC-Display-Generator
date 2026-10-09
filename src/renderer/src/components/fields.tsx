@@ -26,6 +26,15 @@ export function Num({ value, onChange, step = 1, min, max, disabled }: { value: 
   const [scrubbing, setScrubbing] = useState(false);
   const drag = useRef<{ startX: number; startValue: number; moved: boolean; pointerId: number } | null>(null);
   useEffect(() => setTxt(String(Math.round(value * 1000) / 1000)), [value]);
+  // si el campo desaparece a mitad de un arrastre (cambia la selección, se cierra el panel…) hay que
+  // cerrar el grupo de deshacer: si no, el proyecto se queda sin registrar cambios en el historial
+  useEffect(
+    () => () => {
+      if (drag.current?.moved) useStore.getState().endBatch();
+      drag.current = null;
+    },
+    [],
+  );
   const clamp = (v: number) => {
     let c = v;
     if (min !== undefined) c = Math.max(min, c);

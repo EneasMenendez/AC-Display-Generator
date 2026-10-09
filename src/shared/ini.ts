@@ -79,7 +79,8 @@ export function enableSectionsMatching(text: string, pattern: RegExp): string {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (!l.startsWith(DISABLED_PREFIX)) {
-      inMatch = false;
+      // una línea en blanco dentro de la sección no la corta (al desactivar no se comentan)
+      if (l.trim() !== '') inMatch = false;
       continue;
     }
     const body = l.slice(DISABLED_PREFIX.length).trim();

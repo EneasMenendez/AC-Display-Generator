@@ -1,6 +1,6 @@
 import { api } from './api';
 import { useStore, toast } from './store';
-import type { Project } from '@shared/model';
+import { usedAssets } from '@shared/generator';
 import type { DisplayProfile } from '@shared/profile';
 import { hasUvRegion, regionFromKn5Uv, uvRegionPx } from '@shared/uv';
 
@@ -72,26 +72,6 @@ export async function saveProjectFlow(forceDialog = false, thumbnail: Uint8Array
   }
 }
 
-function usedAssets(project: Project): string[] {
-  const used = new Set<string>();
-  for (const d of project.displays) {
-    if (d.background.file) used.add(d.background.file);
-    if (d.settings.boot?.sound) used.add(d.settings.boot.sound);
-    for (const f of Object.values(d.fonts)) used.add(f);
-    for (const page of d.pages) {
-      for (const el of page.elements) {
-        if (el.type === 'icon' && !el.config.icon.startsWith('builtin:')) used.add(el.config.icon);
-        if ((el.type === 'rpm_bar' || el.type === 'bar') && el.config.fillImage) used.add(el.config.fillImage);
-        if ((el.type === 'rpm_bar' || el.type === 'bar') && el.config.bgImage) used.add(el.config.bgImage);
-        if ((el.type === 'shift_lights' || el.type === 'needle') && el.config.image) used.add(el.config.image);
-        if (el.type === 'video' && el.config.file) used.add(el.config.file);
-        if (el.type === 'image' && el.config.file) used.add(el.config.file);
-        for (const r of el.rules) if (r.set.image && !r.set.image.startsWith('builtin:')) used.add(r.set.image);
-      }
-    }
-  }
-  return [...used];
-}
 
 /**
  * Perfiles anteriores a la detección de UV: si alguna malla solo muestra parte de la textura y el perfil

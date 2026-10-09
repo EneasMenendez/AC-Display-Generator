@@ -12,6 +12,7 @@ import {
   removeIncludeBlock,
   findConflictingDisplays,
   toLua,
+  usedAssets,
   LuaRaw,
 } from '../src/shared/generator';
 import { formatBinding, formatTime } from '../src/shared/format';
@@ -199,5 +200,41 @@ describe('formato', () => {
     expect(formatBinding({ variable: 'speed', decimals: 1, prefix: '', suffix: '', unit: 'mph', padZeros: 0, showSign: false }, 100)).toBe('62.1');
     expect(formatBinding({ variable: 'delta', decimals: 2, prefix: '', suffix: '', padZeros: 0, showSign: true }, 0.351)).toBe('+0.35');
     expect(formatBinding({ variable: 'throttle', decimals: 0, prefix: '', suffix: '%', padZeros: 3, showSign: false }, 0.7)).toBe('070%');
+  });
+});
+
+describe('recursos del proyecto', () => {
+  it('usedAssets incluye todo lo que escribe el instalador (si no, guardar los borraría)', () => {
+    const p = sampleProject();
+    const d = p.displays[0];
+    d.background.file = 'assets/bg.png';
+    d.settings.boot = { ...d.settings.boot, sound: 'assets/boot.wav' };
+    d.fonts = { Digital: 'assets/fonts/digital.ttf' };
+    const icon = createElement('icon') as Extract<ReturnType<typeof createElement>, { type: 'icon' }>;
+    icon.config.icon = 'assets/icons/abs.png';
+    icon.rules.push({ id: 'r', when: { variable: 'rpm', op: '>', value: 1000 }, set: { image: 'assets/icons/abs_on.png' } });
+    const button = createElement('button') as Extract<ReturnType<typeof createElement>, { type: 'button' }>;
+    button.config.image = 'assets/btn.png';
+    button.config.imageOn = 'assets/btn_on.png';
+    const needle = createElement('needle') as Extract<ReturnType<typeof createElement>, { type: 'needle' }>;
+    needle.config.image = 'assets/needle.png';
+    d.pages[0].elements.push(icon, button, needle);
+
+    const used = usedAssets(p).sort();
+    expect(used).toEqual(
+      [
+        'assets/bg.png',
+        'assets/boot.wav',
+        'assets/fonts/digital.ttf',
+        'assets/icons/abs.png',
+        'assets/icons/abs_on.png',
+        'assets/btn.png',
+        'assets/btn_on.png',
+        'assets/needle.png',
+      ].sort(),
+    );
+    // y coincide con lo que recoge la generación (menos las fuentes y el fondo, que van aparte)
+    const gen = generateConfigLua(p, d, parseProfile(profileJson).profile!.displays[0]);
+    for (const a of gen.assets) if (!a.source.startsWith('builtin:')) expect(used).toContain(a.source);
   });
 });

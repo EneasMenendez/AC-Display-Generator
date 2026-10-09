@@ -352,6 +352,26 @@ function serializeElement(el: DisplayElement, addAsset: (s: string) => string): 
   }
 }
 
+/**
+ * Recursos (imágenes, iconos, vídeos, fuentes, sonidos) que el proyecto usa de verdad. Recorre lo
+ * mismo que la generación —de ahí que reutilice serializeElement—, para que al guardar no se
+ * descarte un recurso que luego el instalador necesita.
+ */
+export function usedAssets(project: Project): string[] {
+  const used = new Set<string>();
+  const add = (source: string): string => {
+    if (source && !source.startsWith('builtin:')) used.add(source);
+    return source;
+  };
+  for (const d of project.displays) {
+    if (d.background.file) add(d.background.file);
+    if (d.settings.boot?.sound) add(d.settings.boot.sound);
+    for (const f of Object.values(d.fonts)) add(f);
+    for (const page of d.pages) for (const el of page.elements) serializeElement(el, add);
+  }
+  return [...used];
+}
+
 /* ---------- display.ini ---------- */
 
 export interface IniOptions {
