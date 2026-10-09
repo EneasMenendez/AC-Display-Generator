@@ -18,6 +18,7 @@ import { loadSettings, saveSettings, type AppSettings } from './services/setting
 import { RUNTIME_VERSION } from '@shared/generator';
 import { resourcesDir } from './services/resources';
 import { readCspLog } from './services/cspLog';
+import { readCmAccent } from './services/contentManager';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,6 +41,7 @@ export function registerIpc(): void {
       acRoots: roots,
       cspVersion: acRoot ? detectCspVersion(acRoot) : null,
       contentManager: findContentManager(acRoot),
+      cmAccent: readCmAccent(findContentManager(acRoot)),
       settings: { ...settings, acRoot },
       projectsDir: pm.defaultProjectsDir(),
     };

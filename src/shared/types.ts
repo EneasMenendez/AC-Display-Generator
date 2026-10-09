@@ -9,6 +9,10 @@ export interface AppSettings {
   language: 'es' | 'en';
   convertToDds: boolean;
   theme: 'dark' | 'light';
+  /** acento: 'cm' (el de Content Manager), un preajuste ('amber', 'blue'…) o un #RRGGBB */
+  accent: string;
+  /** profundidad del fondo */
+  background: 'deep' | 'normal' | 'soft';
 }
 
 export interface AppInfo {
@@ -18,6 +22,8 @@ export interface AppInfo {
   acRoots: string[];
   cspVersion: string | null;
   contentManager: string | null;
+  /** acento configurado en Content Manager (null si no lo ha personalizado o no se pudo leer) */
+  cmAccent: string | null;
   settings: AppSettings;
   projectsDir: string;
 }

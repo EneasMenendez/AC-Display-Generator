@@ -6,6 +6,11 @@
 
 const cache = new Map<string, string>();
 
+/** Olvida los colores leídos (al cambiar el aspecto desde los ajustes). */
+export function resetThemeCache(): void {
+  cache.clear();
+}
+
 function cssVar(name: string, fallback: string): string {
   const hit = cache.get(name);
   if (hit) return hit;

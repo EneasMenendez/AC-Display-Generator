@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CarSummary, RecentEntry } from '@shared/types';
+import type { AppSettings } from '@shared/types';
 import { api } from '../api';
+import { ACCENT_PRESETS, BACKGROUNDS, applyAppearance, resolveAccent } from '../appearance';
 import { useStore, toast } from '../store';
 import { openProjectFlow } from '../flows';
 
@@ -79,6 +81,7 @@ export function StartScreen() {
             </button>
           </div>
         </div>
+        <AppearanceCard />
         <div className="card grow" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <h3>Recientes</h3>
           <div className="list">
@@ -122,6 +125,65 @@ export function StartScreen() {
         </div>
         <div className="muted small">Doble clic para continuar. Los vehículos con perfil de display están marcados; para los demás puedes crear el perfil en el siguiente paso.</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Aspecto: color de acento y profundidad del fondo. Por defecto el acento es el de Content Manager
+ * (si allí se ha personalizado); si no, el ámbar de la aplicación.
+ */
+function AppearanceCard() {
+  const info = useStore((s) => s.info);
+  const setInfo = useStore((s) => s.setInfo);
+  if (!info) return null;
+  const { settings, cmAccent } = info;
+  const accent = settings.accent ?? 'cm';
+  const custom = accent !== 'cm' && !ACCENT_PRESETS[accent];
+
+  async function change(patch: Partial<AppSettings>) {
+    const next = { ...settings, ...patch };
+    applyAppearance(next, cmAccent);
+    setInfo({ ...info!, settings: next });
+    await api.saveSettings(patch);
+  }
+
+  return (
+    <div className="card">
+      <h3>Aspecto</h3>
+      <div className="row">
+        <span className="muted small" style={{ width: 70 }}>
+          Acento
+        </span>
+        <select
+          className="grow"
+          value={custom ? 'custom' : accent}
+          onChange={(e) => change({ accent: e.target.value === 'custom' ? resolveAccent(settings, cmAccent) : e.target.value })}
+        >
+          <option value="cm">Content Manager</option>
+          <option value="amber">Ámbar</option>
+          <option value="blue">Azul</option>
+          <option value="green">Verde</option>
+          <option value="red">Rojo</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+        {custom && <input type="color" value={accent} onChange={(e) => change({ accent: e.target.value.toUpperCase() })} />}
+      </div>
+      <div className="row mt8">
+        <span className="muted small" style={{ width: 70 }}>
+          Fondo
+        </span>
+        {Object.entries(BACKGROUNDS).map(([id, b]) => (
+          <button key={id} className={`small ${(settings.background ?? 'normal') === id ? 'active' : 'ghost'}`} onClick={() => change({ background: id as AppSettings['background'] })}>
+            {b.label}
+          </button>
+        ))}
+      </div>
+      {accent === 'cm' && (
+        <div className="muted small mt8">
+          {cmAccent ? `Tomado de Content Manager: ${cmAccent}` : 'Content Manager no tiene un acento propio guardado; se usa el ámbar de la aplicación.'}
+        </div>
+      )}
     </div>
   );
 }

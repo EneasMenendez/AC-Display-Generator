@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { api } from '../api';
+import { applyAppearance } from '../appearance';
 import { useStore, toast } from '../store';
 import { StartScreen } from './StartScreen';
 import { Wizard } from './Wizard';
@@ -15,7 +16,11 @@ export function App() {
   useEffect(() => {
     api
       .appInfo()
-      .then(setInfo)
+      .then((info) => {
+        // el acento puede venir de Content Manager: se aplica antes de pintar nada más
+        applyAppearance(info.settings, info.cmAccent);
+        setInfo(info);
+      })
       .catch((e) => toast(`No se pudo inicializar: ${e.message}`, 'err'));
     api.listIcons().then(setIcons).catch(() => undefined);
     api.listFonts().then(setFonts).catch(() => undefined);
