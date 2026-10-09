@@ -28,7 +28,7 @@ export function formatTime(ms: number, fmt: TimeFormat = 'm:ss.mmm'): string {
   }
 }
 
-export function formatNumber(value: number, decimals: number, padZeros: number, showSign: boolean): string {
+function formatNumber(value: number, decimals: number, padZeros: number, showSign: boolean): string {
   if (!Number.isFinite(value)) return '-';
   let s = Math.abs(value).toFixed(Math.max(0, Math.min(6, decimals)));
   if (padZeros > 0) {

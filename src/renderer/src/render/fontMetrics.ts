@@ -6,7 +6,7 @@ import type { FontMetrics } from '@shared/generator';
  * DirectWrite centrando su caja de línea, para que el runtime Lua corrija la diferencia.
  * Todo en fracción del tamaño de fuente (independiente del tamaño).
  */
-export function measureFontMetrics(font: string, bold = false): FontMetrics {
+function measureFontMetrics(font: string, bold = false): FontMetrics {
   const SIZE = 100;
   const c = document.createElement('canvas');
   const g = c.getContext('2d')!;

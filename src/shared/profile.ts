@@ -96,15 +96,3 @@ export function parseProfile(json: unknown): ProfileValidation {
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join('.') || '(raíz)'}: ${i.message}`) };
 }
 
-/**
- * Perfil "manual mínimo" (sección 4 de los requerimientos): solo malla + resolución, sin garantías.
- */
-export function createMinimalProfile(carId: string, mesh: string, width: number, height: number): DisplayProfile {
-  return ProfileSchema.parse({
-    profile_version: 2,
-    id: `${carId}.manual`,
-    name: `${carId} (perfil manual)`,
-    car_ids: [carId],
-    displays: [{ id: 'display', name: 'Display', meshes: [mesh], texture_size: { width, height } }],
-  });
-}

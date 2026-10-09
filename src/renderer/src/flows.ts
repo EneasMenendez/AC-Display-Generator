@@ -72,7 +72,7 @@ export async function saveProjectFlow(forceDialog = false, thumbnail: Uint8Array
   }
 }
 
-export function usedAssets(project: Project): string[] {
+function usedAssets(project: Project): string[] {
   const used = new Set<string>();
   for (const d of project.displays) {
     if (d.background.file) used.add(d.background.file);

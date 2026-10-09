@@ -34,7 +34,7 @@ function hasAcdgInstall(extDir: string): boolean {
   return existsSync(join(extDir, 'acdg'));
 }
 
-export function summarizeCar(carPath: string): CarSummary {
+function summarizeCar(carPath: string): CarSummary {
   const id = basename(carPath);
   const ui = readJsonSafe<{ name?: string; brand?: string }>(join(carPath, 'ui', 'ui_car.json'));
   const badge = join(carPath, 'ui', 'badge.png');

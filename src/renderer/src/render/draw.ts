@@ -1,5 +1,5 @@
-import type { Color, DisplayElement, DisplayProject, Glow, Page, Rule, RpmValue, TextStyle, Threshold } from '@shared/model';
-import { pageConditions, resolveRpm } from '@shared/model';
+import type { Color, DisplayElement, DisplayProject, Glow, Page, RpmValue, TextStyle, Threshold } from '@shared/model';
+import { resolveRpm } from '@shared/model';
 import { ledRanks, ledZoneColor } from '@shared/leds';
 import { buttonStateVar } from '@shared/touch';
 import { compare } from './compare';
@@ -108,10 +108,6 @@ export interface RuleResult {
   image?: string;
 }
 
-/** Evalúa la condición de una página (misma semántica que el runtime). */
-export function pageMatches(page: Page, ctx: SimContext): boolean {
-  return pageConditions(page).some((c) => compare(ctx.values[c.variable], c.op, c.value, ctx));
-}
 
 export function applyRules(el: DisplayElement, ctx: SimContext): RuleResult {
   let visible = el.visible;

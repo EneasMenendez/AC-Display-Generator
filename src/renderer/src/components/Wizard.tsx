@@ -36,7 +36,7 @@ export interface DisplayEntry {
  * Convierte un display detectado en extension/ (sección + script hecho a mano) en una definición de display.
  * Resolución: RESOLUTION del ini → constantes del script → imagen referenciada → textura del material (kn5).
  */
-export async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<{ def: DisplayDef; image: ImageInfo | null; note: string }> {
+async function defFromDetected(d: DetectedDisplay, carPath: string, kn5File: string | null, usedIds: Set<string>): Promise<{ def: DisplayDef; image: ImageInfo | null; note: string }> {
   let size = d.resolution ?? (d.hints.width && d.hints.height ? { width: d.hints.width, height: d.hints.height } : null);
   let image: ImageInfo | null = null;
   let note = '';

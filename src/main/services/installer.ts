@@ -3,7 +3,6 @@ import { basename, dirname, join } from 'node:path';
 import { app } from 'electron';
 import { resourcesDir } from './resources';
 import { validateLua } from './luaCheck';
-import type { Project } from '@shared/model';
 import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
   ACDG_LUA_HEADER,
@@ -43,7 +42,7 @@ export type { BackupEntry, InstallOptions, InstallResult, InstallStep, InstallTa
  * Las copias de seguridad se guardan en la carpeta de datos de la aplicación, no en el coche.
  */
 
-export function runtimeSource(): string {
+function runtimeSource(): string {
   const f = join(resourcesDir(), 'runtime', 'acdg_runtime.lua');
   if (!existsSync(f)) throw new Error('No se encontró acdg_runtime.lua en los recursos de la aplicación.');
   return readFileSync(f, 'utf8');
@@ -61,7 +60,7 @@ function backupRoot(carPath: string, target: InstallTarget): string {
   return join(app.getPath('userData'), 'backups', key);
 }
 
-export function displayFor(profile: DisplayProfile, displayId: string): DisplayDef {
+function displayFor(profile: DisplayProfile, displayId: string): DisplayDef {
   const d = profile.displays.find((x) => x.id === displayId);
   if (!d) throw new Error(`El perfil no contiene el display "${displayId}".`);
   return d;
@@ -74,7 +73,7 @@ function timestamp(): string {
 }
 
 /** true si el .lua lo generó esta aplicación (cabecera). */
-export function isAcdgScript(file: string): boolean {
+function isAcdgScript(file: string): boolean {
   try {
     return readFileSync(file, 'utf8').startsWith(ACDG_LUA_HEADER);
   } catch {
@@ -465,13 +464,16 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
       }
     }
   }
-  // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la carpeta)
+  // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la
+  // carpeta). Si las agujas físicas siguen instaladas, las secciones [ANALOG_INDICATOR...] originales
+  // se quedan desactivadas: si no, volverían a mover los mismos objetos que nuestras agujas.
+  const needlesInstalled = hasIncludeBlock(existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '', NEEDLES_BLOCK_ID);
   if (existsSync(base)) {
     for (const f of readdirSync(base)) {
       if (!f.toLowerCase().endsWith('.ini')) continue;
       const p = join(base, f);
       const t = readFileSync(p, 'utf8');
-      const next = enableAllSections(t);
+      const next = needlesInstalled ? enableSectionsMatching(t, /^(?!ANALOG_INDICATOR)/i) : enableAllSections(t);
       if (next !== t) {
         writeFileSync(p, next, 'utf8');
         done.push(`Reactivado display original en ${f}`);

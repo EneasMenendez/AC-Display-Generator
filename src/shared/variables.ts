@@ -155,8 +155,8 @@ export const CURATED_VARIABLES: VariableDef[] = [
     v(`touch_${k}`, `Interruptor táctil ${k.toUpperCase()}`, 'Estado', 'boolean', `ACDG.sw('${k}')`, '', [0, 1], false),
   ),
   // proporcionadas por el runtime (máquina de páginas)
-  v('page_time', 'Tiempo en la página', 'Sesión', 'number', 'ACDG_PAGE_TIME', 's', [0, 60], 1.5),
-  v('page_entry_speed', 'Velocidad al entrar en la página', 'Sesión', 'number', 'ACDG_PAGE_ENTRY_SPEED', 'km/h', [0, 300], 0),
+  v('page_time', 'Tiempo en la página', 'Sesión', 'number', 'ACDG.pageTime()', 's', [0, 60], 1.5),
+  v('page_entry_speed', 'Velocidad al entrar en la página', 'Sesión', 'number', 'ACDG.pageEntrySpeed()', 'km/h', [0, 300], 0),
   v('cars_count', 'Número de coches', 'Sesión', 'integer', 'sim.carsCount', '', [1, 40], 12),
 ];
 

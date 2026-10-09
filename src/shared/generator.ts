@@ -1,6 +1,6 @@
 import { pageConditions } from './model';
 import type { DisplayElement, DisplayProject, PhysicalNeedle, Project } from './model';
-import { buttonStateVar, displayHasTouch, isSwitchAction, switchVar, usedSwitches } from './touch';
+import { buttonStateVar, displayHasTouch, isSwitchAction, usedSwitches } from './touch';
 import type { DisplayDef, DisplayProfile } from './profile';
 import { VARIABLE_MAP, type VariableDef } from './variables';
 

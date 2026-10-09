@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname, extname, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import type { DetectedDisplay, ExtensionScan } from '@shared/types';
 import { parseIni, type IniSection } from '@shared/ini';
 import { PROJECT_FILE, listIncludeBlocks, parseIncludeBlock } from '@shared/generator';
@@ -195,8 +195,3 @@ export function scanExtension(carPath: string): ExtensionScan {
   return { extDir, hasExtConfig, displays, luaFiles, iniFiles, orphanLua };
 }
 
-/** Imágenes de la carpeta extension con aspecto de textura de display (para sugerir fondo). */
-export function candidateImages(carPath: string): string[] {
-  const extDir = join(carPath, 'extension');
-  return [...listFiles(extDir, '.dds', 2), ...listFiles(extDir, '.png', 2)].filter((f) => !f.toLowerCase().includes(`${join('extension', 'acdg')}`.toLowerCase()) && extname(f));
-}

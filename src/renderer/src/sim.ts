@@ -36,7 +36,3 @@ export function resolveSim(values: SimValues, defaults: DisplayDefaults, t: numb
   return { values: v, limiter, defaults, t, ambient, physicsAvailable };
 }
 
-export function getValue(ctx: SimContext, id: string | undefined): number | boolean | undefined {
-  if (!id) return undefined;
-  return ctx.values[id];
-}

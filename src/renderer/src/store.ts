@@ -403,10 +403,3 @@ export function toast(text: string, kind: 'info' | 'err' = 'info'): void {
   }, kind === 'err' ? 6000 : 3000);
 }
 
-export function selectedElements(): DisplayElement[] {
-  const s = useStore.getState();
-  const page = activePageOf(s);
-  if (!page) return [];
-  const sel = new Set(s.selection);
-  return page.elements.filter((e) => sel.has(e.id));
-}

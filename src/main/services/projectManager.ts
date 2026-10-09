@@ -39,7 +39,7 @@ const MIME: Record<string, string> = {
   '.ogg': 'audio/ogg',
 };
 
-export function toDataUrl(path: string, data: Uint8Array): string {
+function toDataUrl(path: string, data: Uint8Array): string {
   const ext = extname(path).toLowerCase();
   if (ext === '.dds') {
     // el editor no puede mostrar DDS: se decodifica a PNG (BC1/BC3/RGBA8)
@@ -135,7 +135,7 @@ export function listRecent(): RecentEntry[] {
   }
 }
 
-export function addRecent(file: string, name: string): void {
+function addRecent(file: string, name: string): void {
   const list = listRecent().filter((r) => r.file.toLowerCase() !== file.toLowerCase());
   list.unshift({ file, name, openedAt: new Date().toISOString() });
   writeFileSync(recentFile(), JSON.stringify(list.slice(0, 15), null, 2), 'utf8');

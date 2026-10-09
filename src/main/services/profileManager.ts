@@ -11,7 +11,7 @@ export type { ProfileHit, ProfileSearchResult };
  * o por selección manual. Valida con el esquema zod.
  */
 
-export function libraryDir(): string {
+function libraryDir(): string {
   const dir = join(app.getPath('userData'), 'profiles');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;

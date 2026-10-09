@@ -251,22 +251,21 @@ end
 
 local varErrorLogged = {}
 
--- variables que calcula el propio runtime (máquina de páginas)
+-- variables que calcula el propio runtime (máquina de páginas); el catálogo las emite como
+-- ACDG.pageTime() / ACDG.pageEntrySpeed(), así que son funciones normales
 local pageEnteredAt, pageEntrySpeed = 0, 0
-local BUILTIN_VARS = {
-  page_time = function() return t - pageEnteredAt end,
-  page_entry_speed = function() return pageEntrySpeed end,
-}
+
+function ACDG.pageTime()
+  return t - pageEnteredAt
+end
+
+function ACDG.pageEntrySpeed()
+  return pageEntrySpeed
+end
 
 local function getVar(id)
   local v = varCache[id]
   if v ~= nil then return v end
-  local bi = BUILTIN_VARS[id]
-  if bi then
-    v = bi()
-    varCache[id] = v
-    return v
-  end
   local fn = cfg.vars[id]
   if not fn then return nil end
   local ok, res = pcall(fn)

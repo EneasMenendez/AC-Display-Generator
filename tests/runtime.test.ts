@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LuaFactory } from 'wasmoon';
+import luaparse from 'luaparse';
 import { createElement, createEmptyProject, type NeedleElement, type Project, type RpmBarElement, type ShiftLightsElement, type TextElement } from '../src/shared/model';
 import { parseProfile } from '../src/shared/profile';
 import { generateConfigLua, generateDisplayLua } from '../src/shared/generator';
@@ -94,7 +95,34 @@ sim = setmetatable({}, { __index = function(_, k) if k == 'timeHours' then retur
 __dirname = 'C:/fake/extension'
 `;
 
+/**
+ * Globales permitidos en el Lua generado: los que aporta CSP. Cualquier otro nombre significa que un
+ * local se usa antes de declararse (Lua lo resuelve como global nil y el dibujado falla en el coche)
+ * o que hay una errata en una expresión del catálogo de variables.
+ */
+const CSP_GLOBALS = new Set([
+  'ACDG', 'ac', 'car', 'sim', 'ui', 'display', 'script', 'physics', 'render',
+  'vec2', 'vec3', 'vec4', 'rgb', 'rgbm', 'mat4x4', 'refnumber', 'refbool',
+  'math', 'string', 'table', 'os', 'io', 'bit', 'ffi',
+  'pairs', 'ipairs', 'next', 'select', 'type', 'tostring', 'tonumber', 'pcall', 'xpcall', 'error',
+  'assert', 'unpack', 'setmetatable', 'getmetatable', 'rawget', 'rawset', 'require', 'print',
+  'setInterval', 'setTimeout', 'clearInterval', 'clearTimeout', '__dirname',
+]);
+
+function unexpectedGlobals(code: string): string[] {
+  const chunk = luaparse.parse(code, { scope: true, comments: false }) as unknown as { globals: { name: string }[] };
+  return [...new Set(chunk.globals.map((g) => g.name))].filter((n) => !CSP_GLOBALS.has(n)).sort();
+}
+
 describe('runtime Lua generado', () => {
+  it('no usa ningún global fuera de la API de CSP (locales usados antes de declararse)', () => {
+    expect(unexpectedGlobals(readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'))).toEqual([]);
+    const p = project();
+    const gen = generateConfigLua(p, p.displays[0], profile.displays[0]);
+    expect(unexpectedGlobals(gen.lua)).toEqual([]);
+    expect(unexpectedGlobals(generateDisplayLua(gen.lua, readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'), 'driver_display'))).toEqual([]);
+  });
+
   it('display.lua se ejecuta sin errores con la API de CSP simulada y cambia de página', async () => {
     const p = project();
     const gen = generateConfigLua(p, p.displays[0], profile.displays[0], { fontMetrics: { 'Segoe UI': { line: 1.33, shift: -0.06 } } });

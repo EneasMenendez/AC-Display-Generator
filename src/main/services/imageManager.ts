@@ -68,7 +68,7 @@ interface DdsHeader {
   dataOffset: number;
 }
 
-export function readDdsHeader(buf: Buffer): DdsHeader | null {
+function readDdsHeader(buf: Buffer): DdsHeader | null {
   if (buf.length < 128 || buf.toString('ascii', 0, 4) !== 'DDS ') return null;
   const height = buf.readUInt32LE(12);
   const width = buf.readUInt32LE(16);
