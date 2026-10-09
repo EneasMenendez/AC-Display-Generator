@@ -115,7 +115,7 @@ export function PhysicalButtonsDialog({ onClose }: { onClose: () => void }) {
             </h3>
             {buttons.length === 0 && <div className="muted small mb8">Sin botones. Elige una malla a la derecha o pulsa Añadir.</div>}
             {buttons.map((x, i) => (
-              <div key={x.id} className={`rule ${i === sel ? 'selected' : ''}`} style={{ cursor: 'pointer', ...(i === sel ? { outline: '1px solid var(--accent)' } : {}) }} onClick={() => setSel(i)}>
+              <div key={x.id} className={`rule ${i === sel ? 'selected' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setSel(i)}>
                 <div className="row gap4">
                   <span className="grow">
                     {x.name || x.mesh || '(sin nombre)'}

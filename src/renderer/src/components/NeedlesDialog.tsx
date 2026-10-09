@@ -74,7 +74,7 @@ export function NeedlesDialog({ onClose }: { onClose: () => void }) {
             </h3>
             {needles.length === 0 && <div className="muted small mb8">Sin agujas. Elige un nodo del modelo a la derecha o pulsa Añadir.</div>}
             {needles.map((x, i) => (
-              <div key={x.id} className={`rule ${i === sel ? 'selected' : ''}`} style={{ cursor: 'pointer', ...(i === sel ? { outline: '1px solid var(--accent)' } : {}) }} onClick={() => setSel(i)}>
+              <div key={x.id} className={`rule ${i === sel ? 'selected' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setSel(i)}>
                 <div className="row gap4">
                   <span className="grow">
                     {x.name || x.object || '(sin nombre)'}

@@ -264,7 +264,7 @@ export function ProjectProps() {
           </select>
         </div>
         {dp.pages.map((pg, i) => (
-          <div key={pg.id} className={`rule ${i === activePage ? 'selected' : ''}`} style={i === activePage ? { outline: '1px solid var(--accent)' } : undefined}>
+          <div key={pg.id} className={`rule ${i === activePage ? 'selected' : ''}`}>
             <div className="row gap4">
               <button className="icon" title="Editar esta página" onClick={() => setActivePage(i)}>
                 <Icon name={i === activePage ? 'check' : 'play'} size={12} />

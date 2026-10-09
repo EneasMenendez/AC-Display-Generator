@@ -5,6 +5,7 @@ import { resolveSim } from '../sim';
 import { applyRules, drawScene, type DrawEnv } from '../render/draw';
 import { PageEngine } from '../render/pageEngine';
 import { buttonAt } from '@shared/touch';
+import { theme } from '../render/theme';
 import { fireTouch, type TouchPhase, type TouchSimApi } from '../render/touchSim';
 import { hasUvRegion, uvRegionPx } from '@shared/uv';
 
@@ -188,18 +189,18 @@ export function CanvasEditor() {
 
       const g = canvas.getContext('2d')!;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.fillStyle = '#0f1114';
+      g.fillStyle = theme.bg;
       g.fillRect(0, 0, cw, ch);
       const v = view();
       const W = p.canvas.width;
       const H = p.canvas.height;
 
-      // sombra + escena
+      // escena (con una sombra mínima que despega el display del fondo)
       g.save();
       g.translate(v.px, v.py);
       g.scale(v.sx, v.sy);
-      g.shadowColor = '#000c';
-      g.shadowBlur = 30 / v.sx;
+      g.shadowColor = 'rgba(0,0,0,0.45)';
+      g.shadowBlur = 12 / v.sx;
       g.fillStyle = '#000';
       g.fillRect(0, 0, W, H);
       g.shadowBlur = 0;
@@ -268,18 +269,18 @@ export function CanvasEditor() {
         const ah = area.height * v.sy;
         g.save();
         // oscurecer lo que queda fuera (en previsualización se oculta del todo)
-        g.fillStyle = s.previewMode ? '#0f1114' : 'rgba(15,17,20,0.72)';
+        g.fillStyle = s.previewMode ? theme.bg : theme.veil;
         g.beginPath();
         g.rect(v.px, v.py, W * v.sx, H * v.sy);
         g.rect(ax, ay, aw, ah);
         g.fill('evenodd');
-        g.strokeStyle = s.previewMode ? '#4a5160' : '#ffb020';
+        g.strokeStyle = s.previewMode ? theme.outline : theme.warn;
         g.lineWidth = 1;
         g.setLineDash(s.previewMode ? [] : [6, 4]);
         g.strokeRect(Math.round(ax) + 0.5, Math.round(ay) + 0.5, Math.round(aw), Math.round(ah));
         g.setLineDash([]);
         if (!s.previewMode) {
-          g.fillStyle = '#ffb020';
+          g.fillStyle = theme.warn;
           g.font = '11px system-ui, sans-serif';
           g.textBaseline = 'bottom';
           g.fillText(`área visible ${area.width}×${area.height} px`, ax + 4, ay - 3 > v.py + 12 ? ay - 3 : ay + 14);
@@ -295,7 +296,7 @@ export function CanvasEditor() {
         g.beginPath();
         g.rect(v.px, v.py, W * v.sx, H * v.sy);
         g.clip();
-        g.strokeStyle = 'rgba(255,255,255,0.07)';
+        g.strokeStyle = theme.grid;
         g.lineWidth = 1;
         g.beginPath();
         for (let x = 0; x <= W; x += p.settings.grid) {
@@ -312,7 +313,7 @@ export function CanvasEditor() {
         g.restore();
       }
       // borde del display
-      g.strokeStyle = '#4a5160';
+      g.strokeStyle = theme.outline;
       g.lineWidth = 1;
       g.strokeRect(v.px - 0.5, v.py - 0.5, W * v.sx + 1, H * v.sy + 1);
 
@@ -326,8 +327,8 @@ export function CanvasEditor() {
           const px = v.px + (el.x + el.config.pivot.x) * v.sx;
           const py = v.py + (el.y + el.config.pivot.y) * v.sy;
           g.save();
-          g.strokeStyle = '#ffb020';
-          g.fillStyle = '#ffb02055';
+          g.strokeStyle = theme.warn;
+          g.fillStyle = theme.warnFill;
           g.lineWidth = 1.5;
           g.beginPath();
           g.arc(px, py, HANDLE_PX + 2, 0, Math.PI * 2);
@@ -351,7 +352,7 @@ export function CanvasEditor() {
           g.rotate((el.rotation * Math.PI) / 180);
           g.translate(-(X + Wd / 2), -(Y + Hd / 2));
         }
-        g.strokeStyle = el.locked ? '#ffb020' : '#3d8bff';
+        g.strokeStyle = el.locked ? theme.warn : theme.accent;
         g.lineWidth = 1;
         g.setLineDash(el.locked ? [4, 3] : []);
         g.strokeRect(Math.round(X) + 0.5, Math.round(Y) + 0.5, Math.round(Wd), Math.round(Hd));
@@ -360,7 +361,7 @@ export function CanvasEditor() {
           for (const h of HANDLES) {
             const { hx, hy } = handlePos(h, X, Y, Wd, Hd);
             g.fillStyle = '#fff';
-            g.strokeStyle = '#3d8bff';
+            g.strokeStyle = theme.accent;
             g.fillRect(hx - HANDLE_PX / 2, hy - HANDLE_PX / 2, HANDLE_PX, HANDLE_PX);
             g.strokeRect(hx - HANDLE_PX / 2 + 0.5, hy - HANDLE_PX / 2 + 0.5, HANDLE_PX - 1, HANDLE_PX - 1);
           }
@@ -369,7 +370,7 @@ export function CanvasEditor() {
       }
       // guías
       if (guides.current.length) {
-        g.strokeStyle = '#ff4fd8';
+        g.strokeStyle = theme.guide;
         g.lineWidth = 1;
         g.setLineDash([4, 3]);
         g.beginPath();
@@ -394,8 +395,8 @@ export function CanvasEditor() {
         const y0 = v.py + Math.min(d.startY, d.curY) * v.sy;
         const x1 = v.px + Math.max(d.startX, d.curX) * v.sx;
         const y1 = v.py + Math.max(d.startY, d.curY) * v.sy;
-        g.fillStyle = 'rgba(61,139,255,0.12)';
-        g.strokeStyle = '#3d8bff';
+        g.fillStyle = theme.accentFill;
+        g.strokeStyle = theme.accent;
         g.fillRect(x0, y0, x1 - x0, y1 - y0);
         g.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
       }
