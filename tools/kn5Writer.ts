@@ -7,6 +7,11 @@ import { deflateSync } from 'node:zlib';
  * Solo genera geometría sencilla (planos y cajas) con vértices de 44 bytes
  * (posición 12 + normal 12 + UV 8 + tangente 12), que es lo que hace falta para montar un banco de
  * pruebas: pantallas, botones y agujas sueltas.
+ *
+ * Ejes de Assetto Corsa: Y arriba, Z hacia delante y **+X hacia el lado izquierdo del coche**. Es
+ * decir, mirando al frente desde el asiento, +X queda a la izquierda de la pantalla: por eso los
+ * planos mapean la U al revés que las coordenadas (el vértice de mayor X recibe u0), que es lo que
+ * hace que una textura con texto se lea del derecho desde el puesto de conducción.
  */
 
 export interface Vec3 {
@@ -96,11 +101,12 @@ export function plane(
   const hw = width / 2;
   const hh = height / 2;
   const n = v3(0, 0, -1);
+  // la esquina de mayor X es la que el conductor ve a su izquierda: ahí va el borde u0 de la textura
   const vertices: Kn5Vertex[] = [
-    { pos: v3(center.x - hw, center.y + hh, center.z), normal: n, uv: [uv.u0, uv.v0] },
-    { pos: v3(center.x + hw, center.y + hh, center.z), normal: n, uv: [uv.u1, uv.v0] },
-    { pos: v3(center.x + hw, center.y - hh, center.z), normal: n, uv: [uv.u1, uv.v1] },
-    { pos: v3(center.x - hw, center.y - hh, center.z), normal: n, uv: [uv.u0, uv.v1] },
+    { pos: v3(center.x + hw, center.y + hh, center.z), normal: n, uv: [uv.u0, uv.v0] },
+    { pos: v3(center.x - hw, center.y + hh, center.z), normal: n, uv: [uv.u1, uv.v0] },
+    { pos: v3(center.x - hw, center.y - hh, center.z), normal: n, uv: [uv.u1, uv.v1] },
+    { pos: v3(center.x + hw, center.y - hh, center.z), normal: n, uv: [uv.u0, uv.v1] },
   ];
   return { vertices, indices: [0, 1, 2, 0, 2, 3] };
 }
@@ -115,8 +121,9 @@ export function box(
   const hx = size.x / 2;
   const hy = size.y / 2;
   const hz = size.z / 2;
+  // la cara que mira al conductor (-Z) se mapea como el plano: de +X a -X
   const faces: { n: Vec3; corners: Vec3[] }[] = [
-    { n: v3(0, 0, -1), corners: [v3(-hx, hy, -hz), v3(hx, hy, -hz), v3(hx, -hy, -hz), v3(-hx, -hy, -hz)] },
+    { n: v3(0, 0, -1), corners: [v3(hx, hy, -hz), v3(-hx, hy, -hz), v3(-hx, -hy, -hz), v3(hx, -hy, -hz)] },
     { n: v3(0, 0, 1), corners: [v3(hx, hy, hz), v3(-hx, hy, hz), v3(-hx, -hy, hz), v3(hx, -hy, hz)] },
     { n: v3(0, 1, 0), corners: [v3(-hx, hy, hz), v3(hx, hy, hz), v3(hx, hy, -hz), v3(-hx, hy, -hz)] },
     { n: v3(0, -1, 0), corners: [v3(-hx, -hy, -hz), v3(hx, -hy, -hz), v3(hx, -hy, hz), v3(-hx, -hy, hz)] },

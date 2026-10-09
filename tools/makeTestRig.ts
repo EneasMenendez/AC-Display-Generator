@@ -37,12 +37,18 @@ const DST = join(CARS, ID);
 
 /* ---------- medidas del banco (metros, X derecha, Y arriba, Z adelante) ---------- */
 
+/*
+ * Ojo con los ejes: en Assetto Corsa +X apunta al lado IZQUIERDO del coche, así que desde el
+ * asiento un objeto con X positiva se ve a la izquierda de la pantalla. Las posiciones de aquí
+ * están pensadas con eso en cuenta (la pantalla principal centrada, la lateral a la derecha del
+ * conductor, las agujas a su izquierda).
+ */
 const EYES = { x: 0, y: 0.95, z: 0.1 };
 const DASH_Z = 0.72; // cara de los objetos, mirando al conductor
 const DASH_Y = 1.0;
 
-const MAIN = { w: 0.28, h: 0.14, center: { x: 0.18, y: DASH_Y, z: DASH_Z } };
-const SIDE = { w: 0.16, h: 0.08, center: { x: -0.2, y: DASH_Y, z: DASH_Z } };
+const MAIN = { w: 0.28, h: 0.14, center: { x: 0, y: DASH_Y, z: DASH_Z } };
+const SIDE = { w: 0.16, h: 0.08, center: { x: -0.34, y: DASH_Y, z: DASH_Z } };
 const BUTTONS = ['BUTTON_PAGE', 'BUTTON_MODE', 'BUTTON_UP', 'BUTTON_DOWN'];
 
 function buildModel(): Buffer {
@@ -57,19 +63,19 @@ function buildModel(): Buffer {
   // la lateral solo usa el cuarto superior izquierdo de su textura
   nodes.push({ kind: 'mesh', name: 'DISPLAY_SIDE', material: 'DisplaySide', ...plane(SIDE.center, SIDE.w, SIDE.h, { u0: 0, v0: 0, u1: 0.5, v1: 0.5 }) });
 
-  // botonera: cuatro mallas sueltas
+  // botonera: cuatro mallas sueltas, de la izquierda a la derecha del conductor
   BUTTONS.forEach((name, i) => {
     nodes.push({
       kind: 'mesh',
       name,
       material: 'RigButton',
-      ...box({ x: 0.06 + i * 0.07, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.05, y: 0.05, z: 0.015 }),
+      ...box({ x: 0.105 - i * 0.07, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.05, y: 0.05, z: 0.015 }),
     });
   });
 
-  // barra de dos botones en una sola malla: mitad izquierda u 0–0,5 y mitad derecha u 0,5–1
-  const left = box({ x: -0.13, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.06, y: 0.05, z: 0.015 }, { u0: 0, v0: 0, u1: 0.5, v1: 1 });
-  const right = box({ x: -0.06, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.06, y: 0.05, z: 0.015 }, { u0: 0.5, v0: 0, u1: 1, v1: 1 });
+  // barra con dos botones en una sola malla: la mitad u 0–0,5 queda a la izquierda del conductor
+  const left = box({ x: -0.215, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.06, y: 0.05, z: 0.015 }, { u0: 0, v0: 0, u1: 0.5, v1: 1 });
+  const right = box({ x: -0.285, y: 0.86, z: DASH_Z - 0.005 }, { x: 0.06, y: 0.05, z: 0.015 }, { u0: 0.5, v0: 0, u1: 1, v1: 1 });
   nodes.push({
     kind: 'mesh',
     name: 'BUTTON_BAR',
@@ -80,8 +86,8 @@ function buildModel(): Buffer {
 
   // agujas: cada una cuelga de su eje, con su esfera detrás
   const needles: { name: string; x: number }[] = [
-    { name: 'RPM', x: 0.42 },
-    { name: 'SPEED', x: 0.6 },
+    { name: 'RPM', x: 0.32 },
+    { name: 'SPEED', x: 0.47 },
   ];
   for (const n of needles) {
     nodes.push({
