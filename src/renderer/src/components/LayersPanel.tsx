@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ElementType } from '@shared/model';
 import { useStore, activePageOf } from '../store';
-import { typeLabel } from './PropertiesPanel';
+import { typeLabel } from './properties/shared';
 import { Icon } from './icons';
 
 const ADD: { type: ElementType; label: string; icon: string }[] = [
