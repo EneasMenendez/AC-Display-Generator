@@ -18,7 +18,7 @@ import { loadSettings, saveSettings, type AppSettings } from './services/setting
 import { RUNTIME_VERSION } from '@shared/generator';
 import { resourcesDir } from './services/resources';
 import { readCspLog } from './services/cspLog';
-import { backgroundUrl, clearBackground, setBackground } from './services/background';
+import { backgroundImage, clearBackground, setBackground } from './services/background';
 
 const execFileAsync = promisify(execFile);
 
@@ -41,7 +41,7 @@ export function registerIpc(): void {
       acRoots: roots,
       cspVersion: acRoot ? detectCspVersion(acRoot) : null,
       contentManager: findContentManager(acRoot),
-      backgroundUrl: backgroundUrl(),
+      backgroundImage: backgroundImage(),
       settings: { ...settings, acRoot },
       projectsDir: pm.defaultProjectsDir(),
     };

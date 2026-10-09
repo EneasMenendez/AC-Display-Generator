@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { api } from '../api';
-import { applyAppearance } from '../appearance';
+import { applyAppearance, backgroundObjectUrl } from '../appearance';
 import { useStore, toast } from '../store';
 import { StartScreen } from './StartScreen';
 import { Wizard } from './Wizard';
@@ -18,7 +18,7 @@ export function App() {
       .appInfo()
       .then((info) => {
         // acento, profundidad y fondo: se aplican antes de pintar nada más
-        applyAppearance(info.settings, info.backgroundUrl);
+        applyAppearance(info.settings, backgroundObjectUrl(info.backgroundImage));
         setInfo(info);
       })
       .catch((e) => toast(`No se pudo inicializar: ${e.message}`, 'err'));

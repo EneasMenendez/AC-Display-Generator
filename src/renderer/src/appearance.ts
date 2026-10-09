@@ -1,4 +1,4 @@
-import type { AppSettings } from '@shared/types';
+import type { AppSettings, BackgroundImage } from '@shared/types';
 import { resetThemeCache } from './render/theme';
 
 /**
@@ -40,6 +40,22 @@ function onAccent(hex: string): string {
 function rgba(hex: string, a: number): string {
   const n = hex.replace('#', '');
   return `rgba(${parseInt(n.slice(0, 2), 16)}, ${parseInt(n.slice(2, 4), 16)}, ${parseInt(n.slice(4, 6), 16)}, ${a})`;
+}
+
+let objectUrl: string | null = null;
+
+/**
+ * URL utilizable en CSS para la imagen de fondo. Se crea un blob: un data URL de varios MB no cabe
+ * en una variable CSS (Chromium lo descarta y el fondo se queda en blanco).
+ */
+export function backgroundObjectUrl(image: BackgroundImage | null): string | null {
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+  }
+  if (!image?.data?.length) return null;
+  objectUrl = URL.createObjectURL(new Blob([new Uint8Array(image.data)], { type: image.mime || 'image/jpeg' }));
+  return objectUrl;
 }
 
 /** Acento efectivo según los ajustes. */

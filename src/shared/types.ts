@@ -3,6 +3,12 @@ import type { DisplayProfile } from './profile';
 
 /** Tipos compartidos entre el proceso principal (servicios) y el renderer (API window.acdg). */
 
+/** Imagen de fondo tal y como viaja del proceso principal al renderer. */
+export interface BackgroundImage {
+  data: Uint8Array;
+  mime: string;
+}
+
 export interface AppSettings {
   acRoot: string | null;
   lastCar: string | null;
@@ -22,8 +28,8 @@ export interface AppInfo {
   acRoots: string[];
   cspVersion: string | null;
   contentManager: string | null;
-  /** imagen de fondo de la aplicación, ya cargada (null si no hay) */
-  backgroundUrl: string | null;
+  /** imagen de fondo de la aplicación (null si no hay) */
+  backgroundImage: BackgroundImage | null;
   settings: AppSettings;
   projectsDir: string;
 }
@@ -237,8 +243,8 @@ export interface BuiltinIcon {
 export interface AcdgApi {
   appInfo(): Promise<AppInfo>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
-  /** elige una imagen de fondo para la aplicación; devuelve su data URL (null si se cancela) */
-  pickBackground(): Promise<string | null>;
+  /** elige una imagen de fondo para la aplicación (null si se cancela) */
+  pickBackground(): Promise<BackgroundImage | null>;
   clearBackground(): Promise<void>;
   pickAcRoot(): Promise<{ acRoot?: string; error?: string } | null>;
 

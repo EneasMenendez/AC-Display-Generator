@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CarSummary, RecentEntry } from '@shared/types';
-import type { AppSettings } from '@shared/types';
+import type { AppSettings, BackgroundImage } from '@shared/types';
 import { api } from '../api';
-import { ACCENT_PRESETS, BACKGROUNDS, applyAppearance, resolveAccent } from '../appearance';
+import { ACCENT_PRESETS, BACKGROUNDS, applyAppearance, backgroundObjectUrl, resolveAccent } from '../appearance';
 import { useStore, toast } from '../store';
 import { openProjectFlow } from '../flows';
 
@@ -137,25 +137,26 @@ function AppearanceCard() {
   const info = useStore((s) => s.info);
   const setInfo = useStore((s) => s.setInfo);
   if (!info) return null;
-  const { settings, backgroundUrl } = info;
+  const { settings, backgroundImage } = info;
+  const hasImage = !!backgroundImage;
   const accent = settings.accent ?? 'amber';
   const custom = !ACCENT_PRESETS[accent];
 
-  function apply(next: AppSettings, image: string | null) {
-    applyAppearance(next, image);
-    setInfo({ ...info!, settings: next, backgroundUrl: image });
+  function apply(next: AppSettings, image: BackgroundImage | null) {
+    applyAppearance(next, backgroundObjectUrl(image));
+    setInfo({ ...info!, settings: next, backgroundImage: image });
   }
 
   async function change(patch: Partial<AppSettings>) {
     const next = { ...settings, ...patch };
-    apply(next, backgroundUrl);
+    apply(next, backgroundImage);
     await api.saveSettings(patch);
   }
 
   async function pickImage() {
     try {
-      const url = await api.pickBackground();
-      if (url) apply(settings, url);
+      const image = await api.pickBackground();
+      if (image) apply(settings, image);
     } catch (e) {
       toast((e as Error).message, 'err');
     }
@@ -194,7 +195,7 @@ function AppearanceCard() {
           <button
             key={id}
             className={`small ${(settings.background ?? 'normal') === id ? 'active' : 'ghost'}`}
-            title={backgroundUrl ? `Deja ver ${Math.round((1 - b.alpha[0]) * 100)} % de la imagen` : undefined}
+            title={hasImage ? `Deja ver ${Math.round((1 - b.alpha[0]) * 100)} % de la imagen` : undefined}
             onClick={() => change({ background: id as AppSettings['background'] })}
           >
             {b.label}
@@ -206,15 +207,15 @@ function AppearanceCard() {
           Imagen
         </span>
         <button className="outline small grow" onClick={pickImage}>
-          {backgroundUrl ? 'Cambiar imagen…' : 'Elegir imagen…'}
+          {hasImage ? 'Cambiar imagen…' : 'Elegir imagen…'}
         </button>
-        {backgroundUrl && (
+        {hasImage && (
           <button className="small ghost" onClick={removeImage}>
             Quitar
           </button>
         )}
       </div>
-      {backgroundUrl && <div className="muted small mt8">Con imagen, los tres niveles deciden cuánta se ve: profundo la deja casi tapada y suave la deja asomar.</div>}
+      {hasImage && <div className="muted small mt8">Con imagen, los tres niveles deciden cuánta se ve: profundo la deja casi tapada y suave la deja asomar.</div>}
     </div>
   );
 }
