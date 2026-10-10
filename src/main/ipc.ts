@@ -18,6 +18,7 @@ import { loadSettings, saveSettings, type AppSettings } from './services/setting
 import { RUNTIME_VERSION } from '@shared/generator';
 import { resourcesDir } from './services/resources';
 import { readCspLog } from './services/cspLog';
+import { openGuide } from './services/guide';
 import { backgroundImage, clearBackground, setBackground } from './services/background';
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +48,7 @@ export function registerIpc(): void {
     };
   });
   ipcMain.handle('settings:save', (_e, patch: Partial<AppSettings>) => saveSettings(patch));
+  ipcMain.handle('help:openGuide', (e) => openGuide(BrowserWindow.fromWebContents(e.sender)));
   ipcMain.handle('appearance:pickBackground', async () => {
     const r = await dialog.showOpenDialog(win(), {
       title: 'Imagen de fondo de la aplicación',

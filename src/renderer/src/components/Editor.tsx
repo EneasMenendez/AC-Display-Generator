@@ -252,6 +252,9 @@ export function Editor() {
           <Icon name="monitor" size={14} /> Vista física
         </button>
         <span className="grow" />
+        <button className="icon" onClick={() => api.openGuide().catch((e: Error) => toast(e.message, 'err'))} title="¿Cómo funciona el programa? (guía)">
+          <Icon name="book" />
+        </button>
         <button className="icon" onClick={() => setHelp(true)} title="Atajos (F1)">
           <Icon name="help" />
         </button>

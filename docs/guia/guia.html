@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>¿Cómo funciona el programa? — AC Display Generator</title>
+<style>
+  @page { size: A4; margin: 15mm 16mm 16mm 16mm; }
+  @page :first { margin: 0; }
+  :root {
+    --ink: #1d1f24;
+    --ink-2: #4a4f57;
+    --muted: #6b717a;
+    --line: #e2e4e8;
+    --paper: #ffffff;
+    --tint: #f6f7f9;
+    --accent: #F0A73A;
+    --accent-ink: #9a5b07;
+    --accent-soft: #fdf3e3;
+    --dark: #121316;
+    --ok: #2e8b57;
+    --bad: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); }
+  body { font: 10.4pt/1.5 'Segoe UI', system-ui, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3, h4 { line-height: 1.2; margin: 0; font-weight: 600; }
+  p { margin: 0 0 8px; }
+  code, .mono { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 0.92em; }
+  code { background: var(--tint); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  b, strong { font-weight: 600; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ---------- portada ---------- */
+  .cover { height: 297mm; width: 210mm; background: var(--dark); color: #e9eaec; position: relative; overflow: hidden; page-break-after: always; }
+  .cover .hero { position: absolute; left: 0; right: 0; top: 0; height: 150mm; background: url('img/00_portada.jpg') center / cover; }
+  .cover .hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(18,19,22,0) 40%, rgba(18,19,22,1) 100%); }
+  .cover .body { position: absolute; left: 22mm; right: 22mm; top: 150mm; }
+  .cover .kicker { color: var(--accent); letter-spacing: .18em; text-transform: uppercase; font-size: 9.5pt; font-weight: 600; }
+  .cover h1 { font-size: 34pt; font-weight: 600; margin: 6mm 0 4mm; color: #fff; letter-spacing: -.01em; }
+  .cover .sub { font-size: 13pt; color: #b9bdc4; max-width: 140mm; }
+  .cover .bar { width: 22mm; height: 3px; background: var(--accent); margin: 10mm 0 8mm; }
+  .cover .meta { position: absolute; left: 22mm; right: 22mm; bottom: 18mm; display: flex; justify-content: space-between; color: #8b9098; font-size: 9.5pt; }
+  .cover .meta b { color: #d8dade; font-weight: 600; }
+
+  /* ---------- estructura ---------- */
+  section.chapter { page-break-before: always; }
+  .chap-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin-bottom: 14px; }
+  .chap-head .num { font-size: 26pt; font-weight: 700; color: var(--accent); line-height: 1; }
+  .chap-head h2 { font-size: 19pt; }
+  h3 { font-size: 12.5pt; margin: 16px 0 6px; break-after: avoid; page-break-after: avoid; }
+  h4 { font-size: 10.5pt; margin: 10px 0 4px; break-after: avoid; page-break-after: avoid; }
+  .lead { font-size: 11.5pt; color: var(--ink-2); margin-bottom: 12px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 9pt; }
+  .keep { break-inside: avoid; page-break-inside: avoid; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .side { display: grid; grid-template-columns: 54mm 1fr; gap: 14px; align-items: start; }
+
+  /* ---------- figuras ---------- */
+  figure { margin: 10px 0 12px; break-inside: avoid; page-break-inside: avoid; }
+  figure img { display: block; width: 100%; border-radius: 6px; border: 1px solid #2a2c31; }
+  figcaption { font-size: 8.8pt; color: var(--muted); margin-top: 5px; }
+  .shot { position: relative; }
+  .pin { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: var(--accent); color: #1b1305; font-weight: 700; font-size: 9.5pt; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px #121316, 0 1px 6px rgba(0,0,0,.6); }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  /* ---------- listas numeradas de leyenda ---------- */
+  ol.legend { list-style: none; padding: 0; margin: 6px 0 0; counter-reset: lg; }
+  ol.legend li { counter-increment: lg; position: relative; padding-left: 28px; margin: 0 0 6px; break-inside: avoid; }
+  ol.legend li::before { content: counter(lg); position: absolute; left: 0; top: 1px; width: 19px; height: 19px; border-radius: 50%; background: var(--accent); color: #1b1305; font-weight: 700; font-size: 9pt; line-height: 19px; text-align: center; }
+  ol.legend.two { columns: 2; column-gap: 16px; }
+
+  ol.steps { padding-left: 18px; margin: 4px 0 8px; }
+  ol.steps li { margin-bottom: 4px; }
+  ul { padding-left: 18px; margin: 4px 0 8px; }
+  ul li { margin-bottom: 3px; }
+
+  /* ---------- cajas ---------- */
+  .box { border-radius: 8px; padding: 10px 12px; margin: 10px 0; break-inside: avoid; page-break-inside: avoid; }
+  .tip { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+  .tip .t { color: var(--accent-ink); font-weight: 600; margin-right: 4px; }
+  .note { background: var(--tint); border-left: 3px solid #9aa0a8; }
+  .note .t { color: var(--ink-2); font-weight: 600; margin-right: 4px; }
+  .warn { background: #fdecea; border-left: 3px solid var(--bad); }
+  .warn .t { color: var(--bad); font-weight: 600; margin-right: 4px; }
+  .box p:last-child { margin-bottom: 0; }
+
+  /* ---------- tablas ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 9.6pt; }
+  th { text-align: left; font-weight: 600; color: var(--ink-2); border-bottom: 1.5px solid var(--ink); padding: 5px 6px; }
+  td { border-bottom: 1px solid var(--line); padding: 5px 6px; vertical-align: top; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  td.k { white-space: nowrap; font-weight: 600; }
+  kbd { font-family: Consolas, monospace; font-size: 8.8pt; background: var(--tint); border: 1px solid #cfd2d7; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+
+  /* ---------- índice ---------- */
+  .toc { list-style: none; padding: 0; margin: 0; columns: 1; }
+  .toc li { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .toc .n { width: 22px; font-weight: 700; color: var(--accent); }
+  .toc .d { color: var(--muted); font-size: 9pt; margin-left: auto; text-align: right; max-width: 95mm; }
+
+  .glossary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+  .glossary div { break-inside: avoid; }
+  .glossary dt { font-weight: 600; }
+  .glossary dd { margin: 0; color: var(--ink-2); font-size: 9.6pt; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent-soft); border-radius: 4px; padding: 1px 6px; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================ PORTADA -->
+<div class="cover">
+  <div class="hero"></div>
+  <div class="body">
+    <div class="kicker">AC Display Generator · Guía de inicio</div>
+    <h1>¿Cómo funciona el programa?</h1>
+    <div class="sub">Todo lo necesario para diseñar tu primera pantalla para un coche de Assetto Corsa, instalarla y verla funcionar en el juego, aunque nunca hayas tocado un archivo de configuración.</div>
+    <div class="bar"></div>
+  </div>
+  <div class="meta"><span>Autor: <b>Eneas Menéndez</b></span><span>V. <b>1.0.0</b></span></div>
+</div>
+
+<!-- ================================================================ ÍNDICE -->
+<section>
+  <div class="chap-head"><h2>Contenido</h2></div>
+  <ul class="toc">
+    <li><span class="n">1</span><a href="#c1">Qué hace el programa</a><span class="d">La idea en una página y lo que necesitas</span></li>
+    <li><span class="n">2</span><a href="#c2">Conceptos básicos</a><span class="d">Malla, display, perfil, proyecto, página, elemento…</span></li>
+    <li><span class="n">3</span><a href="#c3">Tu primera pantalla en 6 pasos</a><span class="d">El camino completo de principio a fin</span></li>
+    <li><span class="n">4</span><a href="#c4">La pantalla de inicio</a><span class="d">Elegir el coche y abrir proyectos</span></li>
+    <li><span class="n">5</span><a href="#c5">El asistente: del coche al proyecto</a><span class="d">Vehículo, displays, imágenes y proyecto</span></li>
+    <li><span class="n">6</span><a href="#c6">El editor</a><span class="d">Para qué sirve cada zona</span></li>
+    <li><span class="n">7</span><a href="#c7">Elementos y datos en vivo</a><span class="d">Qué puedes poner en la pantalla</span></li>
+    <li><span class="n">8</span><a href="#c8">Reglas: que la pantalla reaccione</a><span class="d">Colores, avisos y parpadeos según los datos</span></li>
+    <li><span class="n">9</span><a href="#c9">Páginas</a><span class="d">Varias pantallas en un mismo display</span></li>
+    <li><span class="n">10</span><a href="#c10">Pantallas táctiles</a><span class="d">Botones que se pulsan con el ratón dentro del coche</span></li>
+    <li><span class="n">11</span><a href="#c11">Botones y agujas físicos</a><span class="d">Piezas reales del modelo 3D</span></li>
+    <li><span class="n">12</span><a href="#c12">Probar antes de instalar</a><span class="d">Simulación, previsualización y vista física</span></li>
+    <li><span class="n">13</span><a href="#c13">Generar e instalar</a><span class="d">Qué se escribe en el coche y cómo deshacerlo</span></li>
+    <li><span class="n">14</span><a href="#c14">Problemas frecuentes</a><span class="d">Qué hacer cuando algo no se ve como esperas</span></li>
+    <li><span class="n">15</span><a href="#c15">Atajos de teclado</a><span class="d">Para trabajar más rápido</span></li>
+  </ul>
+  <div class="box tip" style="margin-top:18px"><span class="t">Cómo leer esta guía.</span> Si tienes prisa, lee los capítulos 1 a 3 y sigue los seis pasos: con eso ya tendrás una pantalla funcionando. El resto de capítulos explica cada parte con detalle y puedes consultarlos cuando los necesites.</div>
+</section>
+
+<!-- ================================================================ 1 -->
+<section class="chapter" id="c1">
+  <div class="chap-head"><span class="num">1</span><h2>Qué hace el programa</h2></div>
+  <p class="lead">Muchos coches de Assetto Corsa tienen una pantalla en el salpicadero o en el volante. AC Display Generator te permite diseñar lo que se ve en ella (velocidad, marcha, revoluciones, tiempos, avisos, botones táctiles…) de forma visual, como en un programa de diseño, sin escribir código.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4a4f57"/></marker></defs>
+      <!-- 1 -->
+      <rect x="6" y="40" width="200" height="150" rx="12" fill="#fdf3e3" stroke="#F0A73A" stroke-width="1.5"/>
+      <text x="106" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#9a5b07">1 · TÚ DISEÑAS</text>
+      <rect x="30" y="82" width="152" height="70" rx="6" fill="#121316"/>
+      <text x="106" y="125" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">128</text>
+      <rect x="40" y="136" width="10" height="8" fill="#5be36a"/><rect x="54" y="136" width="10" height="8" fill="#5be36a"/><rect x="68" y="136" width="10" height="8" fill="#5be36a"/><rect x="82" y="136" width="10" height="8" fill="#F0A73A"/><rect x="96" y="136" width="10" height="8" fill="#333"/><rect x="110" y="136" width="10" height="8" fill="#333"/><rect x="124" y="136" width="10" height="8" fill="#333"/><rect x="138" y="136" width="10" height="8" fill="#333"/><rect x="152" y="136" width="10" height="8" fill="#333"/>
+      <text x="106" y="176" text-anchor="middle" font-size="11" fill="#4a4f57">en el editor, arrastrando elementos</text>
+      <line x1="210" y1="115" x2="252" y2="115" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar)"/>
+      <!-- 2 -->
+      <rect x="258" y="40" width="200" height="150" rx="12" fill="#f6f7f9" stroke="#9aa0a8" stroke-width="1.2"/>
+      <text x="358" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#4a4f57">2 · EL PROGRAMA GENERA</text>
+      <rect x="282" y="80" width="152" height="24" rx="5" fill="#fff" stroke="#d5d8dd"/><text x="292" y="96" font-size="11" font-family="Consolas" fill="#1d1f24">pantalla.lua</text>
+      <rect x="282" y="110" width="152" height="24" rx="5" fill="#fff" stroke="#d5d8dd"/><text x="292" y="126" font-size="11" font-family="Consolas" fill="#1d1f24">ext_config.ini</text>
+      <rect x="282" y="140" width="152" height="24" rx="5" fill="#fff" stroke="#d5d8dd"/><text x="292" y="156" font-size="11" font-family="Consolas" fill="#1d1f24">imágenes</text>
+      <text x="358" y="182" text-anchor="middle" font-size="11" fill="#4a4f57">y los copia al coche</text>
+      <line x1="462" y1="115" x2="504" y2="115" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar)"/>
+      <!-- 3 -->
+      <rect x="510" y="40" width="204" height="150" rx="12" fill="#121316"/>
+      <text x="612" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#F0A73A">3 · EL JUEGO LO DIBUJA</text>
+      <path d="M540 160 Q612 92 684 160" fill="none" stroke="#3a3d44" stroke-width="10" stroke-linecap="round"/>
+      <rect x="575" y="96" width="74" height="40" rx="4" fill="#1d1f24" stroke="#F0A73A"/>
+      <text x="612" y="123" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">128</text>
+      <text x="612" y="180" text-anchor="middle" font-size="11" fill="#b9bdc4">en la pantalla del coche, en directo</text>
+      <!-- datos -->
+      <rect x="510" y="208" width="204" height="34" rx="8" fill="#fff" stroke="#d5d8dd"/>
+      <text x="612" y="229" text-anchor="middle" font-size="11" fill="#4a4f57">datos del coche: rpm, velocidad, marcha…</text>
+      <line x1="612" y1="206" x2="612" y2="194" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar)"/>
+      <text x="360" y="22" text-anchor="middle" font-size="12" fill="#6b717a">El programa no modifica el juego: escribe unos archivos en la carpeta del coche que Custom Shaders Patch (CSP) sabe leer.</text>
+    </svg>
+    <figcaption>El recorrido completo: diseñas, el programa genera los archivos, y CSP los usa para pintar la pantalla del coche en cada fotograma con los datos reales.</figcaption>
+  </figure>
+
+  <h3>Lo que necesitas</h3>
+  <table>
+    <tr><th style="width:42mm">Requisito</th><th>Para qué</th></tr>
+    <tr><td class="k">Assetto Corsa</td><td>El programa busca la instalación de forma automática. Si no la encuentra, puedes indicarla con <b>Cambiar carpeta</b> en la pantalla de inicio.</td></tr>
+    <tr><td class="k">Custom Shaders Patch (CSP)</td><td>Es imprescindible: CSP es quien ejecuta las pantallas en el juego. Usa una versión reciente; en la pantalla de inicio verás qué versión tienes instalada.</td></tr>
+    <tr><td class="k">Content Manager</td><td>Opcional, pero recomendable para lanzar el juego. El programa detecta si lo tienes.</td></tr>
+    <tr><td class="k">Un coche con pantalla</td><td>El coche tiene que tener en su modelo 3D una pieza que haga de pantalla (normalmente un rectángulo en el salpicadero o en el volante).</td></tr>
+  </table>
+
+  <div class="box note"><span class="t">Tranquilidad:</span> antes de tocar nada en un coche, el programa guarda una copia de seguridad. Siempre puedes desinstalar tu pantalla o restaurar los archivos originales desde la propia aplicación (capítulo 13).</div>
+</section>
+
+<!-- ================================================================ 2 -->
+<section class="chapter" id="c2">
+  <div class="chap-head"><span class="num">2</span><h2>Conceptos básicos</h2></div>
+  <p class="lead">Son pocas palabras y aparecen en toda la aplicación. Merece la pena tenerlas claras antes de empezar.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a8"/></marker></defs>
+      <rect x="4" y="4" width="712" height="292" rx="14" fill="#f6f7f9" stroke="#d5d8dd"/>
+      <text x="22" y="30" font-size="13" font-weight="700" fill="#1d1f24">VEHÍCULO</text>
+      <text x="100" y="30" font-size="11" fill="#6b717a">la carpeta del coche en content/cars</text>
+      <!-- proyecto -->
+      <rect x="22" y="44" width="470" height="236" rx="12" fill="#fff" stroke="#F0A73A" stroke-width="1.5"/>
+      <text x="38" y="68" font-size="12.5" font-weight="700" fill="#9a5b07">PROYECTO</text>
+      <text x="118" y="68" font-size="11" fill="#6b717a">tu diseño (archivo .acdisplay)</text>
+      <!-- display 1 -->
+      <rect x="38" y="82" width="214" height="184" rx="10" fill="#fdf3e3" stroke="#f2c47d"/>
+      <text x="52" y="104" font-size="12" font-weight="700" fill="#1d1f24">DISPLAY</text>
+      <text x="112" y="104" font-size="10.5" fill="#6b717a">una pantalla del coche</text>
+      <rect x="52" y="116" width="186" height="64" rx="7" fill="#fff" stroke="#e3d2b4"/>
+      <text x="64" y="136" font-size="11.5" font-weight="700" fill="#1d1f24">PÁGINA «Principal»</text>
+      <rect x="64" y="146" width="46" height="22" rx="4" fill="#121316"/><text x="87" y="161" text-anchor="middle" font-size="10" fill="#fff">texto</text>
+      <rect x="116" y="146" width="52" height="22" rx="4" fill="#121316"/><text x="142" y="161" text-anchor="middle" font-size="10" fill="#fff">marcha</text>
+      <rect x="174" y="146" width="52" height="22" rx="4" fill="#121316"/><text x="200" y="161" text-anchor="middle" font-size="10" fill="#fff">botón</text>
+      <rect x="52" y="188" width="186" height="34" rx="7" fill="#fff" stroke="#e3d2b4"/>
+      <text x="64" y="210" font-size="11.5" font-weight="700" fill="#1d1f24">PÁGINA «Boxes»</text>
+      <text x="64" y="252" font-size="10.5" fill="#6b717a">elementos = lo que se dibuja</text>
+      <!-- display 2 -->
+      <rect x="264" y="82" width="214" height="90" rx="10" fill="#fdf3e3" stroke="#f2c47d"/>
+      <text x="278" y="104" font-size="12" font-weight="700" fill="#1d1f24">DISPLAY 2</text>
+      <text x="278" y="124" font-size="10.5" fill="#6b717a">p. ej. la del copiloto</text>
+      <rect x="278" y="134" width="186" height="26" rx="6" fill="#fff" stroke="#e3d2b4"/><text x="290" y="151" font-size="11" font-weight="600" fill="#1d1f24">PÁGINA «Lateral»</text>
+      <rect x="264" y="182" width="214" height="84" rx="10" fill="#fff" stroke="#d5d8dd" stroke-dasharray="4 3"/>
+      <text x="278" y="204" font-size="11.5" font-weight="700" fill="#1d1f24">Botones físicos</text>
+      <text x="278" y="222" font-size="10.5" fill="#6b717a">piezas del modelo que se pulsan</text>
+      <text x="278" y="244" font-size="11.5" font-weight="700" fill="#1d1f24">Agujas físicas</text>
+      <text x="278" y="260" font-size="10.5" fill="#6b717a">relojes de aguja del salpicadero</text>
+      <!-- perfil -->
+      <rect x="512" y="44" width="190" height="112" rx="12" fill="#fff" stroke="#9aa0a8"/>
+      <text x="528" y="68" font-size="12.5" font-weight="700" fill="#1d1f24">PERFIL</text>
+      <text x="528" y="88" font-size="10.5" fill="#4a4f57">la «ficha técnica» de cada</text>
+      <text x="528" y="103" font-size="10.5" fill="#4a4f57">pantalla: qué malla es, su</text>
+      <text x="528" y="118" font-size="10.5" fill="#4a4f57">resolución y su tamaño real.</text>
+      <text x="528" y="140" font-size="10" fill="#6b717a">Se crea una vez por coche.</text>
+      <line x1="510" y1="110" x2="482" y2="118" stroke="#9aa0a8" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <!-- modelo -->
+      <rect x="512" y="168" width="190" height="112" rx="12" fill="#121316"/>
+      <text x="528" y="192" font-size="12.5" font-weight="700" fill="#F0A73A">MODELO 3D (.kn5)</text>
+      <rect x="560" y="210" width="94" height="44" rx="4" fill="#26282d" stroke="#F0A73A"/>
+      <text x="607" y="237" text-anchor="middle" font-size="10" fill="#e9eaec">malla «DISPLAY»</text>
+      <text x="607" y="271" text-anchor="middle" font-size="10" fill="#b9bdc4">la pieza donde se pinta</text>
+    </svg>
+    <figcaption>Cómo encaja todo: un proyecto contiene uno o varios displays; cada display tiene páginas, y cada página, elementos. Los botones y agujas físicos son del coche entero.</figcaption>
+  </figure>
+
+  <dl class="glossary">
+    <div><dt>Malla</dt><dd>Una pieza del modelo 3D del coche. La pantalla es una malla concreta (suele llamarse «DISPLAY», «SCREEN», «LCD»…).</dd></div>
+    <div><dt>Display</dt><dd>Una pantalla del coche que vas a diseñar. Un coche puede tener varias (conductor, copiloto, volante…).</dd></div>
+    <div><dt>Textura y resolución</dt><dd>El «lienzo» en píxeles donde dibujas, por ejemplo 1024 × 512. Se ajusta a la pantalla del modelo.</dd></div>
+    <div><dt>Perfil</dt><dd>Describe cada display del coche: su malla, su resolución y su tamaño. El asistente lo crea o lo encuentra por ti.</dd></div>
+    <div><dt>Proyecto</dt><dd>Tu diseño. Se guarda como <code>.acdisplay</code>; también se copia dentro del coche al instalar, para poder reabrirlo.</dd></div>
+    <div><dt>Página</dt><dd>Una «vista» del display. Puedes tener varias y pasar de una a otra con un botón o de forma automática.</dd></div>
+    <div><dt>Elemento</dt><dd>Cada cosa que se dibuja: un texto, la marcha, una barra de revoluciones, un botón, una imagen…</dd></div>
+    <div><dt>Variable</dt><dd>Un dato en vivo del juego (velocidad, rpm, combustible, temperatura…). Los elementos muestran variables.</dd></div>
+    <div><dt>Regla</dt><dd>«Si pasa esto, cambia aquello»: por ejemplo, poner un texto en rojo cuando el combustible baja de 5 litros.</dd></div>
+    <div><dt>Área visible</dt><dd>La parte de la textura que la malla muestra de verdad. Lo que quede fuera no se ve en el coche.</dd></div>
+    <div><dt>Emisión</dt><dd>Lo que hace que la pantalla «brille» y se vea de noche o a la sombra.</dd></div>
+    <div><dt>CSP</dt><dd>Custom Shaders Patch, la extensión de Assetto Corsa que ejecuta las pantallas.</dd></div>
+  </dl>
+</section>
+
+<!-- ================================================================ 3 -->
+<section class="chapter" id="c3">
+  <div class="chap-head"><span class="num">3</span><h2>Tu primera pantalla en 6 pasos</h2></div>
+  <p class="lead">Este es el camino completo. Los capítulos siguientes explican cada paso con capturas.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 175" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a8"/></marker></defs>
+      <g font-size="11">
+        <g transform="translate(4,20)"><circle cx="50" cy="30" r="24" fill="#F0A73A"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#1b1305">1</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Elige el coche</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">pantalla de inicio</text></g>
+        <line x1="112" y1="50" x2="122" y2="50" stroke="#9aa0a8" stroke-width="2" marker-end="url(#ar3)"/>
+        <g transform="translate(124,20)"><circle cx="50" cy="30" r="24" fill="#F0A73A"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#1b1305">2</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Indica la pantalla</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">asistente</text></g>
+        <line x1="232" y1="50" x2="242" y2="50" stroke="#9aa0a8" stroke-width="2" marker-end="url(#ar3)"/>
+        <g transform="translate(244,20)"><circle cx="50" cy="30" r="24" fill="#F0A73A"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#1b1305">3</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Diseña</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">editor</text></g>
+        <line x1="352" y1="50" x2="362" y2="50" stroke="#9aa0a8" stroke-width="2" marker-end="url(#ar3)"/>
+        <g transform="translate(364,20)"><circle cx="50" cy="30" r="24" fill="#F0A73A"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#1b1305">4</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Pruébala</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">simulación</text></g>
+        <line x1="472" y1="50" x2="482" y2="50" stroke="#9aa0a8" stroke-width="2" marker-end="url(#ar3)"/>
+        <g transform="translate(484,20)"><circle cx="50" cy="30" r="24" fill="#F0A73A"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#1b1305">5</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Instálala</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">generar e instalar</text></g>
+        <line x1="592" y1="50" x2="602" y2="50" stroke="#9aa0a8" stroke-width="2" marker-end="url(#ar3)"/>
+        <g transform="translate(604,20)"><circle cx="50" cy="30" r="24" fill="#121316" stroke="#F0A73A" stroke-width="2"/><text x="50" y="37" text-anchor="middle" font-size="19" font-weight="700" fill="#F0A73A">6</text><text x="50" y="76" text-anchor="middle" font-weight="700" fill="#1d1f24">Mírala en el juego</text><text x="50" y="92" text-anchor="middle" fill="#6b717a">Assetto Corsa</text></g>
+      </g>
+      <path d="M654 122 C 560 160, 420 160, 298 122" fill="none" stroke="#F0A73A" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar3)"/>
+      <text x="476" y="170" text-anchor="middle" font-size="10" fill="#9a5b07">¿Algo por ajustar? Vuelve al editor y reinstala: tarda segundos.</text>
+    </svg>
+  </figure>
+
+  <ol class="steps">
+    <li><b>Elige el coche.</b> En la pantalla de inicio, busca el coche en la lista de la derecha y haz <b>doble clic</b>.</li>
+    <li><b>Indica cuál es la pantalla.</b> El asistente busca si el coche ya tiene pantallas definidas. Si no, en el <b>modo creador</b> eliges la malla que hace de pantalla y el programa detecta su resolución.</li>
+    <li><b>Diseña.</b> En el editor, añade elementos desde el panel izquierdo (por ejemplo <b>Texto / dato</b> con la variable <i>Velocidad</i>, o <b>Marcha</b>), colócalos en el lienzo y ajusta su aspecto en el panel derecho.</li>
+    <li><b>Pruébala.</b> Mueve los deslizadores del panel <b>Simulación</b> (rpm, velocidad, marcha…) y comprueba que todo reacciona como esperas. Pulsa <kbd>P</kbd> para verla sin guías.</li>
+    <li><b>Instálala.</b> Pulsa <b>Generar e instalar</b> (botón ámbar, arriba a la derecha) y confirma. El programa escribe los archivos en el coche y guarda una copia de seguridad.</li>
+    <li><b>Mírala en el juego.</b> Arranca Assetto Corsa con ese coche y ve a la vista de cabina. Si cambias algo, vuelve a instalar y reinicia la sesión.</li>
+  </ol>
+
+  <div class="box tip"><span class="t">Consejo para empezar:</span> elige un coche que ya tenga pantalla (aparecen marcados con <span class="tag">perfil</span> en la lista). Así el paso 2 se hace solo y puedes ir directamente a diseñar.</div>
+  <div class="box note"><span class="t">Guardar:</span> el proyecto se guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd>. Al instalar se guarda también una copia dentro del coche, así que puedes volver a abrirlo más tarde desde <b>Recientes</b> o haciendo doble clic en el coche.</div>
+</section>
+
+<!-- ================================================================ 4 -->
+<section class="chapter" id="c4">
+  <div class="chap-head"><span class="num">4</span><h2>La pantalla de inicio</h2></div>
+  <p class="lead">Es lo primero que ves al abrir el programa. Desde aquí eliges con qué coche trabajar o retomas un proyecto.</p>
+  <figure class="shot">
+    <img src="img/01_inicio.jpg" alt="Pantalla de inicio">
+    <span class="pin" style="left:10%;top:10.2%">1</span>
+    <span class="pin" style="left:10%;top:27%">2</span>
+    <span class="pin" style="left:10%;top:37%">3</span>
+    <span class="pin" style="left:10%;top:58%">4</span>
+    <span class="pin" style="left:40%;top:4.6%">5</span>
+    <span class="pin" style="left:82%;top:38%">6</span>
+    <span class="pin" style="left:93.5%;top:9%">7</span>
+    <span class="pin" style="left:10%;top:96%">8</span>
+  </figure>
+  <ol class="legend two">
+    <li><b>Instalación de Assetto Corsa.</b> Carpeta detectada, versión de CSP y si tienes Content Manager. <b>Cambiar carpeta</b> si no es la correcta.</li>
+    <li><b>Proyectos.</b> <b>Abrir proyecto</b> carga un <code>.acdisplay</code>; <b>Carpeta de vehículo</b> abre un coche que esté fuera de la instalación.</li>
+    <li><b>Aspecto.</b> Color de acento, intensidad del fondo y una imagen de fondo opcional. Es solo estético.</li>
+    <li><b>Recientes.</b> Los últimos proyectos; un clic y vuelves donde lo dejaste.</li>
+    <li><b>Buscador.</b> Escribe parte del nombre, la marca o la carpeta del coche.</li>
+    <li><b>Marcas.</b> <span class="tag">perfil</span> el coche ya tiene sus pantallas definidas; <span class="tag">display instalado</span> ya tiene una pantalla hecha con este programa.</li>
+    <li><b>Continuar.</b> Abre el coche seleccionado (también con doble clic).</li>
+    <li><b>Autor y versión</b> del programa.</li>
+  </ol>
+  <div class="box tip"><span class="t">Si el coche ya tiene un proyecto instalado</span> con este programa, al abrirlo irás directamente al editor con tu diseño cargado.</div>
+</section>
+
+<!-- ================================================================ 5 -->
+<section class="chapter" id="c5">
+  <div class="chap-head"><span class="num">5</span><h2>El asistente: del coche al proyecto</h2></div>
+  <p class="lead">Cuando abres un coche que todavía no tiene proyecto, un asistente de cuatro pasos prepara todo lo necesario. Arriba siempre ves en qué paso estás.</p>
+
+  <h3>Paso 1 · Vehículo</h3>
+  <p>El programa analiza la carpeta del coche y te enseña lo que encuentra: los datos (empaquetados o no), los modelos 3D (<code>.kn5</code>), las skins y si existe <code>ext_config.ini</code> en la carpeta <code>extension</code>. No tienes que hacer nada: revisa que es el coche correcto y pulsa <b>Siguiente</b>.</p>
+  <figure><img src="img/03_wizard_vehiculo.jpg" alt="Paso 1"></figure>
+
+  <h3 style="page-break-before: always; margin-top:0">Paso 2 · Displays</h3>
+  <p>Aquí se decide <b>qué pantalla(s) vas a diseñar</b>. Pueden darse tres casos:</p>
+  <ul>
+    <li><b>El coche ya tiene un perfil</b>: aparece en la lista y se marca solo. Pasa al siguiente paso.</li>
+    <li><b>El coche ya tiene pantallas de su autor</b> (definidas en <code>extension/</code>): el programa las encuentra y puedes importarlas.</li>
+    <li><b>No hay nada</b>: pulsa <b>Crear perfil (modo creador)</b> y elige la malla de la pantalla en el modelo 3D.</li>
+  </ul>
+  <figure>
+    <img src="img/04_wizard_displays.jpg" alt="Paso 2: modo creador">
+    <figcaption>Modo creador: a la izquierda las mallas del modelo y a la derecha el material de cada una. Al pulsar una, se rellenan la malla y la resolución.</figcaption>
+  </figure>
+  <div class="box tip"><span class="t">¿Cuál es la malla de la pantalla?</span> Usa el filtro y prueba palabras como <code>display</code>, <code>screen</code>, <code>lcd</code>, <code>dash</code> o <code>monitor</code>, tanto en el nombre de la malla como en el del material. La pantalla suele ser una malla con pocos vértices (es un rectángulo). Si dudas, en el showroom de Content Manager puedes ver los nombres de las piezas.</div>
+  <p>Al terminar elige dónde guardar el perfil:</p>
+  <table class="keep">
+    <tr><td class="k">Guardar en el vehículo</td><td>Se escribe <code>extension/display_profile.json</code> en el coche. Lo recomendable: la próxima vez se detecta solo.</td></tr>
+    <tr><td class="k">Guardar en mi biblioteca</td><td>Se guarda en los datos del programa, sin tocar el coche.</td></tr>
+    <tr><td class="k">Usar solo ahora</td><td>Para probar: no se guarda en ningún sitio.</td></tr>
+  </table>
+  <figure><img src="img/05_wizard_displays_ok.jpg" alt="Display listo"><figcaption>Con la pantalla elegida, aparece en «Displays del proyecto» y ya puedes seguir.</figcaption></figure>
+
+  <h3>Paso 3 · Imágenes de fondo</h3>
+  <p>Opcional. Puedes poner una imagen de fondo para cada pantalla (un diseño hecho en otro programa, por ejemplo). Lo ideal es que tenga la misma resolución que la pantalla; si no, se escala. Sin imagen, el fondo es un color liso. Se puede cambiar después.</p>
+  <figure><img src="img/06_wizard_imagen.jpg" alt="Paso 3"></figure>
+
+  <h3>Paso 4 · Proyecto</h3>
+  <p>Pon nombre al proyecto, revisa el resumen y pulsa <b>Abrir editor</b>. Si el coche tenía una pantalla original sobre la misma malla, aquí se avisa de que se desactivará al instalar (no se borra: se comenta en su <code>.ini</code> y se reactiva al desinstalar).</p>
+  <figure><img src="img/07_wizard_proyecto.jpg" alt="Paso 4"></figure>
+</section>
+
+<!-- ================================================================ 6 -->
+<section class="chapter" id="c6">
+  <div class="chap-head"><span class="num">6</span><h2>El editor</h2></div>
+  <p class="lead">Aquí es donde se diseña. Todo está a la vista: a la izquierda lo que puedes añadir, en el centro el lienzo, a la derecha las propiedades de lo que tengas seleccionado y abajo la simulación.</p>
+  <figure class="shot">
+    <img src="img/10_editor.jpg" alt="El editor">
+    <span class="pin" style="left:4%;top:2.4%">1</span>
+    <span class="pin" style="left:17.5%;top:2.4%">2</span>
+    <span class="pin" style="left:36%;top:2.4%">3</span>
+    <span class="pin" style="left:57.5%;top:2.4%">4</span>
+    <span class="pin" style="left:73%;top:2.4%">5</span>
+    <span class="pin" style="left:95%;top:6%">6</span>
+    <span class="pin" style="left:13%;top:6.7%">7</span>
+    <span class="pin" style="left:6.5%;top:36.2%">8</span>
+    <span class="pin" style="left:48%;top:13%">9</span>
+    <span class="pin" style="left:20%;top:77.4%">10</span>
+    <span class="pin" style="left:89%;top:7%">11</span>
+    <span class="pin" style="left:89%;top:92.8%">12</span>
+  </figure>
+  <ol class="legend two">
+    <li><b>Volver al inicio</b> y nombre del proyecto.</li>
+    <li><b>Display</b> que estás editando (si hay varios), <b>+ Display</b> para añadir otro, <b>Botones</b> y <b>Agujas</b> físicos (capítulo 11).</li>
+    <li><b>Páginas</b> del display. Clic para cambiar de página, <b>+</b> para añadir una.</li>
+    <li><b>Guardar</b>, guardar como, deshacer/rehacer y zoom.</li>
+    <li><b>Previsualizar</b> (sin guías), mostrar/ocultar la <b>Simulación</b> y <b>Vista física</b> (la proporción real en el coche).</li>
+    <li><b>Generar e instalar</b>: lleva tu diseño al coche (capítulo 13).</li>
+    <li><b>Añadir elemento</b>: un clic y aparece en el lienzo.</li>
+    <li><b>Capas</b>: lista de elementos de la página. Clic para seleccionar; el ojo oculta y el candado bloquea.</li>
+    <li><b>Lienzo</b>: la pantalla a tamaño real. La línea discontinua marca el <b>área visible</b>.</li>
+    <li><b>Simulación</b>: deslizadores para fingir datos del coche y ver cómo reacciona el diseño.</li>
+    <li><b>Propiedades</b> del elemento seleccionado; sin selección, las del proyecto y el display.</li>
+    <li><b>Páginas</b> del display: tipo, orden y cómo se cambia entre ellas (capítulo 9).</li>
+  </ol>
+
+  <h3 style="page-break-before: always; margin-top:0">Trabajar con elementos</h3>
+  <div class="side">
+    <figure style="margin-top:0"><img src="img/11_seleccion.jpg" alt="Propiedades de un texto"><figcaption>Propiedades de un texto que muestra el tiempo de vuelta.</figcaption></figure>
+    <div>
+      <ul>
+        <li><b>Seleccionar:</b> clic en el lienzo o en la lista de capas. <kbd>Shift</kbd>+clic para seleccionar varios.</li>
+        <li><b>Mover:</b> arrastra, o usa las flechas (<kbd>Shift</kbd> para saltos de 10 px). Se ajusta solo a la rejilla y a otros elementos; mantén <kbd>Alt</kbd> para moverlo libremente.</li>
+        <li><b>Cambiar tamaño:</b> arrastra los tiradores de las esquinas (<kbd>Shift</kbd> mantiene la proporción).</li>
+        <li><b>Copiar / duplicar / borrar:</b> <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Ctrl</kbd>+<kbd>D</kbd>, <kbd>Supr</kbd>.</li>
+        <li><b>Orden:</b> los botones de abajo del panel de capas lo llevan al frente o al fondo.</li>
+      </ul>
+      <p>El panel de propiedades se organiza en grupos:</p>
+      <table>
+        <tr><td class="k">Posición</td><td>X, Y, ancho, alto, rotación, opacidad y botones para centrarlo.</td></tr>
+        <tr><td class="k">Contenido</td><td>Qué dato muestra (la <b>variable</b>) y con qué formato: decimales, prefijo, sufijo…</td></tr>
+        <tr><td class="k">Estilo</td><td>Fuente, tamaño, color, alineación, negrita, destello…</td></tr>
+        <tr><td class="k">Animación</td><td>Entrada y salida al aparecer la página.</td></tr>
+        <tr><td class="k">Estados (reglas)</td><td>Cambios automáticos según los datos (capítulo 8).</td></tr>
+      </table>
+      <div class="box note"><span class="t">Deshacer:</span> casi todo se puede deshacer con <kbd>Ctrl</kbd>+<kbd>Z</kbd>. Experimenta sin miedo.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 7 -->
+<section class="chapter" id="c7">
+  <div class="chap-head"><span class="num">7</span><h2>Elementos y datos en vivo</h2></div>
+  <p class="lead">Estos son los elementos que puedes añadir desde el panel izquierdo. Los que muestran datos se conectan a una <b>variable</b> del juego.</p>
+  <table>
+    <tr><th style="width:36mm">Elemento</th><th>Qué hace</th><th style="width:48mm">Ejemplo de uso</th></tr>
+    <tr><td class="k">Texto / dato</td><td>Un texto fijo o el valor de cualquier variable, con el formato que quieras.</td><td>Velocidad, tiempo de vuelta, «LAP»</td></tr>
+    <tr><td class="k">Marcha</td><td>La marcha engranada, con R y N.</td><td>El número grande del centro</td></tr>
+    <tr><td class="k">Barra RPM</td><td>Barra de revoluciones por segmentos o continua, con zonas normal, aviso, línea roja y limitador.</td><td>Tira de LEDs encima de la marcha</td></tr>
+    <tr><td class="k">Shift light</td><td>Una única luz que se enciende o parpadea al llegar al régimen de cambio.</td><td>Testigo «SHIFT»</td></tr>
+    <tr><td class="k">Luces de cambio</td><td>Fila de LEDs que se encienden progresivamente entre dos regímenes.</td><td>4 verdes, 3 ámbar, 3 rojos</td></tr>
+    <tr><td class="k">Aguja</td><td>Una aguja dibujada en la pantalla que gira con un valor.</td><td>Cuentarrevoluciones digital</td></tr>
+    <tr><td class="k">Botón táctil</td><td>Zona que se pulsa con el ratón dentro del coche (capítulo 10).</td><td>Cambiar de página, luces</td></tr>
+    <tr><td class="k">Barra</td><td>Barra que se llena según un valor.</td><td>Combustible, acelerador, freno</td></tr>
+    <tr><td class="k">Indicador</td><td>Arco o arco segmentado que se llena con un valor, con umbrales de color.</td><td>Temperatura de agua</td></tr>
+    <tr><td class="k">Icono</td><td>Un icono integrado o tuyo que se enciende según un dato.</td><td>Testigo de ABS, TC, luces</td></tr>
+    <tr><td class="k">Imagen</td><td>Una imagen del proyecto (PNG, JPG…).</td><td>Logotipo de la marca</td></tr>
+    <tr><td class="k">Vídeo</td><td>Un vídeo que se reproduce al entrar en la página.</td><td>Animación de arranque</td></tr>
+    <tr><td class="k">Rectángulo, Círculo, Línea</td><td>Formas para dar estructura al diseño.</td><td>Marcos, separadores, fondos</td></tr>
+  </table>
+
+  <h3>Las variables</h3>
+  <p>Un elemento de datos se conecta a una variable desde <b>Contenido → Variable</b>. Hay más de 500, organizadas por categorías (coche, neumáticos, simulación y sesión): velocidad, rpm, marcha, combustible, temperaturas, presiones y temperaturas de neumáticos, tiempos y sectores, posición, ayudas (ABS, TC), reparto de frenada, luces, DRS, turbo, batería…</p>
+  <div class="cols">
+    <div class="box note"><span class="t">Unidades.</span> Por defecto se usan las del coche. Puedes forzar métricas (km/h, °C, bar, L) o imperiales (mph, °F, psi, gal) en las propiedades del display.</div>
+    <div class="box note"><span class="t">Formato.</span> Para cada dato eliges decimales, ceros a la izquierda, prefijo y sufijo (por ejemplo «&nbsp;km/h»), y para los tiempos el formato <code>1:23.456</code>.</div>
+  </div>
+</section>
+
+<!-- ================================================================ 8 -->
+<section class="chapter" id="c8">
+  <div class="chap-head"><span class="num">8</span><h2>Reglas: que la pantalla reaccione</h2></div>
+  <p class="lead">Una regla cambia el aspecto de un elemento cuando se cumple una condición. Es lo que permite avisos como «combustible bajo» o un número que se pone rojo al llegar al corte.</p>
+  <figure>
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4a4f57"/></marker></defs>
+      <text x="10" y="22" font-size="12" font-weight="700" fill="#6b717a">SI…</text>
+      <rect x="10" y="32" width="128" height="40" rx="8" fill="#fff" stroke="#9aa0a8"/><text x="74" y="57" text-anchor="middle" font-size="12" fill="#1d1f24">Combustible</text>
+      <rect x="146" y="32" width="56" height="40" rx="8" fill="#fff" stroke="#9aa0a8"/><text x="174" y="58" text-anchor="middle" font-size="15" font-weight="700" fill="#1d1f24">&lt;</text>
+      <rect x="210" y="32" width="70" height="40" rx="8" fill="#fff" stroke="#9aa0a8"/><text x="245" y="57" text-anchor="middle" font-size="12" fill="#1d1f24">5 L</text>
+      <text x="10" y="94" font-size="10" fill="#6b717a">variable</text><text x="152" y="94" font-size="10" fill="#6b717a">comparación</text><text x="226" y="94" font-size="10" fill="#6b717a">valor</text>
+      <line x1="290" y1="52" x2="340" y2="52" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar4)"/>
+      <text x="350" y="22" font-size="12" font-weight="700" fill="#6b717a">ENTONCES…</text>
+      <rect x="350" y="32" width="160" height="40" rx="8" fill="#fdf3e3" stroke="#F0A73A"/><text x="430" y="57" text-anchor="middle" font-size="12" fill="#1d1f24">color rojo + parpadeo 2 Hz</text>
+      <rect x="538" y="14" width="76" height="40" rx="5" fill="#121316"/><text x="576" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">12.4</text>
+      <text x="576" y="70" text-anchor="middle" font-size="10" fill="#6b717a">normal</text>
+      <rect x="630" y="14" width="76" height="40" rx="5" fill="#121316"/><text x="668" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#ff4a3d">4.6</text>
+      <text x="668" y="70" text-anchor="middle" font-size="10" fill="#6b717a">regla activa</text>
+      <text x="10" y="128" font-size="11" fill="#4a4f57">Lo que puede cambiar una regla: <tspan font-weight="700">color</tspan>, <tspan font-weight="700">visibilidad</tspan> (mostrar u ocultar), <tspan font-weight="700">parpadeo</tspan> (en Hz) y <tspan font-weight="700">opacidad</tspan>.</text>
+      <text x="10" y="146" font-size="11" fill="#4a4f57">Si hay varias reglas que se cumplen a la vez, se aplican en orden y la de abajo manda.</text>
+    </svg>
+  </figure>
+  <div class="side">
+    <figure style="margin-top:0"><img src="img/24_reglas.jpg" alt="Una regla"><figcaption>Regla real: si el interruptor táctil A está activo, el texto se pone ámbar.</figcaption></figure>
+    <div>
+      <h4>Cómo crear una regla</h4>
+      <ol class="steps">
+        <li>Selecciona el elemento.</li>
+        <li>En <b>Estados (reglas)</b>, pulsa <b>+ Añadir</b>.</li>
+        <li>Elige la variable, la comparación y el valor (para las rpm puedes usar porcentajes del limitador, como 95 %).</li>
+        <li>Marca qué cambia: color, visibilidad, parpadeo u opacidad.</li>
+        <li>Mueve el deslizador de esa variable en <b>Simulación</b> para comprobarlo.</li>
+      </ol>
+    </div>
+  </div>
+  <h3>Ideas habituales</h3>
+  <table>
+    <tr><th>Quiero…</th><th>Regla</th></tr>
+    <tr><td>Que la marcha se ponga roja en el corte</td><td>Si <i>RPM</i> ≥ 95 % → color rojo</td></tr>
+    <tr><td>Un aviso de combustible que solo aparezca al final</td><td>Elemento oculto; si <i>Combustible</i> &lt; 5 → visible y parpadeo</td></tr>
+    <tr><td>Un testigo que se encienda con el limitador de boxes</td><td>Si <i>Limitador de boxes</i> es verdadero → color ámbar</td></tr>
+    <tr><td>Que algo se vea solo con las luces encendidas</td><td>Si <i>Luces</i> es verdadero → visible</td></tr>
+  </table>
+</section>
+
+<!-- ================================================================ 9 -->
+<section class="chapter" id="c9">
+  <div class="chap-head"><span class="num">9</span><h2>Páginas</h2></div>
+  <p class="lead">Un display puede tener varias páginas, como un móvil con varias pantallas: una para la carrera, otra con los neumáticos, otra para boxes… Solo se ve una a la vez.</p>
+  <figure>
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4a4f57"/></marker></defs>
+      <rect x="6" y="50" width="120" height="70" rx="8" fill="#121316"/><text x="66" y="80" text-anchor="middle" font-size="11" font-weight="700" fill="#F0A73A">▶ ARRANQUE</text><text x="66" y="100" text-anchor="middle" font-size="10" fill="#b9bdc4">al cargar el coche</text>
+      <line x1="130" y1="85" x2="168" y2="85" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar5)"/>
+      <rect x="174" y="50" width="120" height="70" rx="8" fill="#121316" stroke="#F0A73A" stroke-width="2"/><text x="234" y="82" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Principal</text><text x="234" y="100" text-anchor="middle" font-size="10" fill="#b9bdc4">datos (normal)</text>
+      <rect x="334" y="50" width="120" height="70" rx="8" fill="#121316"/><text x="394" y="82" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Neumáticos</text><text x="394" y="100" text-anchor="middle" font-size="10" fill="#b9bdc4">datos (normal)</text>
+      <path d="M296 72 L330 72" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar5)"/>
+      <path d="M334 100 L298 100" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar5)"/>
+      <text x="314" y="40" text-anchor="middle" font-size="10" fill="#4a4f57">botón Extra A</text>
+      <text x="314" y="140" text-anchor="middle" font-size="10" fill="#4a4f57">o botón táctil</text>
+      <rect x="520" y="10" width="190" height="70" rx="8" fill="#121316"/><text x="615" y="40" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Boxes</text><text x="615" y="60" text-anchor="middle" font-size="10" fill="#b9bdc4">se muestra sola en el pit lane</text>
+      <path d="M456 72 C 490 60, 495 48, 516 46" fill="none" stroke="#F0A73A" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ar5)"/>
+      <text x="486" y="38" text-anchor="middle" font-size="10" fill="#9a5b07">condición</text>
+      <rect x="520" y="104" width="190" height="70" rx="8" fill="#121316"/><text x="615" y="134" text-anchor="middle" font-size="12" font-weight="700" fill="#F0A73A">⚡ FUNCIONALIDAD</text><text x="615" y="154" text-anchor="middle" font-size="10" fill="#b9bdc4">launch control con el botón KERS</text>
+      <path d="M456 100 C 490 112, 495 130, 516 136" fill="none" stroke="#F0A73A" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ar5)"/>
+      <text x="486" y="160" text-anchor="middle" font-size="10" fill="#9a5b07">botón</text>
+      <text x="360" y="194" text-anchor="middle" font-size="11" fill="#4a4f57">Al desaparecer la condición, el display vuelve a la página en la que estabas.</text>
+    </svg>
+  </figure>
+  <table>
+    <tr><th style="width:38mm">Tipo de página</th><th>Cuándo se ve</th></tr>
+    <tr><td class="k">Datos (normal)</td><td>Las páginas de siempre. Se pasa de una a otra con el botón que elijas en <b>Cambiar con</b> (Extra A a H de CSP, que puedes asignar a un botón del volante) o con un botón táctil. Puedes añadirle condiciones para que aparezca sola: <b>Mostrar automáticamente si…</b></td></tr>
+    <tr><td class="k">▶ Arranque</td><td>Una secuencia que se muestra unos segundos al cargar el coche, como el logotipo al encender un coche real. Se puede repetir o saltar con un botón.</td></tr>
+    <tr><td class="k">⚡ Funcionalidad</td><td>Una pantalla especial que se activa con un botón (KERS, Extra…), por ejemplo un launch control. Puede verse mientras mantienes el botón, entrar y salir con dos pulsaciones, o entrar con el botón y salir sola cuando se cumple una condición.</td></tr>
+  </table>
+  <div class="box tip"><span class="t">Dónde se configura.</span> Sin ningún elemento seleccionado, el panel derecho muestra el grupo <b>Páginas</b>: ahí añades, ordenas, cambias el tipo y eliges el botón para cambiar de página. Con <b>Plantilla…</b> añades páginas ya hechas (launch control, limitador de boxes, ajustes del coche, combustible y menú táctil) que luego modificas a tu gusto: son un buen punto de partida.</div>
+  <div class="box note"><span class="t">Brillo de noche.</span> En el grupo <b>Brillo</b> puedes bajar la intensidad del contenido con las luces encendidas o por la noche, para que la pantalla no deslumbre.</div>
+</section>
+
+<!-- ================================================================ 10 -->
+<section class="chapter" id="c10">
+  <div class="chap-head"><span class="num">10</span><h2>Pantallas táctiles</h2></div>
+  <p class="lead">Con los <b>botones táctiles</b> la pantalla se puede «tocar»: dentro del coche, haces clic con el ratón sobre la pantalla y el botón actúa, igual que en un coche moderno con pantalla táctil.</p>
+  <figure>
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4a4f57"/></marker></defs>
+      <g>
+        <path d="M40 40 l0 46 l12 -11 l9 20 l8 -4 l-9 -19 l16 0 z" fill="#fff" stroke="#1d1f24" stroke-width="2" stroke-linejoin="round"/>
+        <text x="60" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">Clic dentro</text><text x="60" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">del coche</text>
+      </g>
+      <line x1="112" y1="70" x2="156" y2="70" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar6)"/>
+      <g transform="translate(160,0)">
+        <polygon points="20,30 160,18 170,110 26,118" fill="#121316" stroke="#F0A73A" stroke-width="1.5"/>
+        <circle cx="98" cy="64" r="6" fill="#F0A73A"/>
+        <text x="95" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">CSP calcula dónde</text><text x="95" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">toca la pantalla</text>
+      </g>
+      <line x1="340" y1="70" x2="384" y2="70" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar6)"/>
+      <g transform="translate(388,0)">
+        <rect x="0" y="22" width="150" height="92" rx="4" fill="#121316"/>
+        <rect x="14" y="70" width="56" height="30" rx="5" fill="#26282d" stroke="#F0A73A"/><text x="42" y="90" text-anchor="middle" font-size="10" fill="#fff">MODO</text>
+        <rect x="82" y="70" width="56" height="30" rx="5" fill="#26282d"/><text x="110" y="90" text-anchor="middle" font-size="10" fill="#fff">SIG. ▶</text>
+        <circle cx="42" cy="85" r="4" fill="#F0A73A"/>
+        <text x="75" y="44" text-anchor="middle" font-size="10" fill="#b9bdc4">píxel (310, 450)</text>
+        <text x="75" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">¿Qué botón está</text><text x="75" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">en ese punto?</text>
+      </g>
+      <line x1="546" y1="70" x2="590" y2="70" stroke="#4a4f57" stroke-width="2" marker-end="url(#ar6)"/>
+      <g transform="translate(594,0)">
+        <rect x="0" y="30" width="120" height="76" rx="10" fill="#fdf3e3" stroke="#F0A73A"/>
+        <text x="60" y="58" text-anchor="middle" font-size="11" font-weight="700" fill="#9a5b07">ACCIÓN</text>
+        <text x="60" y="78" text-anchor="middle" font-size="10" fill="#1d1f24">cambia de página,</text>
+        <text x="60" y="93" text-anchor="middle" font-size="10" fill="#1d1f24">enciende luces…</text>
+        <text x="60" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#1d1f24">El botón actúa</text>
+      </g>
+    </svg>
+  </figure>
+
+  <div class="side">
+    <figure style="margin-top:0"><img src="img/21_boton_tactil.jpg" alt="Propiedades de un botón táctil"><figcaption>Propiedades de un botón táctil: acción, interruptor, pulsación y aspecto.</figcaption></figure>
+    <div>
+      <h4>Crear un botón</h4>
+      <ol class="steps">
+        <li>Añade <b>Botón táctil</b> y colócalo donde quieras.</li>
+        <li>En <b>Acción</b>, elige qué hace.</li>
+        <li>En <b>Pulsación</b>, elige si actúa <i>al tocar</i>, <i>mientras se mantiene</i> o <i>repite al mantener</i>.</li>
+        <li>En <b>Aspecto</b>, ajusta forma, colores (normal, puntero encima, pulsado y activo), texto o imagen.</li>
+      </ol>
+      <h4>Qué puede hacer un botón</h4>
+      <table>
+        <tr><td class="k">Páginas</td><td>Siguiente, anterior, primera, ir a una concreta, volver, repetir el arranque.</td></tr>
+        <tr><td class="k">Interruptores</td><td>Conmutar, activar o desactivar un interruptor táctil (ver abajo).</td></tr>
+        <tr><td class="k">Luces</td><td>Luces, largas, diurnas, ráfaga, intermitentes, emergencia, limpiaparabrisas.</td></tr>
+        <tr><td class="k">Ayudas</td><td>Control de tracción, ABS, reparto de frenada y freno motor (+ y −).</td></tr>
+        <tr><td class="k">ERS / DRS</td><td>KERS, DRS y los modos de MGU-K y MGU-H.</td></tr>
+        <tr><td class="k">Coche</td><td>Punto muerto, cambio automático e interruptores Extra A a D.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h3>Interruptores táctiles</h3>
+  <p>Un <b>interruptor táctil</b> es un «sí/no» que guarda la pantalla (hay seis: A a F). Un botón lo enciende o lo apaga y luego lo usas en reglas, iconos o condiciones de página. Por ejemplo: un botón <b>MODO</b> que, al pulsarlo, pone en ámbar un texto y cambia su leyenda.</p>
+  <div class="cols">
+    <figure><img src="img/26_preview_off.jpg" alt="Interruptor apagado"><figcaption>Interruptor A apagado.</figcaption></figure>
+    <figure><img src="img/25_preview_on.jpg" alt="Interruptor encendido"><figcaption>Tras pulsar MODO: el botón se ilumina y el texto se pone ámbar gracias a una regla.</figcaption></figure>
+  </div>
+  <div class="box tip"><span class="t">Pruébalo en el editor:</span> con <b>Previsualizar</b> activo, puedes hacer clic en los botones del lienzo y ver cómo cambian páginas e interruptores. Las acciones del coche (luces, ABS…) solo ocurren en el juego.</div>
+  <div class="box note"><span class="t">Otras opciones.</span> En las propiedades del display, el grupo táctil permite activar el resalte al pasar el puntero y <b>deslizar para cambiar de página</b>, y poner nombre a cada interruptor y elegir si recuerda su estado entre sesiones.</div>
+</section>
+
+<!-- ================================================================ 11 -->
+<section class="chapter" id="c11">
+  <div class="chap-head"><span class="num">11</span><h2>Botones y agujas físicos</h2></div>
+  <p class="lead">Además de lo que se dibuja en la pantalla, el programa puede dar vida a <b>piezas reales del modelo 3D</b>: pulsadores del salpicadero que se aprietan con el ratón y agujas de relojes analógicos.</p>
+
+  <h3>Botones físicos</h3>
+  <p>Se abren con <b>Botones</b> en la barra superior. Un botón físico es una malla del coche (un pulsador, una tecla de la botonera…) que, al hacer clic sobre ella dentro del coche, ejecuta una de las mismas acciones que un botón táctil.</p>
+  <figure><img src="img/22_botones_fisicos.jpg" alt="Botones físicos"><figcaption>A la izquierda, los botones configurados; en el centro, los ajustes del seleccionado; a la derecha, las mallas del modelo. Pulsa una malla para asignarla.</figcaption></figure>
+  <div class="cols">
+    <div>
+      <h4>Una sola pieza con varios botones</h4>
+      <p>A veces toda la botonera es una única malla. En ese caso, limita cada botón a su parte con la <b>Región UV</b> (la zona de la textura donde está dibujado el botón) o con un <b>punto y radio</b> en el coche.</p>
+      <p>Con <b>Probar la acción aquí</b> compruebas en el editor que la acción hace lo que esperas.</p>
+    </div>
+    <figure style="margin-top:4px">
+      <svg viewBox="0 0 330 150" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="20" width="310" height="80" rx="8" fill="#26282d" stroke="#1d1f24"/>
+        <rect x="10" y="20" width="155" height="80" rx="8" fill="#F0A73A" fill-opacity=".25"/>
+        <line x1="165" y1="20" x2="165" y2="100" stroke="#F0A73A" stroke-width="2" stroke-dasharray="5 3"/>
+        <text x="87" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">◀</text>
+        <text x="87" y="80" text-anchor="middle" font-size="10" fill="#e9eaec">Página anterior</text>
+        <text x="242" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">▶</text>
+        <text x="242" y="80" text-anchor="middle" font-size="10" fill="#e9eaec">Página siguiente</text>
+        <text x="10" y="120" font-size="10" fill="#6b717a">U 0</text><text x="157" y="120" font-size="10" fill="#6b717a">0,5</text><text x="306" y="120" font-size="10" fill="#6b717a">1</text>
+        <text x="165" y="142" text-anchor="middle" font-size="10.5" fill="#4a4f57">Una malla «BUTTON_BAR» repartida en dos botones por su UV</text>
+      </svg>
+    </figure>
+  </div>
+  <div class="box note"><span class="t">Importante:</span> los botones físicos van dentro del script de un display, así que ese display tiene que estar instalado para que funcionen.</div>
+
+  <h3>Agujas físicas</h3>
+  <p>Se abren con <b>Agujas</b> en la barra superior. Sirven para los relojes analógicos de verdad del salpicadero (no los dibujados en la pantalla). No dependen de ningún display.</p>
+  <div class="side">
+    <figure style="margin-top:0">
+      <svg viewBox="0 0 240 232" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="120" cy="110" r="80" fill="#121316"/>
+        <path d="M50.7 150 A80 80 0 1 1 189.3 150" fill="none" stroke="#3a3d44" stroke-width="6"/>
+        <path d="M150 158 A56 56 0 0 0 169 140" fill="none" stroke="#ff4a3d" stroke-width="6"/>
+        <line x1="120" y1="110" x2="58" y2="146" stroke="#F0A73A" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+        <line x1="120" y1="110" x2="182" y2="146" stroke="#F0A73A" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="120" cy="110" r="6" fill="#F0A73A"/>
+        <text x="40" y="212" font-size="11" fill="#1d1f24" font-weight="700">0 rpm</text><text x="40" y="226" font-size="10" fill="#6b717a">−120°</text>
+        <text x="200" y="212" text-anchor="end" font-size="11" fill="#1d1f24" font-weight="700">7500 rpm</text><text x="200" y="226" text-anchor="end" font-size="10" fill="#6b717a">+120°</text>
+      </svg>
+      <figcaption>El recorrido indica qué ángulo corresponde a cada valor.</figcaption>
+    </figure>
+    <div>
+      <ol class="steps">
+        <li>Pulsa <b>+ Añadir</b> y elige en <b>Nodos del modelo</b> el objeto de la aguja (suele llamarse <code>NEEDLE_…</code> o <code>ARROW_…</code>).</li>
+        <li>En <b>Entrada</b>, el dato que la mueve: rpm, velocidad, turbo, combustible…</li>
+        <li>En <b>Recorrido</b>, indica pares <i>valor → ángulo</i>. Con dos puntos el giro es lineal; añade más para escalas no lineales.</li>
+        <li>Ajusta el <b>retardo</b> para que se mueva con suavidad, como una aguja real.</li>
+      </ol>
+      <div class="box tip"><span class="t">¿Gira al revés?</span> Cambia el signo de los ángulos (−120 ↔ 120). El ángulo se mide desde la posición en la que la aguja está modelada.</div>
+    </div>
+  </div>
+  <figure><img src="img/23_agujas.jpg" alt="Agujas físicas"><figcaption>Diálogo de agujas físicas con la aguja de rpm seleccionada.</figcaption></figure>
+</section>
+
+<!-- ================================================================ 12 -->
+<section class="chapter" id="c12">
+  <div class="chap-head"><span class="num">12</span><h2>Probar antes de instalar</h2></div>
+  <p class="lead">No hace falta abrir el juego cada vez. El editor imita el coche para que veas cómo se comporta el diseño.</p>
+  <table>
+    <tr><th style="width:38mm">Herramienta</th><th>Para qué sirve</th></tr>
+    <tr><td class="k">Simulación</td><td>El panel de abajo tiene un deslizador para cada dato que usa tu diseño (velocidad, rpm, marcha, combustible…). Muévelos para ver cómo reaccionan los elementos y las reglas. Los botones de arriba simulan situaciones completas: <b>Ralentí</b>, <b>Vuelta rápida</b>, <b>Corte</b>, <b>Boxes</b>, <b>Avisos</b> y <b>RPM automáticas</b>. <b>Reiniciar</b> lo deja todo como al principio.</td></tr>
+    <tr><td class="k">Ambiente día/noche</td><td>Oscurece el lienzo para ver cómo luce el diseño de noche.</td></tr>
+    <tr><td class="k">Página</td><td>Elige qué página se muestra, o <b>Automático</b> para que se comporte como en el juego (condiciones incluidas).</td></tr>
+    <tr><td class="k">Previsualizar <kbd>P</kbd></td><td>Oculta tiradores, guías y rejilla: ves la pantalla tal cual. Los botones táctiles responden al clic.</td></tr>
+    <tr><td class="k">Vista física</td><td>Deforma el lienzo a la proporción real de la pantalla en el coche. Útil cuando la textura no tiene la misma forma que la pantalla.</td></tr>
+  </table>
+  <div class="box tip"><span class="t">Comprueba siempre el área visible.</span> La línea discontinua del lienzo marca lo que se verá en el coche. Si el modelo solo usa una parte de la textura, pulsa <b>Detectar</b> en el grupo <b>Área visible</b> (propiedades del display) y el programa la leerá del modelo 3D.</div>
+  <figure>
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg">
+      <rect x="20" y="10" width="300" height="150" fill="#26282d"/>
+      <rect x="20" y="29" width="300" height="114" fill="#121316" stroke="#F0A73A" stroke-width="2" stroke-dasharray="6 4"/>
+      <text x="170" y="92" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">área visible 1024 × 389</text>
+      <text x="170" y="23" text-anchor="middle" font-size="10" fill="#9aa0a8">no se ve</text>
+      <text x="170" y="156" text-anchor="middle" font-size="10" fill="#9aa0a8">no se ve</text>
+      <text x="340" y="40" font-size="12" font-weight="700" fill="#1d1f24">Textura completa: 1024 × 512 px</text>
+      <text x="340" y="62" font-size="11" fill="#4a4f57">El modelo 3D puede mostrar solo una franja de la textura.</text>
+      <text x="340" y="80" font-size="11" fill="#4a4f57">Todo lo que coloques fuera de la línea discontinua quedará</text>
+      <text x="340" y="98" font-size="11" fill="#4a4f57">cortado en el juego.</text>
+      <text x="340" y="126" font-size="11" fill="#9a5b07" font-weight="600">Diseña dentro del área visible y pulsa «Detectar»</text>
+      <text x="340" y="144" font-size="11" fill="#9a5b07" font-weight="600">si el contenido aparece desplazado o recortado.</text>
+    </svg>
+  </figure>
+</section>
+
+<!-- ================================================================ 13 -->
+<section class="chapter" id="c13">
+  <div class="chap-head"><span class="num">13</span><h2>Generar e instalar</h2></div>
+  <p class="lead">Cuando el diseño te guste, pulsa <b>Generar e instalar</b>. El programa convierte tu diseño en los archivos que entiende CSP y los copia en la carpeta del coche.</p>
+  <figure style="width:86mm;margin:6px auto"><img src="img/16_instalar.jpg" alt="Generar e instalar"></figure>
+  <div>
+    <div>
+      <ol class="steps">
+        <li>Marca qué <b>displays</b> quieres instalar.</li>
+        <li>Deja el <b>destino</b> en <i>Coche (extension/ext_config.ini)</i>.</li>
+        <li>Opcional: convierte el fondo a DDS (CSP también carga PNG sin problema).</li>
+        <li>Pulsa <b>Generar e instalar</b> y revisa el informe: cada paso aparece como correcto o con su error.</li>
+        <li><b>Reinicia la sesión en el juego</b> (o vuelve a cargar el coche): el juego solo lee estos archivos al cargar el coche.</li>
+      </ol>
+      <p><b>Exportar sin instalar</b> genera los mismos archivos en una carpeta aparte, sin tocar el coche (útil para compartir el trabajo o revisarlo).</p>
+    </div>
+  </div>
+
+  <h3>Qué se escribe en el coche</h3>
+  <figure>
+    <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg">
+      <g font-family="Consolas, monospace" font-size="12" fill="#1d1f24">
+        <text x="20" y="28">content/cars/<tspan font-weight="700">tu_coche</tspan>/</text>
+        <text x="40" y="54">extension/</text>
+        <line x1="34" y1="34" x2="34" y2="50" stroke="#9aa0a8"/>
+        <line x1="54" y1="60" x2="54" y2="196" stroke="#9aa0a8"/>
+        <line x1="54" y1="78" x2="66" y2="78" stroke="#9aa0a8"/><text x="72" y="82" font-weight="700">ext_config.ini</text>
+        <line x1="54" y1="106" x2="66" y2="106" stroke="#9aa0a8"/><text x="72" y="110" font-weight="700">driver_display.lua</text>
+        <line x1="54" y1="134" x2="66" y2="134" stroke="#9aa0a8"/><text x="72" y="138">imágenes y fuentes que uses</text>
+        <line x1="54" y1="162" x2="66" y2="162" stroke="#9aa0a8"/><text x="72" y="166">acdg_project.acdisplay</text>
+        <line x1="54" y1="190" x2="66" y2="190" stroke="#9aa0a8"/><text x="72" y="194">INSTALAR.txt</text>
+      </g>
+      <g font-size="11" fill="#4a4f57">
+        <text x="290" y="82">se añade la sección del display entre marcadores (lo demás no se toca)</text>
+        <text x="290" y="110">el script que dibuja la pantalla</text>
+        <text x="290" y="138">solo los que use el diseño</text>
+        <text x="290" y="166">copia de tu proyecto, para reabrirlo desde el coche</text>
+        <text x="290" y="194">explica qué se instaló</text>
+      </g>
+      <rect x="20" y="206" width="680" height="22" rx="5" fill="#fdf3e3"/>
+      <text x="30" y="221" font-size="11" fill="#9a5b07">Antes de escribir nada, se guarda una copia de seguridad de lo que se va a modificar en los datos del programa.</text>
+    </svg>
+    <figcaption>El nombre del script es el del display. Si el coche ya tenía un script ajeno con ese nombre, el nuevo se llama <code>…_acdg.lua</code> para no pisarlo.</figcaption>
+  </figure>
+
+  <h3>Deshacer y comprobar</h3>
+  <table>
+    <tr><td class="k">Desinstalar</td><td>En el mismo diálogo, <b>Copias de seguridad y desinstalación</b> → <b>Desinstalar</b> el display. Quita lo que añadió el programa y reactiva la pantalla original del coche si la había.</td></tr>
+    <tr><td class="k">Restaurar</td><td>Vuelve a dejar los archivos exactamente como estaban en una copia de seguridad.</td></tr>
+    <tr><td class="k">Diagnóstico</td><td><b>¿Se cargó el display en la última sesión?</b> lee el registro de CSP de tu última partida y te dice si el display se cargó o qué error dio. Muy útil si en el juego no ves nada.</td></tr>
+  </table>
+</section>
+
+<!-- ================================================================ 14 -->
+<section class="chapter" id="c14">
+  <div class="chap-head"><span class="num">14</span><h2>Problemas frecuentes</h2></div>
+  <table>
+    <tr><th style="width:56mm">Lo que pasa</th><th>Qué hacer</th></tr>
+    <tr><td class="k">No veo nada en la pantalla del coche</td><td>Reinicia la sesión después de instalar. Usa <b>Diagnóstico</b> en el diálogo de instalación para ver si CSP cargó el display. Comprueba que la malla elegida es la pantalla y que tienes CSP actualizado.</td></tr>
+    <tr><td class="k">El contenido sale desplazado o cortado</td><td>El modelo usa solo una parte de la textura. Pulsa <b>Detectar</b> en <b>Área visible</b> y coloca los elementos dentro de la línea discontinua.</td></tr>
+    <tr><td class="k">El diseño sale estirado o aplastado</td><td>La textura no tiene la misma proporción que la pantalla física. Activa <b>Vista física</b> para diseñar con la forma real.</td></tr>
+    <tr><td class="k">De noche o a la sombra no se ve</td><td>Revisa <b>Emisión en el juego</b> en las propiedades del display: elige <i>Solo emisión</i> y un valor de 3–4. Si aun así no luce, prueba <i>Shader ksPerPixel + emisión</i>.</td></tr>
+    <tr><td class="k">De noche deslumbra</td><td>Usa el grupo <b>Brillo</b> para bajar la intensidad con las luces encendidas o por la noche.</td></tr>
+    <tr><td class="k">Sigue apareciendo la pantalla original</td><td>Si el coche ya tenía su propia pantalla sobre la misma malla, el programa la desactiva al instalar. Si la original usa otra malla o la añades a mano, puede haber dos pantallas a la vez: desactívala o elige otra malla.</td></tr>
+    <tr><td class="k">Un botón táctil no responde</td><td>Haz clic justo sobre la pantalla en la vista de cabina. Comprueba en <b>Previsualizar</b> que el botón está donde crees y que su acción es la correcta. Algunas acciones (luces, ráfaga…) son difíciles de notar desde dentro a plena luz del día.</td></tr>
+    <tr><td class="k">Un botón físico no responde</td><td>El display al que pertenecen tiene que estar instalado. Si la botonera es una sola malla, revisa la región UV de cada botón.</td></tr>
+    <tr><td class="k">Una aguja física gira al revés</td><td>Cambia el signo de los ángulos de su recorrido.</td></tr>
+    <tr><td class="k">Quiero volver a como estaba</td><td><b>Desinstalar</b> o <b>Restaurar</b> en el diálogo de instalación (capítulo 13).</td></tr>
+  </table>
+</section>
+
+<!-- ================================================================ 15 -->
+<section class="chapter" id="c15">
+  <div class="chap-head"><span class="num">15</span><h2>Atajos de teclado</h2></div>
+  <p class="lead">En el editor, pulsa <kbd>F1</kbd> (o el botón <b>?</b>) para verlos en cualquier momento.</p>
+  <div class="cols">
+    <table>
+      <tr><th>Atajo</th><th>Acción</th></tr>
+      <tr><td><kbd>Arrastrar</kbd> · <kbd>Shift</kbd>+clic</td><td>Mover · seleccionar varios</td></tr>
+      <tr><td>Tiradores + <kbd>Shift</kbd></td><td>Redimensionar manteniendo la proporción</td></tr>
+      <tr><td><kbd>Alt</kbd> al arrastrar</td><td>Mover sin ajustar a la rejilla</td></tr>
+      <tr><td><kbd>Flechas</kbd> · <kbd>Shift</kbd>+<kbd>Flechas</kbd></td><td>Mover 1 px · 10 px</td></tr>
+      <tr><td><kbd>Rueda</kbd> · <kbd>Espacio</kbd>+arrastrar</td><td>Zoom · desplazar el lienzo</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>0</kbd> · <kbd>Ctrl</kbd>+<kbd>+</kbd> · <kbd>Ctrl</kbd>+<kbd>−</kbd></td><td>Ajustar · acercar · alejar</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Deseleccionar</td></tr>
+    </table>
+    <table>
+      <tr><th>Atajo</th><th>Acción</th></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Deshacer · rehacer</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>Ctrl</kbd>+<kbd>V</kbd> · <kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Copiar · pegar · duplicar</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Seleccionar todo</td></tr>
+      <tr><td><kbd>Supr</kbd></td><td>Eliminar</td></tr>
+      <tr><td><kbd>H</kbd> · <kbd>L</kbd></td><td>Ocultar · bloquear la selección</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Modo previsualización</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Guardar · guardar como</td></tr>
+    </table>
+  </div>
+
+  <div class="box tip" style="margin-top:24px"><span class="t">Resumen de bolsillo.</span> Elige el coche → indica la pantalla → añade elementos y conéctalos a variables → añade reglas para los avisos → prueba con la simulación → <b>Generar e instalar</b> → reinicia la sesión en el juego. Si algo no va, el capítulo 14 y el <b>Diagnóstico</b> te dirán por qué.</div>
+  <p class="muted small" style="margin-top:28px">AC Display Generator · V. 1.0.0 · Autor: Eneas Menéndez. Assetto Corsa, Custom Shaders Patch y Content Manager pertenecen a sus respectivos autores.</p>
+</section>
+
+</body>
+</html>

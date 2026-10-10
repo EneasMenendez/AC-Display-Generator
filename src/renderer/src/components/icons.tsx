@@ -17,6 +17,7 @@ const PATHS: Record<string, string> = {
   top: 'M3 2.5h10 M8 14V5 M4 9l4-4 4 4',
   bottom: 'M3 13.5h10 M8 2v9 M4 7l4 4 4-4',
   back: 'M10 3 5 8l5 5',
+  book: 'M8 4.5C6.5 3.2 4.5 3 2 3v9.5c2.5 0 4.5.2 6 1.5 1.5-1.3 3.5-1.5 6-1.5V3c-2.5 0-4.5.2-6 1.5z M8 4.5V14',
   help: 'M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14z M6 6.2a2 2 0 1 1 2.8 1.9c-.6.3-.8.7-.8 1.3 M8 12h.01',
   sliders: 'M2 4h8 M13 4h1 M10 2.5v3 M2 12h1 M6 12h8 M3 10.5v3',
   save: 'M3 2h8l2 2v10H3z M5 2v4h5V2 M5 10h6',

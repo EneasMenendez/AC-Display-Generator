@@ -243,6 +243,8 @@ export interface BuiltinIcon {
 export interface AcdgApi {
   appInfo(): Promise<AppInfo>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** abre la guía «¿Cómo funciona el programa?» en su propia ventana */
+  openGuide(): Promise<void>;
   /** elige una imagen de fondo para la aplicación (null si se cancela) */
   pickBackground(): Promise<BackgroundImage | null>;
   clearBackground(): Promise<void>;

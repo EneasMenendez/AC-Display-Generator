@@ -5,6 +5,7 @@ import { api } from '../api';
 import { ACCENT_PRESETS, BACKGROUNDS, applyAppearance, backgroundObjectUrl, resolveAccent } from '../appearance';
 import { useStore, toast } from '../store';
 import { openProjectFlow } from '../flows';
+import { Icon } from './icons';
 
 export function StartScreen() {
   const info = useStore((s) => s.info);
@@ -54,6 +55,9 @@ export function StartScreen() {
     <div className="start">
       <div className="col" style={{ minHeight: 0 }}>
         <h1>AC Display Generator</h1>
+        <button className="outline small" style={{ alignSelf: 'flex-start' }} onClick={() => api.openGuide().catch((e: Error) => toast(e.message, 'err'))} title="Guía para empezar: qué hace cada parte y cómo crear tu primera pantalla">
+          <Icon name="book" size={14} /> ¿Cómo funciona el programa?
+        </button>
         <div className="card">
           <h3>Instalación de Assetto Corsa</h3>
           {info?.acRoot ? (
