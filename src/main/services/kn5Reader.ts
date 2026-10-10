@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, openSync, readSync, closeSync } from 'node:fs';
+import { basename, dirname, extname, join } from 'node:path';
 import type { Kn5Info, Kn5Material, Kn5Mesh } from '@shared/types';
 export type { Kn5Info, Kn5Material, Kn5Mesh };
 
@@ -65,6 +66,106 @@ function meshBounds(r: Reader, buf: Buffer, vcount: number, stride: number): Pic
   };
 }
 
+/**
+ * Ancho y alto a partir de la cabecera de una imagen, sin decodificarla: DDS (clásico y DX10),
+ * PNG y JPEG, que son los formatos que puede llevar embebidos un kn5. null si no se reconoce.
+ */
+export function imageHeaderSize(d: Buffer): { width: number; height: number } | null {
+  if (d.length >= 128 && d.toString('ascii', 0, 4) === 'DDS ') {
+    // dwHeight en 12 y dwWidth en 16; DX10 solo añade un bloque extra detrás de la cabecera
+    const height = d.readUInt32LE(12), width = d.readUInt32LE(16);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  if (d.length >= 24 && d.readUInt32BE(0) === 0x89504e47 && d.toString('ascii', 12, 16) === 'IHDR') {
+    return { width: d.readUInt32BE(16), height: d.readUInt32BE(20) };
+  }
+  if (d.length >= 4 && d[0] === 0xff && d[1] === 0xd8) {
+    // JPEG: recorrer los segmentos hasta el SOF, que es el que lleva las dimensiones
+    for (let p = 2; p + 9 < d.length; ) {
+      if (d[p] !== 0xff) { p++; continue; } // relleno entre segmentos
+      const marker = d[p + 1];
+      if (marker === 0xff) { p++; continue; }
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { p += 2; continue; }
+      if (marker === 0xda) break; // empiezan los datos comprimidos
+      const len = d.readUInt16BE(p + 2);
+      if (len < 2) break;
+      // SOF0..SOF15 llevan alto y ancho; DHT (c4), JPG (c8) y DAC (cc) no son SOF
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { width: d.readUInt16BE(p + 7), height: d.readUInt16BE(p + 5) };
+      }
+      p += 2 + len;
+    }
+  }
+  return null;
+}
+
+/**
+ * Al reexportar un coche las texturas embebidas pueden quedar como sellos de 1x1 (PNG transparente)
+ * y la textura de verdad pasa a vivir suelta en la carpeta del coche. Por debajo de este tamaño no
+ * nos creemos la resolución embebida y la buscamos en disco.
+ */
+const PLACEHOLDER_MAX = 2;
+const IMAGE_EXTS = ['.dds', '.png', '.jpg', '.jpeg'];
+
+/**
+ * Índice <nombre en minúsculas> → ruta de las texturas sueltas de un coche, por orden de
+ * preferencia: assets y textures de la extensión, carpeta texture, raíz del coche y skins.
+ */
+function looseTextureIndex(kn5File: string): Map<string, string> {
+  const dir = dirname(kn5File);
+  // un kn5 secundario (copiloto, farada) vive dentro de extension/
+  const carDir = basename(dir).toLowerCase() === 'extension' ? dirname(dir) : dir;
+  const dirs = [join(carDir, 'extension', 'assets'), join(carDir, 'extension', 'textures'), join(carDir, 'texture'), carDir];
+  try {
+    const skins = join(carDir, 'skins');
+    for (const e of readdirSync(skins, { withFileTypes: true })) if (e.isDirectory()) dirs.push(join(skins, e.name));
+  } catch {
+    /* sin skins */
+  }
+  const index = new Map<string, string>();
+  for (const d of dirs) {
+    let entries: string[];
+    try {
+      entries = readdirSync(d);
+    } catch {
+      continue; // la carpeta no existe
+    }
+    for (const e of entries) {
+      const key = e.toLowerCase();
+      // gana la primera carpeta de la lista que tenga el nombre
+      if (IMAGE_EXTS.includes(extname(key)) && !index.has(key)) index.set(key, join(d, e));
+    }
+  }
+  return index;
+}
+
+/** Busca la textura suelta por nombre exacto y, si no está, con cualquier otra extensión de imagen. */
+function findLoose(index: Map<string, string>, name: string): string | undefined {
+  const lower = name.toLowerCase();
+  const hit = index.get(lower);
+  if (hit) return hit;
+  const base = lower.slice(0, lower.length - extname(lower).length);
+  for (const ext of IMAGE_EXTS) {
+    const f = index.get(base + ext);
+    if (f) return f;
+  }
+  return undefined;
+}
+
+/** Primeros bytes de un archivo: basta para la cabecera y evita cargar un DDS de varios MB. */
+function readHead(file: string, bytes = 65536): Buffer | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(file, 'r');
+    const b = Buffer.alloc(bytes);
+    return b.subarray(0, readSync(fd, b, 0, bytes, 0));
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 export function readKn5(file: string): Kn5Info {
   const buf = readFileSync(file);
   const r = new Reader(buf);
@@ -76,17 +177,28 @@ export function readKn5(file: string): Kn5Info {
 
   const textures: string[] = [];
   const textureSizes: Record<string, { width: number; height: number }> = {};
+  const pending: string[] = []; // texturas sin resolución utilizable dentro del kn5
   const texCount = r.i32();
   for (let i = 0; i < texCount; i++) {
     r.i32(); // tipo
     const name = r.str();
     const size = r.u32();
-    // las texturas van embebidas: si es DDS se lee la resolución de la cabecera
-    if (size >= 128 && buf.toString('ascii', r.pos, r.pos + 4) === 'DDS ') {
-      textureSizes[name] = { width: buf.readUInt32LE(r.pos + 16), height: buf.readUInt32LE(r.pos + 12) };
-    }
+    // las texturas van embebidas (DDS, PNG o JPEG): la resolución sale de la cabecera
+    const dim = imageHeaderSize(buf.subarray(r.pos, r.pos + size));
+    if (dim && dim.width > PLACEHOLDER_MAX && dim.height > PLACEHOLDER_MAX) textureSizes[name] = dim;
+    else pending.push(name);
     r.skip(size);
     textures.push(name);
+  }
+  // kn5 reexportado sin texturas: las que quedaron como sello de 1x1 se resuelven desde la carpeta
+  if (pending.length > 0) {
+    const index = looseTextureIndex(file);
+    for (const name of pending) {
+      const loose = findLoose(index, name);
+      const head = loose ? readHead(loose) : null;
+      const dim = head ? imageHeaderSize(head) : null;
+      if (dim) textureSizes[name] = dim;
+    }
   }
 
   const materials: Kn5Material[] = [];
