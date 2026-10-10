@@ -4,7 +4,7 @@
 
 [![Última versión](https://img.shields.io/github/v/release/EneasMenendez/AC-Display-Generator?label=descargar&color=F0A73A)](https://github.com/EneasMenendez/AC-Display-Generator/releases/latest)
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1f24)
-![Licencia](https://img.shields.io/badge/licencia-MIT-1d1f24)
+[![Licencia](https://img.shields.io/badge/licencia-MIT-1d1f24)](LICENSE)
 
 ![El editor](docs/guia/img/10_editor.jpg)
 
@@ -111,8 +111,8 @@ tests/               vitest
 
 Con `ACDG_DEBUG=<carpeta>` la app vuelca la consola del renderer, ejecuta `<carpeta>/cmd.js` en el renderer (resultado en `cmd.out`), guarda `shot.png` al crear `shot.request`, y los diálogos nativos devuelven el contenido de `dialog.txt` si existe. `window.acdgStore` expone el estado (zustand).
 
-## Autor
+## Autor y licencia
 
-**Eneas Menéndez**
+**Eneas Menéndez** · Publicado bajo la [licencia MIT](LICENSE).
 
 Assetto Corsa, Custom Shaders Patch y Content Manager pertenecen a sus respectivos autores. Este proyecto no está afiliado a ellos.
