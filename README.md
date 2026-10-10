@@ -57,6 +57,31 @@ La aplicación incluye una guía para principiantes, **«¿Cómo funciona el pro
 | ![Botón táctil apagado](docs/guia/img/26_preview_off.jpg) | ![Botón táctil encendido](docs/guia/img/25_preview_on.jpg) |
 | Botón táctil «MODO» apagado… | …y encendido: una regla pone el texto en ámbar. |
 
+## Capturas
+
+**Pantalla de inicio** — elige el coche (los que ya tienen pantalla aparecen marcados), retoma proyectos recientes y ajusta el aspecto.
+
+![Pantalla de inicio](docs/guia/img/01_inicio.jpg)
+
+**Asistente, modo creador** — si el coche no tiene pantallas definidas, eliges la malla del modelo 3D y la resolución se rellena sola.
+
+![Asistente: modo creador](docs/guia/img/04_wizard_displays.jpg)
+
+| Botones físicos | Agujas físicas |
+|---|---|
+| ![Botones físicos](docs/guia/img/22_botones_fisicos.jpg) | ![Agujas físicas](docs/guia/img/23_agujas.jpg) |
+| Mallas del coche que se pulsan con el ratón; una botonera de una sola pieza se reparte por regiones UV. | Relojes analógicos del salpicadero con su recorrido valor → ángulo. |
+
+| Generar e instalar | Guía integrada |
+|---|---|
+| ![Generar e instalar](docs/guia/img/16_instalar.jpg) | ![Guía integrada](docs/screenshots/guia_integrada.jpg) |
+| Elige qué displays instalar; antes se guarda una copia de seguridad, y desde aquí se desinstala, restaura o diagnostica. | «¿Cómo funciona el programa?», 22 páginas para empezar desde cero, sin salir de la app. |
+
+| Reglas | Propiedades de un botón táctil |
+|---|---|
+| ![Una regla](docs/guia/img/24_reglas.jpg) | ![Botón táctil](docs/guia/img/21_boton_tactil.jpg) |
+| «Si el interruptor A está activo → color ámbar». | Acción, interruptor, tipo de pulsación y aspecto. |
+
 ## Qué se escribe en el coche
 
 ```
