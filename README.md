@@ -1,74 +1,118 @@
 # AC Display Generator
 
-Editor visual (WYSIWYG) y generador de displays para Assetto Corsa con Custom Shaders Patch. El usuario elige el coche, carga la imagen del display, coloca datos, barras e iconos, previsualiza y genera automáticamente el paquete CSP + Lua e instala en el vehículo — sin escribir Lua ni tocar `ext_config.ini` a mano.
+**Editor visual de pantallas para coches de Assetto Corsa.** Diseñas lo que se ve en el display del coche (velocidad, marcha, revoluciones, tiempos, avisos, botones táctiles…) como en un programa de diseño, y la aplicación genera e instala el script Lua y la configuración que usa **Custom Shaders Patch (CSP)**, sin escribir código ni tocar `ext_config.ini` a mano.
 
-Requerimientos completos: [docs/REQUERIMIENTOS_v2.md](docs/REQUERIMIENTOS_v2.md).
+[![Última versión](https://img.shields.io/github/v/release/EneasMenendez/AC-Display-Generator?label=descargar&color=F0A73A)](https://github.com/EneasMenendez/AC-Display-Generator/releases/latest)
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-1d1f24)
+![Licencia](https://img.shields.io/badge/licencia-MIT-1d1f24)
 
-## Estado (v0.1 — MVP en construcción)
+![El editor](docs/guia/img/10_editor.jpg)
 
-Funciona de punta a punta:
+## Descarga
 
-- Detección de Assetto Corsa (Steam), listado de vehículos con logo, validación de carpeta (`data/` o `data.acd`, kn5, `ui_car.json`).
-- Análisis automático de `extension/` al elegir el coche: lee `ext_config.ini` y sus `[INCLUDE]`, localiza todas las secciones `[SCRIPTABLE_DISPLAY…]` (también en `.ini` sueltos), comprueba los scripts Lua (existencia y sintaxis) y decide solo: si el display lo generó la app se abre su proyecto; si es un display hecho a mano se importa por completo: malla, resolución e imagen deducidas del ini/script/kn5, y **el script Lua se ejecuta en una máquina virtual aislada (wasmoon)** con `car`/`sim` simulados para convertir cada texto, barra, imagen e icono en elementos del editor (variables detectadas perturbando cada campo leído, formatos, colores, zonas rojas, orden de dibujo); si no hay nada se crea desde cero y `ext_config.ini` se genera al instalar. Al instalar sobre una malla que ya tiene display se ofrece desactivar la sección original (reversible al desinstalar).
-- Perfiles `display_profile.json` v2 (en el coche, biblioteca local o incluidos con la app) validados con esquema; al instalar se guarda el perfil en el coche si no existía.
-- Modo creador básico: lee el `.kn5`, lista mallas/materiales y rellena la resolución con la textura del material.
-- Imagen de fondo PNG/JPG/DDS (DXT1/DXT5/RGBA8 decodificados en la app) con comprobación de resolución y alfa.
-- Editor: zoom/pan, arrastrar, tiradores, selección múltiple, marco, rejilla, ajuste a bordes/centros/elementos con guías, deshacer/rehacer, copiar/pegar/duplicar, capas (orden, ocultar, bloquear, renombrar), alinear/distribuir, atajos.
-- Catálogo de datos: ~70 variables seleccionadas con etiquetas en español + **todos los campos numéricos/booleanos del SDK de CSP** (`car`, `car.wheels[i]`, `sim`, sesión; ~500 más) generados con `tools/gen_variables.py` y seleccionables desde un buscador.
-- Elementos: texto dinámico, marcha, barra RPM (segmentos/continua, zonas, limitador), shift light (histéresis, parpadeo), barra genérica (umbrales, bipolar, suavizado), indicador circular, icono (23 integrados + importados), imagen, rectángulo, círculo, línea; reglas de estado (color, visibilidad, opacidad, parpadeo) con RPM relativas al limitador.
-- **Varios displays por coche** (dash, volante, navegador…) en un mismo proyecto, con selector en la barra superior; cada display con **varias páginas** (pestañas), condición automática por página (p. ej. "Boxes" cuando `in_pitlane`) y cambio con un botón extra de CSP (`extraA…H`, con vuelta al inicio y memoria entre sesiones). Al generar se instalan todos los displays seleccionados, cada uno en su carpeta `acdg/<display>/`.
-- Simulación con sliders, escenarios, RPM automáticas, ambiente día/noche, modo replay (variables sin físicas).
-- Proyecto `.acdisplay` (ZIP con `project.json` + assets), recientes, autoguardado de recuperación.
-- Generación: `display.lua` autocontenido (configuración + runtime, sin `require`), la sección `[SCRIPTABLE_DISPLAY_ACDG_…]` escrita directamente en `ext_config.ini` entre marcadores, backup, restaurar, desinstalar, exportar paquete sin instalar, DDS opcional, validación sintáctica del Lua.
+Descarga la última versión desde **[Releases](https://github.com/EneasMenendez/AC-Display-Generator/releases/latest)**:
 
-Pendiente (ver fases en los requerimientos): fuentes DWrite empaquetadas probadas en juego, atlas de iconos, biblioteca de perfiles con versionado, lanzamiento de sesión desde Content Manager, instalador firmado, inglés.
+| Archivo | Para qué |
+|---|---|
+| `ACDisplayGenerator-Setup-<versión>.exe` | Instalador. Deja elegir la carpeta y crea accesos en el escritorio y en el menú Inicio. |
+| `ACDisplayGenerator-Portable-<versión>.exe` | Versión portátil: un solo `.exe` que funciona sin instalar. |
+
+**Requisitos:** Windows 10/11 de 64 bits, Assetto Corsa y una versión reciente de Custom Shaders Patch. Content Manager es opcional.
+
+> El instalador no está firmado con certificado. Si Windows muestra «Windows protegió su PC», pulsa *Más información → Ejecutar de todas formas*.
+
+## Cómo funciona
+
+```
+ Tú diseñas en el editor  ──►  la app genera el script Lua,  ──►  CSP lo ejecuta en el juego y
+ (elementos, reglas,           la sección de ext_config.ini       dibuja la pantalla del coche
+  páginas, botones…)           y las imágenes, y los copia        en cada fotograma con los
+                               a la carpeta del coche             datos reales
+```
+
+1. **Elige el coche** en la pantalla de inicio (doble clic).
+2. **Indica cuál es la pantalla**: el asistente encuentra las que ya tenga el coche o, en el modo creador, eliges la malla del modelo 3D y detecta su resolución.
+3. **Diseña** añadiendo elementos y conectándolos a datos del juego.
+4. **Pruébala** con el panel de simulación, sin abrir el juego.
+5. **Generar e instalar**: se escribe en el coche, con copia de seguridad previa.
+6. **Mírala en Assetto Corsa** (reinicia la sesión para que CSP lea los cambios).
+
+La aplicación incluye una guía para principiantes, **«¿Cómo funciona el programa?»** (PDF de 22 páginas con capturas y esquemas), accesible desde la pantalla de inicio y desde el editor.
+
+## Funciones
+
+- **Elementos**: texto y datos en vivo, marcha, barra de RPM (segmentos o continua, con zonas y limitador), shift light, luces de cambio, aguja, barra, indicador circular, iconos (integrados o propios), imagen, vídeo y formas.
+- **Más de 500 variables** del coche, los neumáticos, la simulación y la sesión, con unidades métricas o imperiales y formato configurable.
+- **Reglas**: color, visibilidad, parpadeo y opacidad según los datos (con RPM relativas al limitador).
+- **Varios displays por coche** (conductor, copiloto, volante…) y **varias páginas** por display: normales, de arranque y de funcionalidad (launch control…), con cambio por botón de CSP o automático por condiciones, y plantillas prehechas.
+- **Pantallas táctiles**: botones que se pulsan con el ratón dentro del coche para cambiar de página, accionar luces, ayudas, ERS/DRS… y seis interruptores táctiles para usar en reglas.
+- **Botones físicos**: mallas del modelo 3D que se pulsan con el ratón, con zona por región UV o por punto y radio.
+- **Agujas físicas**: relojes analógicos del salpicadero (`[ANALOG_INDICATOR_…]`) con recorrido valor → ángulo.
+- **Simulación** en el editor (escenarios, día/noche, RPM automáticas), previsualización y vista física con la proporción real de la pantalla.
+- **Importación** de displays ya existentes en el coche: el script Lua original se ejecuta en una máquina virtual aislada para convertirlo en elementos editables.
+- **Instalación segura**: copia de seguridad antes de modificar nada, desinstalación y restauración desde la app, y diagnóstico que lee el registro de CSP de la última sesión.
+
+| | |
+|---|---|
+| ![Botón táctil apagado](docs/guia/img/26_preview_off.jpg) | ![Botón táctil encendido](docs/guia/img/25_preview_on.jpg) |
+| Botón táctil «MODO» apagado… | …y encendido: una regla pone el texto en ámbar. |
+
+## Qué se escribe en el coche
+
+```
+content/cars/<coche>/extension/
+  ext_config.ini           + sección del display entre marcadores "; ACDG BEGIN …" / "; ACDG END"
+  <display>.lua            script autocontenido (configuración + runtime); <display>_acdg.lua si ya
+                           existía un script ajeno con ese nombre
+  imágenes / fuentes       solo las que usa el diseño
+  acdg_project.acdisplay   copia del proyecto para volver a abrirlo desde el coche
+  INSTALAR.txt             qué se instaló
+```
+
+Las copias de seguridad se guardan en los datos de la aplicación, no en el coche. Si el coche ya tenía un display sobre la misma malla, su sección se comenta (no se borra) y se reactiva al desinstalar.
 
 ## Desarrollo
 
-Requisitos: Node 22+.
+Requisitos: Node 22+ y Windows (el empaquetado genera instalador NSIS y portable).
 
 ```bash
 npm install
-npm run dev        # Electron + Vite con recarga
-npm test           # vitest (generador, formato, kn5, perfil)
+npm run dev         # Electron + Vite con recarga
+npm test            # vitest
 npm run typecheck
-npm run build      # out/
-npm run dist       # instalador y portable en release/ (electron-builder)
+npm run guide       # regenera resources/docs/guia.pdf a partir de docs/guia/guia.html
+npm run rig         # genera el coche de pruebas acdg_test_rig (pantallas, botones y agujas sueltos)
+npm run build       # out/
+npm run dist        # instalador y portable en release/
 ```
 
-Tras generar hay que **volver a cargar la sesión** en AC: CSP lee `ext_config.ini` y los scripts al cargar la pista. El diálogo de generación incluye "Leer registro de CSP" para comprobar si el display se cargó (`[ACDG] display … cargado`) o hubo errores de Lua.
-
-Arnés de pruebas manual: con `ACDG_DEBUG=<carpeta>` la app vuelca la consola del renderer, ejecuta `<carpeta>/cmd.js` en el renderer (resultado en `cmd.out`), captura `shot.png` al crear `shot.request` y los diálogos nativos devuelven el contenido de `dialog.txt` si existe. `window.acdgStore` expone el estado (zustand).
-
-## Estructura
+### Estructura
 
 ```
-src/shared/       modelo del proyecto, esquema del perfil, catálogo de variables, formato, generador (puro, testeable)
-src/main/         Electron main: localizador de AC, scanner de vehículos, lector kn5, perfiles, proyectos (.acdisplay),
-                  imágenes/DDS, instalador + backups, IPC
-src/preload/      puente window.acdg
-src/renderer/     React: inicio, asistente (vehículo → perfil → imagen → proyecto), editor (lienzo Canvas 2D, capas,
-                  propiedades, simulación), diálogo de generación
-resources/runtime/acdg_runtime.lua   librería Lua que dibuja el display en CSP a partir de display_config.lua
-resources/icons/                     iconos integrados (SVG blanco, se rasterizan a PNG al generar)
-resources/profiles/                  perfiles de ejemplo (Toyota Starlet Millington)
-tests/                               vitest
+src/shared/          modelo del proyecto, perfil, catálogo de variables, formato, acciones táctiles y
+                     generador de Lua/ini (código puro y testeable)
+src/main/            proceso principal de Electron: localizador de AC/CSP, escáner de vehículos, lector kn5,
+                     perfiles, proyectos, imágenes/DDS, instalador con copias de seguridad, guía, IPC
+src/preload/         puente window.acdg
+src/renderer/        React: inicio, asistente, editor (lienzo Canvas 2D, capas, propiedades, simulación)
+                     y diálogos (instalación, botones y agujas físicos)
+resources/runtime/   acdg_runtime.lua: librería que dibuja el display en CSP
+resources/docs/      guía de usuario en PDF
+resources/icons/     iconos integrados
+resources/profiles/  perfiles de ejemplo
+docs/guia/           fuente de la guía (HTML + capturas)
+tools/               coche de pruebas, escritor de kn5, generador de la guía y del catálogo de variables
+tests/               vitest
 ```
 
-Regla de oro: `src/renderer/src/render/draw.ts` (preview) y `resources/runtime/acdg_runtime.lua` (juego) implementan la misma semántica; cualquier cambio en uno se replica en el otro.
+**Regla de oro:** la previsualización (`src/renderer/src/render/`) y el runtime del juego (`resources/runtime/acdg_runtime.lua`) implementan la misma semántica; cualquier cambio en uno se replica en el otro.
 
-## Qué se genera en el coche
+### Arnés de depuración
 
-```
-content/cars/<id>/extension/
-  ext_config.ini                 + bloque "; ACDG BEGIN <display>" … [SCRIPTABLE_DISPLAY_ACDG_<DISPLAY>] MESHES/SCRIPT/… … "; ACDG END"
-  acdg/<display>/
-    display.ini                  copia de la sección (referencia / instalación manual)
-    display.lua                  script autocontenido: display_config + acdg_runtime (sin require)
-    acdg_runtime.lua             runtime (referencia, versionado)
-    display_config.lua           datos del proyecto (referencia)
-    assets/, icons/, fonts/      recursos
-    project.acdisplay            copia del proyecto para reeditar
-    LEEME.txt
-  acdg/_backup/<fecha>/          copias de seguridad (ext_config.ini + carpeta anterior)
-```
+Con `ACDG_DEBUG=<carpeta>` la app vuelca la consola del renderer, ejecuta `<carpeta>/cmd.js` en el renderer (resultado en `cmd.out`), guarda `shot.png` al crear `shot.request`, y los diálogos nativos devuelven el contenido de `dialog.txt` si existe. `window.acdgStore` expone el estado (zustand).
+
+## Autor
+
+**Eneas Menéndez**
+
+Assetto Corsa, Custom Shaders Patch y Content Manager pertenecen a sus respectivos autores. Este proyecto no está afiliado a ellos.
