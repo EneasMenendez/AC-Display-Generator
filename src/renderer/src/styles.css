@@ -445,6 +445,13 @@ details[open] > summary::before {
   padding: 28px 32px;
   overflow: hidden;
 }
+.start .credits {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
 .start .list {
   overflow: auto;
   flex: 1;

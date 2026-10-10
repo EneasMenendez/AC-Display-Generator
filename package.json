@@ -1,10 +1,10 @@
 {
   "name": "ac-display-generator",
   "productName": "AC Display Generator",
-  "version": "0.2.0-beta.1",
+  "version": "1.0.0",
   "description": "Editor y generador visual de displays para Assetto Corsa (CSP + Lua)",
   "main": "./out/main/index.js",
-  "author": "AC Display Generator",
+  "author": "Eneas Menéndez",
   "license": "MIT",
   "private": true,
   "scripts": {

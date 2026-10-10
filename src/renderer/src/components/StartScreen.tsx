@@ -96,6 +96,10 @@ export function StartScreen() {
             ))}
           </div>
         </div>
+        <div className="credits">
+          <span>Autor: Eneas Menéndez</span>
+          <span>V. {info?.version ?? '—'}</span>
+        </div>
       </div>
 
       <div className="col" style={{ minHeight: 0 }}>
