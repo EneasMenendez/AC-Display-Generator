@@ -452,6 +452,11 @@ details[open] > summary::before {
   font-size: 11px;
   color: var(--text-3);
 }
+.start select.car-list-mode {
+  flex: none;
+  width: auto;
+  max-width: 240px;
+}
 .start .list {
   overflow: auto;
   flex: 1;
@@ -714,6 +719,10 @@ table.info td .mono {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.prop label.chk-only {
+  flex: none;
+  overflow: visible;
 }
 .prop .pair {
   display: grid;

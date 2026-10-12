@@ -158,7 +158,8 @@ export function Sel<T extends string>({ value, onChange, options }: { value: T; 
 
 export function Chk({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <label className="row" style={{ gap: 6 }}>
+    // sin texto (un check delante de unos campos) no debe encogerse: si no, los campos lo tapan
+    <label className={label ? 'row' : 'row chk-only'} style={{ gap: 6 }}>
       <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
       {label && <span className="small">{label}</span>}
     </label>
