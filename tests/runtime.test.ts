@@ -242,6 +242,54 @@ describe('runtime Lua generado', () => {
     }
   }, 30000);
 
+  it('luces físicas: destello, núcleo, potencia en el corte y respuesta suave', async () => {
+    const p = project();
+    const strip = createPhysicalShiftLights(['LED1', 'LED2']);
+    Object.assign(strip, { rpmStart: 4000, rpmEnd: 6000, zones: [{ count: 2, color: '#FF0000' }], intensity: 10, glow: 1, core: 0, fadeMs: 0, limiterIntensity: 2, limiterColor: '#0000FF', limiterBlinkHz: 5 });
+    p.displays[0].physicalShiftLights = [strip];
+    const run = async (lua: string, steps: string) => {
+      const engine = await new LuaFactory().createEngine();
+      try {
+        await engine.doString(STUBS);
+        await engine.doString(`
+          rgb = function(r, g, b) return { r = r, g = g, b = b } end
+          EMIS = {}
+          ac.findMeshes = function(name)
+            local ref = {}
+            function ref:size() return 1 end
+            function ref:ensureUniqueMaterials() return self end
+            function ref:setMaterialProperty(prop, v) EMIS[name] = { r = v.r, g = v.g, b = v.b } end
+            return ref
+          end
+          function colorOf(name) local v = EMIS[name] return string.format('%.2f,%.2f,%.2f', v.r, v.g, v.b) end`);
+        await engine.doString(lua);
+        return String(await engine.doString(steps));
+      } finally {
+        engine.global.close();
+      }
+    };
+    const build = () => generateDisplayLua(generateConfigLua(p, p.displays[0], profile.displays[0]).lua, readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'), 'driver_display');
+    // destello al máximo: ×4 sobre la potencia; el corte usa su propia potencia
+    expect(await run(build(), 'CARV.rpm = 5900; script.update(0.016); return colorOf("LED1")')).toBe('40.00,0.00,0.00');
+    expect(await run(build(), 'CARV.rpm = 6100; CARV.isEngineLimiterOn = true; script.update(0.016); return colorOf("LED1")')).toBe('0.00,0.00,8.00');
+    // núcleo: el rojo se mezcla hacia el blanco (0,75 al máximo)
+    strip.glow = 0;
+    strip.core = 1;
+    expect(await run(build(), 'CARV.rpm = 5900; script.update(0.016); return colorOf("LED1")')).toBe('10.00,7.50,7.50');
+    // respuesta de 100 ms: no se enciende de golpe, y tras ~1 s ya está al máximo
+    strip.core = 0;
+    strip.fadeMs = 100;
+    const fade = await run(build(), `CARV.rpm = 5900
+      script.update(0.016); script.update(0.016)
+      local early = EMIS.LED1.r
+      for i = 1, 60 do script.update(0.016) end
+      return string.format('%.2f|%.2f', early, EMIS.LED1.r)`);
+    const [early, late] = fade.split('|').map(Number);
+    expect(early).toBeGreaterThan(0);
+    expect(early).toBeLessThan(5);
+    expect(late).toBeCloseTo(10, 1);
+  }, 30000);
+
   it('frecuencia de refresco: a 30 Hz se salta la mayoría de los frames y el texto a 10 Hz se congela', async () => {
     const p = project();
     p.displays[0].settings.refreshHz = 30;

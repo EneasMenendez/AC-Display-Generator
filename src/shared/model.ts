@@ -570,15 +570,41 @@ export interface PhysicalShiftLights {
   rpmEnd: RpmValue;
   pattern: 'left_to_right' | 'edges_to_center' | 'center_to_edges';
   zones: { count: number; color: Color }[];
-  /** intensidad de la emisión de un LED encendido (ksEmissive = color × intensidad) */
+  /** potencia de un LED encendido (ksEmissive = color × potencia) */
   intensity: number;
-  /** color e intensidad de un LED apagado (intensidad 0 = sin emisión) */
+  /** potencia en el corte (si falta, la de encendido) */
+  limiterIntensity?: number;
+  /** color y potencia de un LED apagado (potencia 0 = sin emisión) */
   colorOff: Color;
   offIntensity: number;
+  /**
+   * destello (halo) del LED encendido, 0–1: refuerza la emisión por encima de su potencia para que el
+   * bloom del juego lo haga resplandecer (hasta ×4)
+   */
+  glow?: number;
+  /** núcleo, 0–1: blanquea la luz del LED encendido, como un LED muy brillante */
+  core?: number;
+  /** respuesta: tiempo de encendido y apagado en ms (0 = instantáneo) */
+  fadeMs?: number;
   /** al llegar al limitador todos parpadean con limiterColor; 0 = sin parpadeo */
   limiterBlinkHz: number;
   limiterColor: Color;
+  /** ciclo del parpadeo: parte de cada periodo que está encendido (0,05–0,95) */
   blinkDuty?: number;
+}
+
+/** Valores por defecto de los ajustes de luz que se añadieron después (tiras guardadas antes). */
+export const PHYSICAL_LED_DEFAULTS = { glow: 0, core: 0, fadeMs: 0, blinkDuty: 0.5 } as const;
+
+/**
+ * Emisión (ksEmissive) de un LED físico encendido: color × potencia × destello, con el núcleo
+ * mezclando el color hacia el blanco. Misma fórmula que el runtime Lua.
+ */
+export function physicalLedEmissive(color: { r: number; g: number; b: number }, power: number, glow = 0, core = 0): { r: number; g: number; b: number } {
+  const k = Math.max(0, power) * (1 + 3 * Math.max(0, Math.min(1, glow)));
+  const w = Math.max(0, Math.min(1, core)) * 0.75;
+  const mix = (c: number) => (c + (1 - c) * w) * k;
+  return { r: mix(color.r), g: mix(color.g), b: mix(color.b) };
 }
 
 export function createPhysicalShiftLights(meshes: string[] = []): PhysicalShiftLights {
@@ -597,6 +623,9 @@ export function createPhysicalShiftLights(meshes: string[] = []): PhysicalShiftL
     intensity: 20,
     colorOff: '#000000',
     offIntensity: 0,
+    glow: 0,
+    core: 0,
+    fadeMs: 0,
     limiterBlinkHz: 8,
     limiterColor: '#2D7BFF',
     blinkDuty: 0.5,

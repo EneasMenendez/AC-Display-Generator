@@ -1,4 +1,4 @@
-import { pageConditions } from './model';
+import { PHYSICAL_LED_DEFAULTS, pageConditions } from './model';
 import type { DisplayElement, DisplayProject, PhysicalNeedle, Project } from './model';
 import { buttonStateVar, displayHasTouch, isSwitchAction, usedSwitches } from './touch';
 import type { DisplayDef, DisplayProfile } from './profile';
@@ -210,11 +210,15 @@ function physicalShiftLightsConfig(dp: DisplayProject): Record<string, unknown>[
       pattern: l.pattern,
       zones: l.zones,
       intensity: l.intensity,
+      limiterIntensity: l.limiterIntensity ?? l.intensity,
       colorOff: l.colorOff,
       offIntensity: l.offIntensity,
+      glow: l.glow ?? PHYSICAL_LED_DEFAULTS.glow,
+      core: l.core ?? PHYSICAL_LED_DEFAULTS.core,
+      fadeMs: l.fadeMs ?? PHYSICAL_LED_DEFAULTS.fadeMs,
       limiterBlinkHz: l.limiterBlinkHz,
       limiterColor: l.limiterColor,
-      blinkDuty: l.blinkDuty,
+      blinkDuty: l.blinkDuty ?? PHYSICAL_LED_DEFAULTS.blinkDuty,
     }));
 }
 

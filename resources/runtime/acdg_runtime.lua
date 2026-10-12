@@ -1588,10 +1588,13 @@ end
 local shiftMeshes = {}   -- por tira: { refs, ranks, lit[p], limiter, off }
 local shiftErrorLogged = false
 
-local function emissive(c, intensity)
-  if not c then return rgb(0, 0, 0) end
-  local k = intensity or 1
-  return rgb(c.r * k, c.g * k, c.b * k)
+-- emisión de un LED encendido: color × potencia × destello (hasta ×4), con el núcleo mezclando el color
+-- hacia el blanco. Misma fórmula que physicalLedEmissive del editor.
+local function ledEmission(c, power, glow, core)
+  if not c then return { r = 0, g = 0, b = 0 } end
+  local k = math.max(0, power or 0) * (1 + 3 * clamp01(glow or 0))
+  local w = clamp01(core or 0) * 0.75
+  return { r = (c.r + (1 - c.r) * w) * k, g = (c.g + (1 - c.g) * w) * k, b = (c.b + (1 - c.b) * w) * k }
 end
 
 local function initShiftMeshes()
@@ -1601,7 +1604,7 @@ local function initShiftMeshes()
   for i = 1, #list do
     local l = list[i]
     local n = #l.meshes
-    local st = { refs = {}, ranks = ledRanks(n, l.pattern), lit = {} }
+    local st = { refs = {}, ranks = ledRanks(n, l.pattern), lit = {}, cur = {}, out = {}, lastT = nil }
     for p = 1, n do
       local ok, ref = pcall(ac.findMeshes, l.meshes[p])
       local found = false
@@ -1615,10 +1618,15 @@ local function initShiftMeshes()
       else
         ac.error('[ACDG] luces de cambio "' .. tostring(l.name) .. '": no se encuentra la malla ' .. tostring(l.meshes[p]))
       end
-      st.lit[p] = emissive(ledZoneColor(st.ranks[p], l.zones, l.limiterColor), l.intensity)
+      st.lit[p] = ledEmission(ledZoneColor(st.ranks[p], l.zones, l.limiterColor), l.intensity, l.glow, l.core)
+      -- valor actual (para la respuesta suave) y el rgb que se entrega a CSP, reutilizado cada frame
+      st.cur[p] = { r = 0, g = 0, b = 0 }
+      st.out[p] = rgb(0, 0, 0)
     end
-    st.limiter = emissive(l.limiterColor, l.intensity)
-    st.off = emissive(l.colorOff, l.offIntensity or 0)
+    st.limiter = ledEmission(l.limiterColor, l.limiterIntensity or l.intensity, l.glow, l.core)
+    local off = l.colorOff or { r = 0, g = 0, b = 0 }
+    local k = math.max(0, l.offIntensity or 0)
+    st.off = { r = off.r * k, g = off.g * k, b = off.b * k }
     shiftMeshes[i] = st
   end
 end
@@ -1644,14 +1652,24 @@ local function updateShiftMeshes()
       if duty < 0.05 then duty = 0.05 elseif duty > 0.95 then duty = 0.95 end
       -- tiempo real: el parpadeo no depende de la frecuencia de refresco de la pantalla
       local blinkVisible = blink and (tReal * l.limiterBlinkHz) % 1 < duty
+      -- respuesta: cada LED se acerca a su valor con una constante de tiempo (instantáneo si es 0)
+      local dt = st.lastT and math.max(0, tReal - st.lastT) or 0
+      st.lastT = tReal
+      local fade = (l.fadeMs or 0) / 1000
+      local a = fade > 0 and (1 - math.exp(-dt / fade)) or 1
       for p = 1, n do
         local ref = st.refs[p]
         if ref then
-          local value
-          if blink then value = blinkVisible and st.limiter or st.off
-          else value = st.ranks[p] < active and st.lit[p] or st.off end
+          local target
+          if blink then target = blinkVisible and st.limiter or st.off
+          else target = st.ranks[p] < active and st.lit[p] or st.off end
+          local c, o = st.cur[p], st.out[p]
+          c.r = c.r + (target.r - c.r) * a
+          c.g = c.g + (target.g - c.g) * a
+          c.b = c.b + (target.b - c.b) * a
+          o.r, o.g, o.b = c.r, c.g, c.b
           -- cada frame: si el coche tiene su propio [LED_...] sobre la malla, manda el nuestro
-          ref:setMaterialProperty('ksEmissive', value)
+          ref:setMaterialProperty('ksEmissive', o)
         end
       end
     end

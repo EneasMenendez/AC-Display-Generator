@@ -1,11 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPhysicalShiftLights, resolveRpm, type PhysicalShiftLights } from '@shared/model';
+import { PHYSICAL_LED_DEFAULTS, createPhysicalShiftLights, resolveRpm, type PhysicalShiftLights } from '@shared/model';
 import { distributeZones, shiftLightsState } from '@shared/leds';
 import type { Kn5Info } from '@shared/types';
 import { api } from '../api';
 import { useStore, activeDisplayOf, toast } from '../store';
 import { ColorField, Num, Prop, RpmField, Sel, Txt } from './fields';
 import { Icon } from './icons';
+
+/**
+ * Aspecto de un LED en la vista previa: el halo crece con la potencia y el destello, el núcleo blanquea
+ * el centro y la respuesta se imita con una transición CSS de la misma duración.
+ */
+function ledStyle(s: PhysicalShiftLights, led: { lit: boolean; color: string }, limiter: boolean): React.CSSProperties {
+  const fade = s.fadeMs ?? PHYSICAL_LED_DEFAULTS.fadeMs;
+  const transition = `background ${fade}ms linear, box-shadow ${fade}ms linear`;
+  if (!led.lit) {
+    if (s.offIntensity <= 0) return { transition };
+    return { transition, background: s.colorOff, boxShadow: `0 0 ${Math.min(10, 2 + s.offIntensity)}px ${s.colorOff}` };
+  }
+  const power = limiter && s.limiterBlinkHz > 0 ? (s.limiterIntensity ?? s.intensity) : s.intensity;
+  const glow = s.glow ?? 0;
+  const core = s.core ?? 0;
+  const halo = Math.round(2 + Math.min(1, power / 40) * 8 + glow * 14);
+  const centre = core > 0 ? `radial-gradient(circle, #fff ${Math.round(core * 45)}%, ${led.color} ${Math.round(40 + core * 40)}%)` : led.color;
+  return { transition, background: centre, boxShadow: `0 0 ${halo}px ${Math.round(halo / 3)}px ${led.color}`, opacity: power > 0 ? 1 : 0.25 };
+}
 
 /**
  * Luces de cambio físicas: LEDs que son mallas del modelo 3D (en el salpicadero, en el volante…). Se
@@ -155,7 +174,7 @@ export function PhysicalShiftLightsDialog({ onClose }: { onClose: () => void }) 
                 <div className="shift-preview mb8" title="Vista previa con las rpm de abajo">
                   {preview.length === 0 && <span className="muted small">Añade LEDs para ver la vista previa.</span>}
                   {preview.map((led, i) => (
-                    <span key={i} className="shift-led" style={led.lit ? { background: led.color, boxShadow: `0 0 8px ${led.color}` } : undefined} />
+                    <span key={i} className="shift-led" style={ledStyle(s, led, rpm >= limiter)} />
                   ))}
                 </div>
                 <Prop label="Vista previa (rpm)" title="Solo para probar aquí; no cambia la simulación del editor">
@@ -241,21 +260,38 @@ export function PhysicalShiftLightsDialog({ onClose }: { onClose: () => void }) 
                   </div>
                 ))}
 
-                <h3>Emisión</h3>
-                <Prop label="Intensidad encendido" title="ksEmissive = color × intensidad. Orientativo: 10–30 para LEDs; más alto destella">
+                <h3>Luz del LED</h3>
+                <Prop label="Potencia" title="Emisión del LED encendido: ksEmissive = color × potencia. Orientativo: 10–30; con más, el color tiende a blanco">
                   <Num value={s.intensity} onChange={(v) => set((x) => (x.intensity = Math.max(0, v)))} min={0} max={200} step={1} />
                 </Prop>
-                <Prop label="Apagado" title="Color e intensidad de un LED apagado; intensidad 0 = sin emisión">
+                <Prop label="Destello (halo)" title="Refuerza la emisión del LED encendido (hasta ×4) para que el bloom del juego lo haga resplandecer. 0 = solo la potencia">
+                  <Num value={s.glow ?? PHYSICAL_LED_DEFAULTS.glow} onChange={(v) => set((x) => (x.glow = Math.max(0, Math.min(1, v))))} min={0} max={1} step={0.05} />
+                </Prop>
+                <Prop label="Núcleo" title="Blanquea la luz del LED encendido, como un LED muy brillante (0 = color puro, 1 = casi blanco)">
+                  <Num value={s.core ?? PHYSICAL_LED_DEFAULTS.core} onChange={(v) => set((x) => (x.core = Math.max(0, Math.min(1, v))))} min={0} max={1} step={0.05} />
+                </Prop>
+                <Prop label="Respuesta (ms)" title="Tiempo que tarda en encenderse y apagarse; 0 = instantáneo (LED), 60–150 = bombilla">
+                  <Num value={s.fadeMs ?? PHYSICAL_LED_DEFAULTS.fadeMs} onChange={(v) => set((x) => (x.fadeMs = Math.max(0, Math.round(v))))} min={0} max={1000} step={10} />
+                </Prop>
+                <Prop label="Apagado" title="Color y potencia de un LED apagado; potencia 0 = sin emisión">
                   <div className="pair">
                     <ColorField value={s.colorOff} onChange={(v) => set((x) => (x.colorOff = v))} />
                     <Num value={s.offIntensity} onChange={(v) => set((x) => (x.offIntensity = Math.max(0, v)))} min={0} max={50} step={0.1} />
                   </div>
                 </Prop>
-                <Prop label="Limitador" title="En el corte todos parpadean con este color (Hz; 0 = sin parpadeo)">
+
+                <h3>En el corte</h3>
+                <Prop label="Parpadeo / color" title="Frecuencia en Hz y color. Al llegar al limitador todos parpadean con este color; 0 Hz = sin parpadeo (siguen con los colores de sus tramos)">
                   <div className="pair">
                     <Num value={s.limiterBlinkHz} onChange={(v) => set((x) => (x.limiterBlinkHz = Math.max(0, v)))} min={0} max={30} step={0.5} />
                     <ColorField value={s.limiterColor} onChange={(v) => set((x) => (x.limiterColor = v))} />
                   </div>
+                </Prop>
+                <Prop label="Potencia" title="Emisión en el corte (sin valor propio, la de encendido)">
+                  <Num value={s.limiterIntensity ?? s.intensity} onChange={(v) => set((x) => (x.limiterIntensity = Math.max(0, v)))} min={0} max={200} step={1} />
+                </Prop>
+                <Prop label="Ciclo" title="Parte de cada parpadeo que está encendido (0,5 = mitad encendido, mitad apagado)">
+                  <Num value={s.blinkDuty ?? PHYSICAL_LED_DEFAULTS.blinkDuty} onChange={(v) => set((x) => (x.blinkDuty = Math.max(0.05, Math.min(0.95, v))))} min={0.05} max={0.95} step={0.05} />
                 </Prop>
               </>
             ) : (
