@@ -119,7 +119,7 @@
     <div class="sub">Todo lo necesario para diseñar tu primera pantalla para un coche de Assetto Corsa, instalarla y verla funcionar en el juego, aunque nunca hayas tocado un archivo de configuración.</div>
     <div class="bar"></div>
   </div>
-  <div class="meta"><span>Autor: <b>Eneas Menéndez</b></span><span>V. <b>1.0.1</b></span></div>
+  <div class="meta"><span>Autor: <b>Eneas Menéndez</b></span><span>V. <b>1.0.2</b></span></div>
 </div>
 
 <!-- ================================================================ ÍNDICE -->
@@ -136,7 +136,7 @@
     <li><span class="n">8</span><a href="#c8">Reglas: que la pantalla reaccione</a><span class="d">Colores, avisos y parpadeos según los datos</span></li>
     <li><span class="n">9</span><a href="#c9">Páginas</a><span class="d">Varias pantallas en un mismo display</span></li>
     <li><span class="n">10</span><a href="#c10">Pantallas táctiles</a><span class="d">Botones que se pulsan con el ratón dentro del coche</span></li>
-    <li><span class="n">11</span><a href="#c11">Botones y agujas físicos</a><span class="d">Piezas reales del modelo 3D</span></li>
+    <li><span class="n">11</span><a href="#c11">Botones, luces y agujas físicos</a><span class="d">Piezas reales del modelo 3D</span></li>
     <li><span class="n">12</span><a href="#c12">Probar antes de instalar</a><span class="d">Simulación, previsualización y vista física</span></li>
     <li><span class="n">13</span><a href="#c13">Generar e instalar</a><span class="d">Qué se escribe en el coche y cómo deshacerlo</span></li>
     <li><span class="n">14</span><a href="#c14">Problemas frecuentes</a><span class="d">Qué hacer cuando algo no se ve como esperas</span></li>
@@ -394,7 +394,7 @@
   </figure>
   <ol class="legend two">
     <li><b>Volver al inicio</b> y nombre del proyecto.</li>
-    <li><b>Display</b> que estás editando (si hay varios), <b>+ Display</b> para añadir otro, <b>Botones</b> y <b>Agujas</b> físicos (capítulo 11).</li>
+    <li><b>Display</b> que estás editando (si hay varios), <b>+ Display</b> para añadir otro, <b>Botones</b>, <b>Luces</b> y <b>Agujas</b> físicos (capítulo 11).</li>
     <li><b>Páginas</b> del display. Clic para cambiar de página, <b>+</b> para añadir una.</li>
     <li><b>Guardar</b>, guardar como, deshacer/rehacer y zoom.</li>
     <li><b>Previsualizar</b> (sin guías), mostrar/ocultar la <b>Simulación</b> y <b>Vista física</b> (la proporción real en el coche).</li>
@@ -611,8 +611,8 @@
 
 <!-- ================================================================ 11 -->
 <section class="chapter" id="c11">
-  <div class="chap-head"><span class="num">11</span><h2>Botones y agujas físicos</h2></div>
-  <p class="lead">Además de lo que se dibuja en la pantalla, el programa puede dar vida a <b>piezas reales del modelo 3D</b>: pulsadores del salpicadero que se aprietan con el ratón y agujas de relojes analógicos.</p>
+  <div class="chap-head"><span class="num">11</span><h2>Botones, luces y agujas físicos</h2></div>
+  <p class="lead">Además de lo que se dibuja en la pantalla, el programa puede dar vida a <b>piezas reales del modelo 3D</b>: pulsadores del salpicadero que se aprietan con el ratón, LEDs de cambio que se encienden con las revoluciones y agujas de relojes analógicos.</p>
 
   <h3>Botones físicos</h3>
   <p>Se abren con <b>Botones</b> en la barra superior. Un botón físico es una malla del coche (un pulsador, una tecla de la botonera…) que, al hacer clic sobre ella dentro del coche, ejecuta una de las mismas acciones que un botón táctil.</p>
@@ -638,6 +638,26 @@
     </figure>
   </div>
   <div class="box note"><span class="t">Importante:</span> los botones físicos van dentro del script de un display, así que ese display tiene que estar instalado para que funcionen.</div>
+
+  <h3>Luces de cambio físicas</h3>
+  <p>Se abren con <b>Luces</b> en la barra superior. Son LEDs que forman parte del modelo 3D (en el volante o en el salpicadero), no dibujos de la pantalla. Se encienden igual que las «Luces de cambio» del display: de forma progresiva entre dos regímenes, con colores por tramos y parpadeando en el corte.</p>
+  <figure style="width:150mm;margin:10px auto"><img src="img/27_luces_fisicas.jpg" alt="Luces de cambio físicas"><figcaption>Una tira de 8 LEDs con su vista previa. A la derecha, las mallas del modelo: pulsa una para añadirla como siguiente LED.</figcaption></figure>
+  <ol class="steps">
+    <li>Pulsa <b>+ Añadir</b> y añade los LEDs pulsando sus mallas a la derecha, en su orden físico (de izquierda a derecha o de abajo arriba). Si filtras por «LED», un botón los añade todos en orden: LED1, LED2… LED10.</li>
+    <li>En <b>Encendido</b>, elige el orden y a qué rpm se enciende el primer LED y a cuáles están todos (en rpm o en % del limitador).</li>
+    <li>En <b>Tramos de color</b>, cuántos LEDs de cada color. Si no suman los LEDs de la tira, <b>Repartir</b> los ajusta manteniendo la proporción.</li>
+    <li>Mueve el deslizador de la <b>vista previa</b> para comprobarlo antes de instalar.</li>
+  </ol>
+  <table>
+    <tr><th style="width:38mm">Ajuste</th><th>Qué hace</th></tr>
+    <tr><td class="k">Potencia</td><td>La emisión del LED encendido (color × potencia). Entre 10 y 30 es lo normal; con más, el color tiende a blanco.</td></tr>
+    <tr><td class="k">Destello (halo)</td><td>Refuerza la emisión hasta ×4 para que el bloom del juego haga resplandecer el LED. Se nota sobre todo de noche.</td></tr>
+    <tr><td class="k">Núcleo</td><td>Blanquea la luz, como un LED muy brillante cuyo centro se ve casi blanco.</td></tr>
+    <tr><td class="k">Respuesta</td><td>Milisegundos que tarda en encenderse y apagarse: 0 como un LED, de 60 a 150 como una bombilla.</td></tr>
+    <tr><td class="k">Apagado</td><td>Color y potencia cuando el LED no está encendido (0 = sin emisión).</td></tr>
+    <tr><td class="k">En el corte</td><td>Frecuencia, color, potencia y ciclo del parpadeo al llegar al limitador. Con 0 Hz no parpadean y siguen con los colores de sus tramos.</td></tr>
+  </table>
+  <div class="box note"><span class="t">Importante:</span> como los botones físicos, las luces van dentro del script de un display, así que ese display tiene que estar instalado. Cada LED recibe su propio material, así que encender uno no enciende las piezas que compartan material con él.</div>
 
   <h3>Agujas físicas</h3>
   <p>Se abren con <b>Agujas</b> en la barra superior. Sirven para los relojes analógicos de verdad del salpicadero (no los dibujados en la pantalla). No dependen de ningún display.</p>
@@ -743,6 +763,8 @@
     <figcaption>El nombre del script es el del display. Si el coche ya tenía un script ajeno con ese nombre, el nuevo se llama <code>…_acdg.lua</code> para no pisarlo.</figcaption>
   </figure>
 
+  <div class="box note"><span class="t">Instrumentos originales del coche.</span> Al crear el proyecto (y al instalar), se añade al final de <code>ext_config.ini</code> una sección <code>[DATA]</code> que anula los instrumentos de <code>data/</code>: las agujas de <code>analog_instruments.ini</code> y los textos de <code>digital_instruments.ini</code> (como la marcha que algunos coches dibujan sobre la pantalla). Así no se superponen con tus displays. Se deshace al desinstalar lo último que hayas instalado en el coche. Las agujas que quieras conservar se configuran en <b>Agujas</b>.</div>
+
   <h3>Deshacer y comprobar</h3>
   <table>
     <tr><td class="k">Desinstalar</td><td>En el mismo diálogo, <b>Copias de seguridad y desinstalación</b> → <b>Desinstalar</b> el display. Quita lo que añadió el programa y reactiva la pantalla original del coche si la había.</td></tr>
@@ -761,6 +783,8 @@
     <tr><td class="k">El diseño sale estirado o aplastado</td><td>La textura no tiene la misma proporción que la pantalla física. Activa <b>Vista física</b> para diseñar con la forma real.</td></tr>
     <tr><td class="k">De noche o a la sombra no se ve</td><td>Revisa <b>Emisión en el juego</b> en las propiedades del display: elige <i>Solo emisión</i> y un valor de 3–4. Si aun así no luce, prueba <i>Shader ksPerPixel + emisión</i>.</td></tr>
     <tr><td class="k">De noche deslumbra</td><td>Usa el grupo <b>Brillo</b> para bajar la intensidad con las luces encendidas o por la noche.</td></tr>
+    <tr><td class="k">Se ven números o la marcha originales del coche</td><td>Vienen de <code>digital_instruments.ini</code>. El programa los anula al crear el proyecto o al instalar; si los ves, vuelve a instalar y reinicia la sesión.</td></tr>
+    <tr><td class="k">Los LEDs físicos no se encienden</td><td>El display al que pertenecen tiene que estar instalado. Revisa en el registro de CSP si avisa de que no encuentra alguna malla, y sube la <b>Potencia</b> si se encienden pero apenas se notan.</td></tr>
     <tr><td class="k">Sigue apareciendo la pantalla original</td><td>Si el coche ya tenía su propia pantalla sobre la misma malla, el programa la desactiva al instalar. Si la original usa otra malla o la añades a mano, puede haber dos pantallas a la vez: desactívala o elige otra malla.</td></tr>
     <tr><td class="k">Un botón táctil no responde</td><td>Haz clic justo sobre la pantalla en la vista de cabina. Comprueba en <b>Previsualizar</b> que el botón está donde crees y que su acción es la correcta. Algunas acciones (luces, ráfaga…) son difíciles de notar desde dentro a plena luz del día.</td></tr>
     <tr><td class="k">Un botón físico no responde</td><td>El display al que pertenecen tiene que estar instalado. Si la botonera es una sola malla, revisa la región UV de cada botón.</td></tr>
@@ -797,7 +821,7 @@
   </div>
 
   <div class="box tip" style="margin-top:24px"><span class="t">Resumen de bolsillo.</span> Elige el coche → indica la pantalla → añade elementos y conéctalos a variables → añade reglas para los avisos → prueba con la simulación → <b>Generar e instalar</b> → reinicia la sesión en el juego. Si algo no va, el capítulo 14 y el <b>Diagnóstico</b> te dirán por qué.</div>
-  <p class="muted small" style="margin-top:28px">AC Display Generator · V. 1.0.1 · Autor: Eneas Menéndez. Assetto Corsa, Custom Shaders Patch y Content Manager pertenecen a sus respectivos autores.</p>
+  <p class="muted small" style="margin-top:28px">AC Display Generator · V. 1.0.2 · Autor: Eneas Menéndez. Assetto Corsa, Custom Shaders Patch y Content Manager pertenecen a sus respectivos autores.</p>
 </section>
 
 </body>
