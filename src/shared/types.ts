@@ -19,7 +19,15 @@ export interface AppSettings {
   accent: string;
   /** profundidad del fondo; con imagen de fondo marca cuánto se transparenta la interfaz */
   background: 'deep' | 'normal' | 'soft';
+  /** orden y filtro de la lista de vehículos de la pantalla de inicio */
+  carList: CarListMode;
 }
+
+/**
+ * Lista de vehículos: 'all' = todos por nombre; *_first = esos primero (el resto detrás, por nombre);
+ * only_* = solo esos.
+ */
+export type CarListMode = 'all' | 'profile_first' | 'installed_first' | 'only_profile' | 'only_installed' | 'only_none';
 
 export interface AppInfo {
   version: string;

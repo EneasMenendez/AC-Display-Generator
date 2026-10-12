@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CarSummary, RecentEntry } from '@shared/types';
+import type { CarListMode, CarSummary, RecentEntry } from '@shared/types';
+import { CAR_LIST_MODES, arrangeCars } from '../carList';
 import type { AppSettings, BackgroundImage } from '@shared/types';
 import { api } from '../api';
 import { ACCENT_PRESETS, BACKGROUNDS, applyAppearance, backgroundObjectUrl, resolveAccent } from '../appearance';
@@ -24,10 +25,15 @@ export function StartScreen() {
     api.recentProjects().then(setRecent).catch(() => undefined);
   }, [info?.acRoot]);
 
-  const filtered = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    return f ? cars.filter((c) => c.name.toLowerCase().includes(f) || c.id.toLowerCase().includes(f) || c.brand.toLowerCase().includes(f)) : cars;
-  }, [cars, filter]);
+  const mode: CarListMode = info?.settings.carList ?? 'all';
+  const filtered = useMemo(() => arrangeCars(cars, filter, mode), [cars, filter, mode]);
+
+  async function setMode(m: CarListMode) {
+    if (!info) return;
+    // se aplica al momento y se recuerda para la próxima vez
+    setInfo({ ...info, settings: { ...info.settings, carList: m } });
+    await api.saveSettings({ carList: m }).catch(() => undefined);
+  }
 
   async function chooseCar(path: string) {
     setBusy(true);
@@ -110,6 +116,13 @@ export function StartScreen() {
         <div className="row">
           <h2 style={{ margin: 0 }}>Vehículos ({filtered.length})</h2>
           <input type="text" className="grow" placeholder="Buscar por nombre, marca o carpeta…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <select className="car-list-mode" value={mode} onChange={(e) => setMode(e.target.value as CarListMode)} title="Ordenar o filtrar la lista de vehículos">
+            {CAR_LIST_MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
           <button className="primary" disabled={!selected || busy} onClick={() => selected && chooseCar(selected)}>
             Continuar
           </button>

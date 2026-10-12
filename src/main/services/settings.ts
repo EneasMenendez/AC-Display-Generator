@@ -4,7 +4,7 @@ import { app } from 'electron';
 import type { AppSettings } from '@shared/types';
 export type { AppSettings };
 
-const DEFAULTS: AppSettings = { acRoot: null, lastCar: null, language: 'es', convertToDds: false, theme: 'dark', accent: 'amber', background: 'normal' };
+const DEFAULTS: AppSettings = { acRoot: null, lastCar: null, language: 'es', convertToDds: false, theme: 'dark', accent: 'amber', background: 'normal', carList: 'all' };
 
 function file(): string {
   return join(app.getPath('userData'), 'config.json');
