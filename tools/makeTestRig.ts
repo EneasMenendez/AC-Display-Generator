@@ -11,6 +11,8 @@ import { box, plane, png, writeKn5, type Kn5Node } from './kn5Writer';
  *   BUTTON_PAGE/MODE/UP/DOWN   cuatro botones sueltos (botones físicos, uno por malla)
  *   BUTTON_BAR       una sola malla con dos mitades por UV (botones físicos delimitados por UV)
  *   NEEDLE_RPM/SPEED colgando de su eje (agujas físicas con [ANALOG_INDICATOR_...])
+ *   LED_1…LED_8      fila de LEDs sobre la pantalla principal (luces de cambio físicas); comparten
+ *                    material, para comprobar que encender uno no enciende los demás
  *   GAUGE_FACE_*     esferas detrás de las agujas
  *   DASH_PANEL/BODY  soporte y carrocería mínima para verlo en el juego
  *   WHEEL_*          ruedas, que Assetto Corsa coloca por física
@@ -50,6 +52,7 @@ const DASH_Y = 1.0;
 const MAIN = { w: 0.28, h: 0.14, center: { x: 0, y: DASH_Y, z: DASH_Z } };
 const SIDE = { w: 0.16, h: 0.08, center: { x: -0.34, y: DASH_Y, z: DASH_Z } };
 const BUTTONS = ['BUTTON_PAGE', 'BUTTON_MODE', 'BUTTON_UP', 'BUTTON_DOWN'];
+const LEDS = 8;
 
 function buildModel(): Buffer {
   const nodes: Kn5Node[] = [];
@@ -62,6 +65,12 @@ function buildModel(): Buffer {
   nodes.push({ kind: 'mesh', name: 'DISPLAY_MAIN', material: 'DisplayMain', ...plane(MAIN.center, MAIN.w, MAIN.h) });
   // la lateral solo usa el cuarto superior izquierdo de su textura
   nodes.push({ kind: 'mesh', name: 'DISPLAY_SIDE', material: 'DisplaySide', ...plane(SIDE.center, SIDE.w, SIDE.h, { u0: 0, v0: 0, u1: 0.5, v1: 0.5 }) });
+
+  // luces de cambio: LED_1 a la izquierda del conductor (+X) y LED_8 a su derecha, sobre la pantalla
+  for (let i = 0; i < LEDS; i++) {
+    const x = 0.105 - (i * 0.21) / (LEDS - 1);
+    nodes.push({ kind: 'mesh', name: `LED_${i + 1}`, material: 'RigLed', ...box({ x, y: DASH_Y + MAIN.h / 2 + 0.025, z: DASH_Z - 0.004 }, { x: 0.018, y: 0.012, z: 0.01 }) });
+  }
 
   // botonera: cuatro mallas sueltas, de la izquierda a la derecha del conductor
   BUTTONS.forEach((name, i) => {
@@ -126,6 +135,7 @@ function buildModel(): Buffer {
       { name: 'acdg_rig.png', data: png(8, 8, () => [70, 72, 78]) },
       { name: 'acdg_button.png', data: png(8, 8, (x) => (x < 4 ? [120, 120, 126] : [90, 90, 96])) },
       { name: 'acdg_needle.png', data: png(4, 4, () => [220, 70, 60]) },
+      { name: 'acdg_led.png', data: png(4, 4, () => [60, 62, 66]) },
       { name: 'acdg_body.png', data: png(8, 8, () => [40, 42, 48]) },
     ],
     materials: [
@@ -135,6 +145,8 @@ function buildModel(): Buffer {
       { name: 'RigDark', texture: 'acdg_rig.png', props: [{ name: 'ksDiffuse', value: 0.4 }, { name: 'ksAmbient', value: 0.4 }] },
       { name: 'RigButton', texture: 'acdg_button.png', props: [{ name: 'ksDiffuse', value: 0.5 }, { name: 'ksAmbient', value: 0.5 }] },
       { name: 'RigNeedle', texture: 'acdg_needle.png', props: [{ name: 'ksEmissive', vec3: [0.6, 0.1, 0.1] }, { name: 'ksDiffuse', value: 0.5 }] },
+      // un único material para los ocho LEDs; ksEmissive a 0 para que estén apagados sin la aplicación
+      { name: 'RigLed', texture: 'acdg_led.png', props: [{ name: 'ksEmissive', vec3: [0, 0, 0] }, { name: 'ksDiffuse', value: 0.3 }, { name: 'ksAmbient', value: 0.3 }] },
       { name: 'RigBody', texture: 'acdg_body.png', props: [{ name: 'ksDiffuse', value: 0.5 }, { name: 'ksAmbient', value: 0.4 }] },
     ],
     nodes,
@@ -200,7 +212,7 @@ function uiCar(): string {
       name: 'ACDG Test Rig',
       brand: 'AC Display Generator',
       description:
-        'Banco de pruebas: no es un coche, son objetos sueltos para probar displays, botones táctiles, botones físicos y agujas.\n\nMallas: DISPLAY_MAIN, DISPLAY_SIDE (UV parcial), BUTTON_PAGE/MODE/UP/DOWN, BUTTON_BAR (dos mitades por UV) y NEEDLE_RPM / NEEDLE_SPEED con sus ejes.',
+        'Banco de pruebas: no es un coche, son objetos sueltos para probar displays, botones táctiles, botones físicos y agujas.\n\nMallas: DISPLAY_MAIN, DISPLAY_SIDE (UV parcial), BUTTON_PAGE/MODE/UP/DOWN, BUTTON_BAR (dos mitades por UV), NEEDLE_RPM / NEEDLE_SPEED con sus ejes y LED_1…LED_8 (luces de cambio físicas).',
       tags: ['acdg', 'test', 'rig'],
       class: 'test',
       specs: { bhp: '—', torque: '—', weight: '—', topspeed: '—', acceleration: '—', pwratio: '—' },

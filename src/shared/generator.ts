@@ -196,6 +196,28 @@ function physicalButtonsConfig(dp: DisplayProject): Record<string, unknown>[] {
     }));
 }
 
+/** Luces de cambio físicas: solo las que tienen alguna malla asignada. */
+function physicalShiftLightsConfig(dp: DisplayProject): Record<string, unknown>[] {
+  return (dp.physicalShiftLights ?? [])
+    .map((l) => ({ ...l, meshes: l.meshes.map((m) => m.trim()).filter(Boolean) }))
+    .filter((l) => l.meshes.length > 0)
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      meshes: l.meshes,
+      rpmStart: l.rpmStart,
+      rpmEnd: l.rpmEnd,
+      pattern: l.pattern,
+      zones: l.zones,
+      intensity: l.intensity,
+      colorOff: l.colorOff,
+      offIntensity: l.offIntensity,
+      limiterBlinkHz: l.limiterBlinkHz,
+      limiterColor: l.limiterColor,
+      blinkDuty: l.blinkDuty,
+    }));
+}
+
 /** Parte táctil de la configuración: estado inicial de los interruptores y gestos. */
 function touchConfig(dp: DisplayProject): Record<string, unknown> {
   const t = dp.settings.touch;
@@ -286,6 +308,7 @@ export function generateConfigLua(project: Project, dp: DisplayProject, display:
     varMeta,
     pages,
     physicalButtons: physicalButtonsConfig(dp),
+    physicalShiftLights: physicalShiftLightsConfig(dp),
   };
 
   const header = [

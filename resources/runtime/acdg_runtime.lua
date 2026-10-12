@@ -1579,6 +1579,85 @@ local function updatePhysical()
   end
 end
 
+-- ------------------------------------------------------------
+-- Luces de cambio físicas: LEDs que son mallas del modelo. Misma lógica que draw.shift_lights, pero en
+-- vez de dibujar se cambia el ksEmissive de cada malla (con materiales propios, para no encender el
+-- resto de piezas que compartan material con el LED).
+-- ------------------------------------------------------------
+
+local shiftMeshes = {}   -- por tira: { refs, ranks, lit[p], limiter, off }
+local shiftErrorLogged = false
+
+local function emissive(c, intensity)
+  if not c then return rgb(0, 0, 0) end
+  local k = intensity or 1
+  return rgb(c.r * k, c.g * k, c.b * k)
+end
+
+local function initShiftMeshes()
+  shiftMeshes = {}
+  local list = cfg.physicalShiftLights
+  if type(list) ~= 'table' then return end
+  for i = 1, #list do
+    local l = list[i]
+    local n = #l.meshes
+    local st = { refs = {}, ranks = ledRanks(n, l.pattern), lit = {} }
+    for p = 1, n do
+      local ok, ref = pcall(ac.findMeshes, l.meshes[p])
+      local found = false
+      if ok and ref ~= nil and type(ref) ~= 'number' then
+        local okS, count = pcall(function() return ref:size() end)
+        found = okS and (tonumber(count) or 0) > 0
+      end
+      if found then
+        pcall(ref.ensureUniqueMaterials, ref)
+        st.refs[p] = ref
+      else
+        ac.error('[ACDG] luces de cambio "' .. tostring(l.name) .. '": no se encuentra la malla ' .. tostring(l.meshes[p]))
+      end
+      st.lit[p] = emissive(ledZoneColor(st.ranks[p], l.zones, l.limiterColor), l.intensity)
+    end
+    st.limiter = emissive(l.limiterColor, l.intensity)
+    st.off = emissive(l.colorOff, l.offIntensity or 0)
+    shiftMeshes[i] = st
+  end
+end
+
+local function updateShiftMeshes()
+  local list = cfg.physicalShiftLights
+  local rpm = num(car.rpm)
+  for i = 1, #list do
+    local l, st = list[i], shiftMeshes[i]
+    if st then
+      local n = #l.meshes
+      local startR, endR = rpmValue(l.rpmStart), rpmValue(l.rpmEnd)
+      if endR <= startR then endR = startR + 1 end
+      local frac = clamp01((rpm - startR) / (endR - startR))
+      local active = 0
+      if rpm >= startR then
+        active = math.floor(frac * n + 0.0001)
+        if frac < 1 then active = active + 1 end
+        if active > n then active = n end
+      end
+      local blink = (car.isEngineLimiterOn or rpm >= endR) and (l.limiterBlinkHz or 0) > 0
+      local duty = l.blinkDuty or 0.5
+      if duty < 0.05 then duty = 0.05 elseif duty > 0.95 then duty = 0.95 end
+      -- tiempo real: el parpadeo no depende de la frecuencia de refresco de la pantalla
+      local blinkVisible = blink and (tReal * l.limiterBlinkHz) % 1 < duty
+      for p = 1, n do
+        local ref = st.refs[p]
+        if ref then
+          local value
+          if blink then value = blinkVisible and st.limiter or st.off
+          else value = st.ranks[p] < active and st.lit[p] or st.off end
+          -- cada frame: si el coche tiene su propio [LED_...] sobre la malla, manda el nuestro
+          ref:setMaterialProperty('ksEmissive', value)
+        end
+      end
+    end
+  end
+end
+
 local function initTouch()
   local tc = cfg.settings.touch
   touch.on = tc ~= nil and tc.enabled == true
@@ -1700,6 +1779,7 @@ function ACDG.init(config, dir)
   initPages()
   initTouch()
   initPhysical()
+  initShiftMeshes()
   currentPageRef = nil
   previousPageRef = nil
   pageEnteredAt = t
@@ -1748,6 +1828,14 @@ function ACDG.update(dt)
     if not okT and not touchErrorLogged then
       touchErrorLogged = true
       ac.error('[ACDG] táctil: ' .. tostring(errT))
+    end
+  end
+  -- luces de cambio físicas: también a la frecuencia del juego, no a la de refresco de la pantalla
+  if #shiftMeshes > 0 then
+    local okL, errL = pcall(updateShiftMeshes)
+    if not okL and not shiftErrorLogged then
+      shiftErrorLogged = true
+      ac.error('[ACDG] luces de cambio físicas: ' .. tostring(errL))
     end
   end
   -- frecuencia de refresco: entre actualizaciones se conserva el frame anterior

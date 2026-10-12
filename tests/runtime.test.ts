@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LuaFactory } from 'wasmoon';
 import luaparse from 'luaparse';
-import { createElement, createEmptyProject, type NeedleElement, type Project, type RpmBarElement, type ShiftLightsElement, type TextElement } from '../src/shared/model';
+import { createElement, createEmptyProject, createPhysicalShiftLights, type NeedleElement, type Project, type RpmBarElement, type ShiftLightsElement, type TextElement } from '../src/shared/model';
 import { parseProfile } from '../src/shared/profile';
 import { generateConfigLua, generateDisplayLua } from '../src/shared/generator';
 
@@ -180,6 +180,63 @@ describe('runtime Lua generado', () => {
       await engine.doString('CALLS = {}; CARV.focused = false; CARV.distanceToCamera = 500; script.update(0.016)');
       expect(String(await engine.doString('return CALLS[1]'))).toBe('skipFrame');
       expect(Number(await engine.doString('return #CALLS'))).toBe(1);
+    } finally {
+      engine.global.close();
+    }
+  }, 30000);
+
+  it('luces de cambio físicas: encienden las mallas en orden, con su color, y parpadean en el corte', async () => {
+    const p = project();
+    const strip = createPhysicalShiftLights(['LED1', 'LED2', 'LED3', 'LED4', 'NO_EXISTE']);
+    strip.rpmStart = 4000;
+    strip.rpmEnd = 6000;
+    strip.zones = [{ count: 3, color: '#00FF00' }, { count: 2, color: '#FF0000' }];
+    strip.intensity = 10;
+    strip.limiterBlinkHz = 5;
+    strip.limiterColor = '#0000FF';
+    p.displays[0].physicalShiftLights = [strip, { ...createPhysicalShiftLights([' ', '']), id: 'vacia' }];
+    const gen = generateConfigLua(p, p.displays[0], profile.displays[0]);
+    // la tira sin mallas no llega al script
+    expect(gen.lua.match(/meshes = \{/g)).toHaveLength(1);
+    const lua = generateDisplayLua(gen.lua, readFileSync('resources/runtime/acdg_runtime.lua', 'utf8'), 'driver_display');
+    const engine = await new LuaFactory().createEngine();
+    try {
+      await engine.doString(STUBS);
+      await engine.doString(`
+        rgb = function(r, g, b) return { r = r, g = g, b = b } end
+        EMIS, UNIQUE = {}, {}
+        ac.findMeshes = function(name)
+          local ref = {}
+          function ref:size() return name == 'NO_EXISTE' and 0 or 1 end
+          function ref:ensureUniqueMaterials() UNIQUE[name] = true return self end
+          function ref:setMaterialProperty(prop, v) if prop == 'ksEmissive' then EMIS[name] = v end return self end
+          return ref
+        end
+        function lit(name) local v = EMIS[name] return v and (v.r + v.g + v.b) > 0 end
+        function colorOf(name) local v = EMIS[name] return string.format('%g,%g,%g', v.r, v.g, v.b) end`);
+      await engine.doString(lua);
+      // la malla que no existe se avisa en el registro; las demás tienen material propio
+      expect(String(await engine.doString('return ERRORED'))).toContain('NO_EXISTE');
+      expect(await engine.doString('return UNIQUE.LED1 and UNIQUE.LED4')).toBe(true);
+      // por debajo del primer régimen: todo apagado
+      await engine.doString('ERRORED = nil; CARV.rpm = 3000; script.update(0.016)');
+      expect(await engine.doString('return lit("LED1") or lit("LED4")')).toBe(false);
+      // a mitad de recorrido: 3 de 5 encendidos (4000–6000 rpm, 5 LEDs → 5000 rpm = el tercero)
+      await engine.doString('CARV.rpm = 5000; script.update(0.016)');
+      expect(await engine.doString('return lit("LED1") and lit("LED2") and lit("LED3")')).toBe(true);
+      expect(await engine.doString('return lit("LED4")')).toBe(false);
+      // color del tramo × intensidad
+      expect(await engine.doString('return colorOf("LED1")')).toBe('0,10,0');
+      await engine.doString('CARV.rpm = 5900; script.update(0.016)');
+      expect(await engine.doString('return colorOf("LED4")')).toBe('10,0,0');
+      // en el corte: todos del color del limitador, encendiéndose y apagándose
+      const states = new Set<string>();
+      for (let i = 0; i < 20; i++) {
+        await engine.doString('CARV.rpm = 6100; CARV.isEngineLimiterOn = true; script.update(0.02)');
+        states.add(String(await engine.doString('return lit("LED1") and colorOf("LED1") or "off"')));
+      }
+      expect([...states].sort()).toEqual(['0,0,10', 'off']);
+      expect(await engine.doString('return ERRORED')).toBeFalsy();
     } finally {
       engine.global.close();
     }

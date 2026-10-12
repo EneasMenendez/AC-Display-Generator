@@ -720,6 +720,30 @@ table.info td .mono {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.shift-preview {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  background: #050506;
+}
+.shift-led {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1c1d21;
+  flex: none;
+}
+.led-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 210px;
+  overflow: auto;
+  margin-bottom: 8px;
+}
 .prop label.chk-only {
   flex: none;
   overflow: visible;

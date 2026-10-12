@@ -11,6 +11,7 @@ import { InstallDialog } from './InstallDialog';
 import { AddDisplayDialog } from './AddDisplayDialog';
 import { NeedlesDialog } from './NeedlesDialog';
 import { PhysicalButtonsDialog } from './PhysicalButtonsDialog';
+import { PhysicalShiftLightsDialog } from './PhysicalShiftLightsDialog';
 import { Icon } from './icons';
 
 export function Editor() {
@@ -35,6 +36,7 @@ export function Editor() {
   const [addDisplay, setAddDisplay] = useState(false);
   const [needles, setNeedles] = useState(false);
   const [physBtns, setPhysBtns] = useState(false);
+  const [physLights, setPhysLights] = useState(false);
   const [help, setHelp] = useState(false);
 
   // cargar fuentes del proyecto en el documento
@@ -178,6 +180,9 @@ export function Editor() {
         <button className="ghost" onClick={() => setPhysBtns(true)} title="Botones físicos del coche: mallas del modelo 3D que se pulsan con el ratón (botonera, pulsadores del salpicadero…)">
           <Icon name="touch" size={14} /> Botones{dp?.physicalButtons?.length ? ` (${dp.physicalButtons.length})` : ''}
         </button>
+        <button className="ghost" onClick={() => setPhysLights(true)} title="Luces de cambio físicas: LEDs que son mallas del modelo 3D (salpicadero, volante…), no dibujos de la pantalla">
+          <Icon name="leds" size={14} /> Luces{dp?.physicalShiftLights?.length ? ` (${dp.physicalShiftLights.length})` : ''}
+        </button>
         <button className="ghost" onClick={() => setNeedles(true)} title="Agujas físicas del modelo 3D (cuentarrevoluciones, presión…), sin display">
           <Icon name="needle" size={14} /> Agujas{project.physicalNeedles?.length ? ` (${project.physicalNeedles.length})` : ''}
         </button>
@@ -287,6 +292,7 @@ export function Editor() {
       {addDisplay && <AddDisplayDialog onClose={() => setAddDisplay(false)} />}
       {needles && <NeedlesDialog onClose={() => setNeedles(false)} />}
       {physBtns && <PhysicalButtonsDialog onClose={() => setPhysBtns(false)} />}
+      {physLights && <PhysicalShiftLightsDialog onClose={() => setPhysLights(false)} />}
       {help && (
         <div className="modal-bg" onClick={() => setHelp(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

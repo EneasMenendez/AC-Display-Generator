@@ -555,6 +555,54 @@ export function createPhysicalButton(mesh = ''): PhysicalButton {
   };
 }
 
+/**
+ * Luces de cambio físicas: LEDs que son mallas del modelo 3D (en el salpicadero, el volante…), no
+ * dibujos de la pantalla. Se comportan como las «Luces de cambio» del display (encendido progresivo
+ * entre dos regímenes, colores por tramos, parpadeo en el corte), pero el script del display enciende
+ * cada malla cambiando su ksEmissive. Por eso necesitan que ese display esté instalado.
+ */
+export interface PhysicalShiftLights {
+  id: string;
+  name: string;
+  /** mallas de los LEDs en su orden físico (de izquierda a derecha, o de abajo arriba) */
+  meshes: string[];
+  rpmStart: RpmValue;
+  rpmEnd: RpmValue;
+  pattern: 'left_to_right' | 'edges_to_center' | 'center_to_edges';
+  zones: { count: number; color: Color }[];
+  /** intensidad de la emisión de un LED encendido (ksEmissive = color × intensidad) */
+  intensity: number;
+  /** color e intensidad de un LED apagado (intensidad 0 = sin emisión) */
+  colorOff: Color;
+  offIntensity: number;
+  /** al llegar al limitador todos parpadean con limiterColor; 0 = sin parpadeo */
+  limiterBlinkHz: number;
+  limiterColor: Color;
+  blinkDuty?: number;
+}
+
+export function createPhysicalShiftLights(meshes: string[] = []): PhysicalShiftLights {
+  return {
+    id: newId('pshl'),
+    name: 'Luces de cambio',
+    meshes,
+    rpmStart: '70%',
+    rpmEnd: '97%',
+    pattern: 'left_to_right',
+    zones: [
+      { count: 4, color: '#28C840' },
+      { count: 3, color: '#FFB000' },
+      { count: 3, color: '#FF2D2D' },
+    ],
+    intensity: 20,
+    colorOff: '#000000',
+    offIntensity: 0,
+    limiterBlinkHz: 8,
+    limiterColor: '#2D7BFF',
+    blinkDuty: 0.5,
+  };
+}
+
 /** Un interruptor táctil del display (variable touch_<key> del catálogo). */
 export interface TouchSwitchDef {
   /** a…f */
@@ -620,6 +668,8 @@ export interface DisplayProject {
   fonts: Record<string, string>;
   /** botones físicos del coche atendidos por el script de este display */
   physicalButtons?: PhysicalButton[];
+  /** luces de cambio físicas (LEDs del modelo 3D) que enciende el script de este display */
+  physicalShiftLights?: PhysicalShiftLights[];
 }
 
 /**
@@ -918,6 +968,7 @@ export function createDisplayProject(params: { displayId: string; name: string; 
     pages: [{ id: 'main', name: 'Principal', elements: [] }],
     fonts: {},
     physicalButtons: [],
+    physicalShiftLights: [],
   };
 }
 
@@ -994,6 +1045,7 @@ export function migrateProject(raw: unknown): Project {
     if (!d.pages?.length) d.pages = [{ id: 'main', name: 'Principal', elements: [] }];
     d.fonts = d.fonts ?? {};
     d.physicalButtons = Array.isArray(d.physicalButtons) ? d.physicalButtons : [];
+    d.physicalShiftLights = Array.isArray(d.physicalShiftLights) ? d.physicalShiftLights : [];
   }
   return proj;
 }
