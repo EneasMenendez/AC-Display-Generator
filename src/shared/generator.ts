@@ -526,11 +526,32 @@ export const INSTRUMENTS_BLOCK_ID = '_instruments';
 /**
  * Cuerpo del bloque que anula los instrumentos originales del coche: las agujas de
  * analog_instruments.ini y los textos de digital_instruments.ini se dibujarían encima de los displays
- * del proyecto o competirían con las agujas físicas. Son las claves [DATA] de CSP (las mismas que usa
- * su configuración de los coches de Kunos).
+ * del proyecto o competirían con las agujas físicas. Son claves [DATA] de CSP: las dos primeras las usa
+ * su configuración de los coches de Kunos, pero DISABLE_DIGITALINSTRUMENTSINI no quita los textos de
+ * digital_instruments.ini (probado en el Peugeot 208 Rally4: la marcha seguía); DISABLE_DI_TEXT_NODES
+ * sí, y al ir en ext_config.ini vale también online (a diferencia de extension/data_override).
  */
 export function generateInstrumentsIni(): string {
-  return ['; instrumentos originales de data/: los sustituyen los displays de AC Display Generator', '[DATA]', 'DISABLE_ANALOGINSTRUMENTSINI = 1', 'DISABLE_DIGITALINSTRUMENTSINI = 1'].join('\n');
+  return [
+    '; instrumentos originales de data/: los sustituyen los displays de AC Display Generator',
+    '[DATA]',
+    'DISABLE_ANALOGINSTRUMENTSINI = 1',
+    'DISABLE_DIGITALINSTRUMENTSINI = 1',
+    'DISABLE_DI_TEXT_NODES = 1',
+  ].join('\n');
+}
+
+/**
+ * ext_config.ini con el bloque de instrumentos al día: lo añade si falta y lo rehace si es de una
+ * versión anterior. null si ya estaba como debe.
+ */
+export function withInstrumentsBlock(extConfig: string): string | null {
+  const wanted = includeBlock(INSTRUMENTS_BLOCK_ID, generateInstrumentsIni());
+  const m = includeMarkers(INSTRUMENTS_BLOCK_ID);
+  const start = extConfig.indexOf(m.begin);
+  const end = start < 0 ? -1 : extConfig.indexOf(m.end, start);
+  if (end >= 0 && extConfig.slice(start, end + m.end.length).replace(/\r\n/g, '\n') === wanted.trimEnd()) return null;
+  return upsertIncludeBlock(extConfig, INSTRUMENTS_BLOCK_ID, generateInstrumentsIni());
 }
 
 /* ---------- Bloque ACDG en ext_config.ini ---------- */

@@ -174,6 +174,8 @@ describe('instalación', () => {
     expect(block).toContain('[DATA]');
     expect(block).toContain('DISABLE_ANALOGINSTRUMENTSINI = 1');
     expect(block).toContain('DISABLE_DIGITALINSTRUMENTSINI = 1');
+    // la que de verdad quita los textos de digital_instruments.ini
+    expect(block).toContain('DISABLE_DI_TEXT_NODES = 1');
     expect(text.indexOf('DISABLE_ANALOGINSTRUMENTSINI = 0')).toBeLessThan(text.indexOf('; ACDG BEGIN _instruments'));
     // la sección original del coche no se toca
     expect(text).toContain('DISABLE_LIGHTSINI = 1');
@@ -182,6 +184,17 @@ describe('instalación', () => {
     expect(again.instruments).toBe(false);
     expect(again.backup).toBeNull();
     expect(ini().match(/; ACDG BEGIN _instruments/g)).toHaveLength(1);
+  });
+
+  it('actualiza el bloque de una versión anterior (sin DISABLE_DI_TEXT_NODES) sin duplicarlo', () => {
+    const old = '; ACDG BEGIN _instruments\n[DATA]\nDISABLE_ANALOGINSTRUMENTSINI = 1\nDISABLE_DIGITALINSTRUMENTSINI = 1\n; ACDG END _instruments\n';
+    writeFileSync(extConfig, CAR_INI + '\n' + old, 'utf8');
+    const r = cleanDisplays(carPath, ['OTRA_MALLA']);
+    expect(r.instruments).toBe(true);
+    expect(ini()).toContain('DISABLE_DI_TEXT_NODES = 1');
+    expect(ini().match(/; ACDG BEGIN _instruments/g)).toHaveLength(1);
+    // instalar con el bloque ya al día no lo toca
+    expect(doInstall(project()).steps.find((st) => st.name === 'Anular instrumentos de data/')?.detail).toBe('ya anulados');
   });
 
   it('crea ext_config.ini si el coche no lo tenía', () => {

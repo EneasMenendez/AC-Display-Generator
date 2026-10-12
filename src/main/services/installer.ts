@@ -9,7 +9,7 @@ import {
   EMISSIVE_BLOCK_ID,
   INSTRUMENTS_BLOCK_ID,
   NEEDLES_BLOCK_ID,
-  generateInstrumentsIni,
+  withInstrumentsBlock,
   generateEmissiveIni,
   PROJECT_FILE,
   generateNeedlesIni,
@@ -346,10 +346,12 @@ export function install(opts: InstallOptions): InstallResult {
   if (opts.install) {
     step('Anular instrumentos de data/', () => {
       const current = readExt();
-      if (hasIncludeBlock(current, INSTRUMENTS_BLOCK_ID)) return 'ya anulados';
+      const next = withInstrumentsBlock(current);
+      if (next === null) return 'ya anulados';
+      const had = hasIncludeBlock(current, INSTRUMENTS_BLOCK_ID);
       mkdirSync(dirname(extConfig), { recursive: true });
-      writeFileSync(extConfig, upsertIncludeBlock(current, INSTRUMENTS_BLOCK_ID, generateInstrumentsIni()), 'utf8');
-      return 'analog_instruments.ini y digital_instruments.ini desactivados ([DATA] en ext_config.ini)';
+      writeFileSync(extConfig, next, 'utf8');
+      return had ? 'bloque [DATA] actualizado' : 'analog_instruments.ini y digital_instruments.ini desactivados ([DATA] en ext_config.ini)';
     });
   }
 
@@ -538,8 +540,9 @@ export function cleanDisplays(carPath: string, meshes: string[]): CleanDisplaysR
   // (si ya se tocó al desactivar una sección, se parte de ese texto: Windows no distingue mayúsculas)
   const extConfig = [...touched.keys()].find((f) => f.toLowerCase() === join(baseDir(carPath, target), 'ext_config.ini').toLowerCase()) ?? join(baseDir(carPath, target), 'ext_config.ini');
   const extNow = touched.get(extConfig) ?? (existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '');
-  if (!hasIncludeBlock(extNow, INSTRUMENTS_BLOCK_ID)) {
-    touched.set(extConfig, upsertIncludeBlock(extNow, INSTRUMENTS_BLOCK_ID, generateInstrumentsIni()));
+  const withInstruments = withInstrumentsBlock(extNow);
+  if (withInstruments !== null) {
+    touched.set(extConfig, withInstruments);
     result.instruments = true;
   }
   if (touched.size === 0) return result;
