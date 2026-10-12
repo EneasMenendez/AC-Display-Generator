@@ -307,8 +307,12 @@ export function Wizard() {
     // superpongan con lo que genere la aplicación (reversible desde Desinstalar)
     try {
       const r = await api.cleanDisplays(car.path, inc.flatMap((e) => e.def.meshes));
-      if (r.disabled.length) {
-        toast(`Desactivad${r.disabled.length === 1 ? 'o el display existente' : `os ${r.disabled.length} displays existentes`} en extension/: ${r.disabled.map((d) => `[${d.section}] de ${d.iniRelative}`).join(', ')}. Copia de seguridad guardada.`);
+      const parts = [
+        ...(r.disabled.length ? [`desactivad${r.disabled.length === 1 ? 'o el display existente' : `os ${r.disabled.length} displays existentes`} en extension/ (${r.disabled.map((d) => `[${d.section}] de ${d.iniRelative}`).join(', ')})`] : []),
+        ...(r.instruments ? ['anulados los instrumentos de data/ (analog y digital_instruments.ini)'] : []),
+      ];
+      if (parts.length) {
+        toast(`${parts.join('; ').replace(/^./, (c) => c.toUpperCase())}. Copia de seguridad guardada.`);
         useStore.getState().setCar(await api.scanCar(car.path));
       }
     } catch (e) {
@@ -449,6 +453,9 @@ export function Wizard() {
               ))}
             </tbody>
           </table>
+          <div className="small muted mt8">
+            Al crear el proyecto se anulan también los instrumentos originales de <code>data/</code> (<code>analog_instruments.ini</code> y <code>digital_instruments.ini</code>) con una sección <code>[DATA]</code> en <code>ext_config.ini</code>, para que no se dibujen encima de tus displays. Se guarda copia de seguridad y se deshace al desinstalar; las agujas del salpicadero que quieras conservar se configuran en <b>Agujas</b>.
+          </div>
         </div>
       )}
 

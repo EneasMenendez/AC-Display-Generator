@@ -65,6 +65,7 @@ export function AddDisplayDialog({ onClose }: { onClose: () => void }) {
       try {
         const r = await api.cleanDisplays(car!.path, def.meshes);
         if (r.disabled.length) toast(`Desactivado el display existente ${r.disabled.map((d) => `[${d.section}] de ${d.iniRelative}`).join(', ')} (copia de seguridad guardada).`);
+        else if (r.instruments) toast('Anulados los instrumentos de data/ (analog y digital_instruments.ini); copia de seguridad guardada.');
         useStore.getState().setCar(await api.scanCar(car!.path));
       } catch {
         /* sin cambios en extension/ */

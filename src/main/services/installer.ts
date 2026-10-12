@@ -7,7 +7,9 @@ import type { DisplayDef, DisplayProfile } from '@shared/profile';
 import {
   ACDG_LUA_HEADER,
   EMISSIVE_BLOCK_ID,
+  INSTRUMENTS_BLOCK_ID,
   NEEDLES_BLOCK_ID,
+  generateInstrumentsIni,
   generateEmissiveIni,
   PROJECT_FILE,
   generateNeedlesIni,
@@ -340,6 +342,17 @@ export function install(opts: InstallOptions): InstallResult {
     });
   }
 
+  // --- instrumentos de data/: se anulan para que no se dibujen encima de los displays del proyecto ---
+  if (opts.install) {
+    step('Anular instrumentos de data/', () => {
+      const current = readExt();
+      if (hasIncludeBlock(current, INSTRUMENTS_BLOCK_ID)) return 'ya anulados';
+      mkdirSync(dirname(extConfig), { recursive: true });
+      writeFileSync(extConfig, upsertIncludeBlock(current, INSTRUMENTS_BLOCK_ID, generateInstrumentsIni()), 'utf8');
+      return 'analog_instruments.ini y digital_instruments.ini desactivados ([DATA] en ext_config.ini)';
+    });
+  }
+
   // --- agujas físicas: bloque [ANALOG_INDICATOR_...] propio, y se desactivan las secciones ajenas del mismo objeto ---
   if (opts.install) {
     step('Agujas físicas', () => {
@@ -462,6 +475,7 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
         writeFileSync(extConfig, removeIncludeBlock(next, EMISSIVE_BLOCK_ID), 'utf8');
         done.push('Eliminado el bloque de emisión');
       }
+      if (releaseInstruments(extConfig)) done.push('Reactivados los instrumentos de data/');
     }
   }
   // reactivar las secciones que se desactivaron al instalar (en ext_config.ini y demás .ini de la
@@ -484,20 +498,33 @@ export function uninstall(carPath: string, target: InstallTarget, displayId: str
 }
 
 /**
+ * Quita el bloque que anula los instrumentos de data/ cuando ya no queda nada nuestro que los
+ * sustituya: ni displays ni agujas físicas (las agujas de analog_instruments.ini moverían los mismos
+ * objetos que las nuestras). Devuelve si lo quitó.
+ */
+function releaseInstruments(extConfig: string): boolean {
+  if (!existsSync(extConfig)) return false;
+  const txt = readFileSync(extConfig, 'utf8');
+  if (!hasIncludeBlock(txt, INSTRUMENTS_BLOCK_ID)) return false;
+  const ours = listIncludeBlocks(txt).filter((id) => !id.startsWith('_') || id === NEEDLES_BLOCK_ID);
+  if (ours.length > 0) return false;
+  writeFileSync(extConfig, removeIncludeBlock(txt, INSTRUMENTS_BLOCK_ID), 'utf8');
+  return true;
+}
+
+/**
  * Limpieza al empezar un proyecto: desactiva (comentando con ;ACDG-OFF;) todas las secciones de display
  * ajenas de extension/ que usen alguna de las mallas del proyecto, para que no se superpongan con lo
- * que genere la aplicación. Reversible: "Desinstalar" las reactiva. Antes se guarda copia de seguridad.
+ * que genere la aplicación, y anula los instrumentos de data/ (analog y digital_instruments.ini) con un
+ * bloque [DATA] al final de ext_config.ini. Reversible: "Desinstalar" lo deshace. Antes de escribir se
+ * guarda copia de seguridad.
  */
 export function cleanDisplays(carPath: string, meshes: string[]): CleanDisplaysResult {
   const target: InstallTarget = { kind: 'car' };
   const scan = scanExtension(carPath);
   const wanted = new Set(meshes.map((m) => m.toLowerCase()));
   const victims = scan.displays.filter((d) => !d.acdg && d.meshes.some((m) => wanted.has(m.toLowerCase())));
-  const result: CleanDisplaysResult = { disabled: [], backup: null };
-  if (victims.length === 0) return result;
-  const root = backupRoot(carPath, target);
-  const bdir = join(root, timestamp());
-  mkdirSync(bdir, { recursive: true });
+  const result: CleanDisplaysResult = { disabled: [], instruments: false, backup: null };
   const touched = new Map<string, string>();
   for (const v of victims) {
     if (!existsSync(v.iniFile)) continue;
@@ -507,11 +534,25 @@ export function cleanDisplays(carPath: string, meshes: string[]): CleanDisplaysR
     touched.set(v.iniFile, next);
     result.disabled.push({ iniFile: v.iniFile, iniRelative: v.iniRelative, section: v.section, meshes: v.meshes });
   }
-  if (result.disabled.length === 0) return result;
-  for (const [file] of touched) cpSync(file, join(bdir, basename(file)));
-  writeFileSync(join(bdir, 'backup.json'), JSON.stringify({ car: carPath, target, displays: [], files: [...touched.keys()].map((f) => basename(f)), reason: 'clean-displays' }, null, 2), 'utf8');
-  writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de desactivar los displays existentes (${result.disabled.map((d) => `[${d.section}] en ${d.iniRelative}`).join(', ')}).\n`, 'utf8');
+  // instrumentos de data/: bloque [DATA] al final de ext_config.ini (si no estaba ya)
+  // (si ya se tocó al desactivar una sección, se parte de ese texto: Windows no distingue mayúsculas)
+  const extConfig = [...touched.keys()].find((f) => f.toLowerCase() === join(baseDir(carPath, target), 'ext_config.ini').toLowerCase()) ?? join(baseDir(carPath, target), 'ext_config.ini');
+  const extNow = touched.get(extConfig) ?? (existsSync(extConfig) ? readFileSync(extConfig, 'utf8') : '');
+  if (!hasIncludeBlock(extNow, INSTRUMENTS_BLOCK_ID)) {
+    touched.set(extConfig, upsertIncludeBlock(extNow, INSTRUMENTS_BLOCK_ID, generateInstrumentsIni()));
+    result.instruments = true;
+  }
+  if (touched.size === 0) return result;
+  const root = backupRoot(carPath, target);
+  const bdir = join(root, timestamp());
+  mkdirSync(bdir, { recursive: true });
+  const existing = [...touched.keys()].filter((f) => existsSync(f));
+  for (const file of existing) cpSync(file, join(bdir, basename(file)));
+  const what = [...result.disabled.map((d) => `[${d.section}] en ${d.iniRelative}`), ...(result.instruments ? ['los instrumentos de data/'] : [])];
+  writeFileSync(join(bdir, 'backup.json'), JSON.stringify({ car: carPath, target, displays: [], files: existing.map((f) => basename(f)), reason: 'clean-displays' }, null, 2), 'utf8');
+  writeFileSync(join(bdir, 'BACKUP.txt'), `Copia creada por AC Display Generator antes de desactivar ${what.join(', ')}.\n`, 'utf8');
   pruneBackups(root, 10);
+  mkdirSync(dirname(extConfig), { recursive: true });
   for (const [file, next] of touched) writeFileSync(file, next, 'utf8');
   result.backup = bdir;
   return result;
@@ -572,6 +613,7 @@ export function removeNeedles(carPath: string, target: InstallTarget): string[] 
       }
     }
   }
+  if (releaseInstruments(extConfig)) done.push('Reactivados los instrumentos de data/');
   return done;
 }
 

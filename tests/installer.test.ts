@@ -161,6 +161,54 @@ describe('instalación', () => {
     expect(afterNeedles).not.toContain(';ACDG-OFF;');
   });
 
+  it('al empezar el proyecto anula los instrumentos de data/, con copia de seguridad y una sola vez', () => {
+    // el coche ya tenía su propia sección [DATA] que los dejaba activos: la nuestra va detrás y manda
+    writeFileSync(extConfig, CAR_INI + '\n[DATA]\nDISABLE_LIGHTSINI = 1\nDISABLE_ANALOGINSTRUMENTSINI = 0\n', 'utf8');
+    const first = cleanDisplays(carPath, ['OTRA_MALLA']);
+    expect(first.disabled).toEqual([]);
+    expect(first.instruments).toBe(true);
+    expect(first.backup).toBeTruthy();
+    expect(readFileSync(join(first.backup!, 'ext_config.ini'), 'utf8')).not.toContain('ACDG BEGIN');
+    const text = ini();
+    const block = text.slice(text.indexOf('; ACDG BEGIN _instruments'));
+    expect(block).toContain('[DATA]');
+    expect(block).toContain('DISABLE_ANALOGINSTRUMENTSINI = 1');
+    expect(block).toContain('DISABLE_DIGITALINSTRUMENTSINI = 1');
+    expect(text.indexOf('DISABLE_ANALOGINSTRUMENTSINI = 0')).toBeLessThan(text.indexOf('; ACDG BEGIN _instruments'));
+    // la sección original del coche no se toca
+    expect(text).toContain('DISABLE_LIGHTSINI = 1');
+
+    const again = cleanDisplays(carPath, ['OTRA_MALLA']);
+    expect(again.instruments).toBe(false);
+    expect(again.backup).toBeNull();
+    expect(ini().match(/; ACDG BEGIN _instruments/g)).toHaveLength(1);
+  });
+
+  it('crea ext_config.ini si el coche no lo tenía', () => {
+    rmSync(extConfig);
+    const r = cleanDisplays(carPath, ['DISPLAY']);
+    expect(r.instruments).toBe(true);
+    expect(ini()).toContain('DISABLE_DIGITALINSTRUMENTSINI = 1');
+  });
+
+  it('instalar también los anula, y vuelven al quitar lo último que los sustituye', () => {
+    const p = project();
+    p.physicalNeedles = [{ ...createPhysicalNeedle('RPM_NEEDLE'), input: 'RPM' }];
+    const r = doInstall(p);
+    expect(r.steps.find((s) => s.name === 'Anular instrumentos de data/')?.ok).toBe(true);
+    const text = ini();
+    expect(text.match(/; ACDG BEGIN _instruments/g)).toHaveLength(1);
+    // reinstalar no lo duplica
+    doInstall(p);
+    expect(ini().match(/; ACDG BEGIN _instruments/g)).toHaveLength(1);
+    // sin display pero con nuestras agujas: siguen anulados (las de analog_instruments.ini competirían)
+    uninstall(carPath, { kind: 'car' }, 'dash');
+    expect(ini()).toContain('; ACDG BEGIN _instruments');
+    // sin nada nuestro: vuelven
+    expect(removeNeedles(carPath, { kind: 'car' }).join(' ')).toContain('instrumentos de data/');
+    expect(ini()).not.toContain('ACDG BEGIN');
+  });
+
   it('reinstalar actualiza el bloque en su sitio y limpia los archivos de la instalación anterior', () => {
     doInstall(project());
     const p2 = project();

@@ -217,7 +217,9 @@ export interface InstallResult {
 export interface CleanDisplaysResult {
   /** secciones de display ajenas desactivadas (comentadas con ;ACDG-OFF;) */
   disabled: { iniFile: string; iniRelative: string; section: string; meshes: string[] }[];
-  /** carpeta de la copia de seguridad (null si no hubo nada que desactivar) */
+  /** se acaba de añadir a ext_config.ini el bloque que anula analog/digital_instruments.ini de data/ */
+  instruments: boolean;
+  /** carpeta de la copia de seguridad (null si no hubo nada que cambiar) */
   backup: string | null;
 }
 

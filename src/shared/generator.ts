@@ -518,6 +518,21 @@ export function generateNeedlesIni(needles: PhysicalNeedle[]): string {
   return out.join('\n').trimEnd();
 }
 
+/* ---------- Instrumentos de data/ (analog_instruments.ini, digital_instruments.ini) ---------- */
+
+/** id del bloque de ext_config.ini que anula los instrumentos definidos en data/ */
+export const INSTRUMENTS_BLOCK_ID = '_instruments';
+
+/**
+ * Cuerpo del bloque que anula los instrumentos originales del coche: las agujas de
+ * analog_instruments.ini y los textos de digital_instruments.ini se dibujarían encima de los displays
+ * del proyecto o competirían con las agujas físicas. Son las claves [DATA] de CSP (las mismas que usa
+ * su configuración de los coches de Kunos).
+ */
+export function generateInstrumentsIni(): string {
+  return ['; instrumentos originales de data/: los sustituyen los displays de AC Display Generator', '[DATA]', 'DISABLE_ANALOGINSTRUMENTSINI = 1', 'DISABLE_DIGITALINSTRUMENTSINI = 1'].join('\n');
+}
+
 /* ---------- Bloque ACDG en ext_config.ini ---------- */
 
 export function includeMarkers(displayId: string): { begin: string; end: string } {
@@ -572,7 +587,7 @@ export function listIncludeBlocks(extConfig: string): string[] {
  * Nunca toca el resto del archivo.
  */
 /** bloques que van al FINAL de ext_config.ini (deben prevalecer sobre las secciones del coche) */
-const TAIL_BLOCKS = new Set(['_emissive']);
+const TAIL_BLOCKS = new Set(['_emissive', INSTRUMENTS_BLOCK_ID]);
 
 export function upsertIncludeBlock(extConfig: string, displayId: string, body: string, files: string[] = []): string {
   const block = includeBlock(displayId, body, files);
